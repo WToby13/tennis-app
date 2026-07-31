@@ -2,7 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @ObservedObject var auth: AuthModel
-    @State private var code = ""
+    @State private var isSignUp = false
 
     var body: some View {
         VStack(spacing: 16) {
@@ -10,32 +10,34 @@ struct LoginView: View {
             Text("🎾").font(.system(size: 64))
             Text("Tennis Review").font(.title).bold()
 
-            if !auth.codeSent {
-                Text("Sign in with your email — we'll send you a code.")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                TextField("you@example.com", text: $auth.email)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                Button("Send code") { Task { await auth.sendCode() } }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(auth.busy || auth.email.isEmpty)
-            } else {
-                Text("Enter the 6-digit code sent to \(auth.email).")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                TextField("123456", text: $code)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
-                Button("Verify") { Task { await auth.verify(code: code) } }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(auth.busy || code.isEmpty)
-                Button("Use a different email") { auth.codeSent = false }
-                    .font(.footnote)
-            }
+            Text(isSignUp ? "Create an account." : "Sign in to your account.")
+                .font(.subheadline).foregroundStyle(.secondary)
 
+            TextField("you@example.com", text: $auth.email)
+                .textFieldStyle(.roundedBorder)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+
+            SecureField("Password", text: $auth.password)
+                .textFieldStyle(.roundedBorder)
+
+            Button(isSignUp ? "Create account" : "Sign in") {
+                Task { isSignUp ? await auth.signUp() : await auth.signIn() }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(auth.busy || auth.email.isEmpty || auth.password.isEmpty)
+
+            Button(isSignUp ? "Have an account? Sign in" : "No account? Create one") {
+                isSignUp.toggle()
+                auth.error = nil
+                auth.notice = nil
+            }
+            .font(.footnote)
+
+            if let notice = auth.notice {
+                Text(notice).font(.caption).foregroundStyle(.green).multilineTextAlignment(.center)
+            }
             if let error = auth.error {
                 Text(error).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
             }

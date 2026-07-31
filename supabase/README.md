@@ -1,8 +1,11 @@
 # Supabase — auth + metadata setup
 
-Supabase provides magic-link auth and the Postgres `videos` metadata store. The web
-app turns auth on automatically once the two `NEXT_PUBLIC_SUPABASE_*` env vars are set;
+Supabase provides **email + password** auth and the Postgres `videos` metadata store. The
+web app turns auth on automatically once the two `NEXT_PUBLIC_SUPABASE_*` env vars are set;
 with them unset it stays in zero-auth local mode.
+
+Password auth (rather than magic link) means **no emails are sent on sign-in**, so you never
+hit the free-tier email rate limit — and you + friends can just share credentials.
 
 ## One-time setup
 
@@ -13,15 +16,15 @@ with them unset it stays in zero-auth local mode.
    of [`migrations/0001_init.sql`](migrations/0001_init.sql), and **Run**. This creates
    `profiles` + `videos`, the auto-profile trigger, and all the RLS policies.
 
-3. **Configure auth redirect URLs.** **Authentication → URL Configuration**:
-   - **Site URL:** `http://localhost:3000`
-   - **Redirect URLs:** add `http://localhost:3000/auth/callback`
-     (and later your Vercel URL + `/auth/callback`).
+3. **Turn off email confirmation** (so sign-up needs no email at all — avoids the rate
+   limit entirely). **Authentication → Sign In / Providers → Email**: make sure the Email
+   provider is **enabled**, then turn **Confirm email OFF**. Now `signUp` returns a live
+   session immediately. (Fine for a small private group; re-enable it if you ever open signup
+   up publicly.)
 
-4. **(For the iOS app) enable the 6-digit code.** The magic-link email works for the web
-   as-is. iOS signs in with a one-time **code** instead of a deep link, so add the token to
-   the email template: **Authentication → Email Templates → Magic Link**, include a line like
-   `Your code: {{ .Token }}` alongside the existing link. Then the same email works for both.
+4. **Set the Site URL.** **Authentication → URL Configuration → Site URL:** your primary URL
+   (e.g. the Vercel domain). Redirect URLs aren't needed for password login; only add
+   `<url>/auth/callback` if you later re-enable email confirmation links.
 
 5. **Copy your keys** from **Project Settings → API** into `web/.env`:
    ```

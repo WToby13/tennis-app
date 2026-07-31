@@ -62,10 +62,9 @@ These are source files, not a checked-in Xcode project. Follow the setup below o
 
 ## Notes / still TODO
 
-- **Email code:** make sure the Supabase Magic Link email template includes `{{ .Token }}`
-  (see `supabase/README.md`) so the 6-digit code arrives.
-- **Verify the auth API names** the first time you build — `signInWithOTP` / `verifyOTP`
-  match supabase-swift v2; if you pull a different major version the signatures may differ.
+- **Auth:** email + password via `auth.signIn(email:password:)` / `auth.signUp(email:password:)`.
+  Turn off "Confirm email" in Supabase (see `supabase/README.md`) so sign-up works with no
+  email round-trip. These API names match supabase-swift v2; a different major version may differ.
 - **Background uploads:** `MultipartUploader` uploads parts in-process. For true
   background/resumable transfers on a 2-hour file, move to a `URLSession(configuration:
   .background(...))` with `uploadTask(fromFile:)` — hook points marked `TODO(background)`.
