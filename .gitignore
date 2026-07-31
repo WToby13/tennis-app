@@ -1,0 +1,36 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next
+.next/
+out/
+build/
+dist/
+
+# local dev data (uploaded videos, parts, metadata)
+.data/
+
+# env
+.env
+.env.local
+.env*.local
+
+# misc
+.DS_Store
+*.log
+npm-debug.log*
+
+# ios
+ios/**/build/
+ios/**/DerivedData/
+*.xcuserstate
+
+# terraform — state files hold secrets (private key, IAM keys); never commit
+infra/.terraform/
+infra/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+infra/terraform.tfvars
+crash.log

@@ -1,0 +1,10 @@
+# Copy to terraform.tfvars and adjust. terraform.tfvars is gitignored.
+
+aws_region = "eu-west-1"
+project    = "tennis"
+
+# Add your deployed web origin here once you have it (keep localhost for dev).
+allowed_origins = [
+  "http://localhost:3000",
+  # "https://your-app.vercel.app",
+]
