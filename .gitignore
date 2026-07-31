@@ -34,3 +34,6 @@ infra/.terraform.lock.hcl
 *.tfstate.*
 infra/terraform.tfvars
 crash.log
+
+# typescript incremental build cache
+*.tsbuildinfo
