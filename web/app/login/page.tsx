@@ -48,7 +48,22 @@ export default function LoginPage() {
 
   return (
     <div style={{ maxWidth: 420, margin: "40px auto" }}>
-      <h1>{mode === "signin" ? "Sign in" : "Create account"}</h1>
+      <div style={{ textAlign: "center", marginBottom: 24 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="Tennis Reel" width={60} height={60} style={{ borderRadius: 14 }} />
+        <div
+          style={{
+            fontFamily: "var(--font-display)",
+            fontSize: 26,
+            fontWeight: 600,
+            letterSpacing: "-0.02em",
+            marginTop: 10,
+          }}
+        >
+          Tennis Reel
+        </div>
+      </div>
+      <h1 style={{ textAlign: "center" }}>{mode === "signin" ? "Sign in" : "Create account"}</h1>
       <form onSubmit={onSubmit} className="card" style={{ padding: 24 }}>
         <label className="field">
           <span className="lbl">Email</span>

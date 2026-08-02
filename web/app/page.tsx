@@ -76,13 +76,14 @@ export default function MatchesPage() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
-          <h1 style={{ marginBottom: 4 }}>Match library</h1>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>Library</div>
+          <h1 style={{ marginBottom: 6 }}>Your matches</h1>
           <p className="muted" style={{ margin: 0, fontSize: 14 }}>
             Everyone signed in can watch these — share a link with a friend.
           </p>
         </div>
         <Link href="/upload" className="btn">
-          + Upload a match
+          Upload a match
         </Link>
       </div>
 
@@ -90,7 +91,8 @@ export default function MatchesPage() {
 
       {videos?.length === 0 && (
         <div className="card" style={{ padding: 40, textAlign: "center", marginTop: 20 }}>
-          <p style={{ fontSize: 40, margin: 0 }}>🎾</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/monogram.svg" alt="" width={56} height={56} style={{ opacity: 0.45, margin: "0 auto 8px" }} />
           <p className="muted">
             No matches yet. Record one in the iPhone app, or upload a file to get started.
           </p>
@@ -105,7 +107,9 @@ export default function MatchesPage() {
           {videos.map((v) => (
             <div key={v.id} className="card">
               <Link href={`/watch/${v.id}`} style={{ color: "inherit" }}>
-                <div className="thumb">🎾</div>
+                <div className="thumb">
+                  <span className="play" />
+                </div>
               </Link>
               <div style={{ padding: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -123,7 +127,7 @@ export default function MatchesPage() {
                   </Link>
                   <span className={`badge ${v.status}`}>{STATUS_LABEL[v.status]}</span>
                 </div>
-                <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
+                <div className="muted mono" style={{ fontSize: 13, marginTop: 6 }}>
                   {formatDate(v.createdAt)} · {formatDuration(v.durationS)} · {formatSize(v.sizeBytes)}
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
