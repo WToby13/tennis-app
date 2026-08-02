@@ -20,6 +20,18 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [video, setVideo] = useState<Video | null>(null);
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1);
+  const [copied, setCopied] = useState(false);
+
+  const share = useCallback(async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      window.prompt("Copy this link to share:", url);
+    }
+  }, []);
 
   // Load metadata; poll while still processing (relevant to the S3 faststart step).
   useEffect(() => {
@@ -73,9 +85,22 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   return (
     <div>
       <Link href="/" className="muted">
-        ← Matches
+        ← Match library
       </Link>
-      <h1 style={{ marginTop: 8 }}>{video.title}</h1>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          marginTop: 8,
+        }}
+      >
+        <h1 style={{ margin: 0 }}>{video.title}</h1>
+        <button className="chip active" onClick={share} title="Copy a link to send a friend">
+          {copied ? "✓ Link copied" : "🔗 Share"}
+        </button>
+      </div>
 
       {video.status === "ready" && playbackUrl ? (
         <>

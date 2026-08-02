@@ -10,7 +10,11 @@ export async function middleware(request: NextRequest) {
 
   let response = NextResponse.next({ request });
 
+  // Native clients (iOS) authenticate with a Bearer token instead of cookies.
+  const authHeader = request.headers.get("authorization") ?? undefined;
+
   const supabase = createServerClient(appConfig.supabase.url, appConfig.supabase.anonKey, {
+    ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet: CookieToSet[]) => {
@@ -23,10 +27,12 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  // Refreshes the session and tells us who's signed in.
+  // Refreshes the session and tells us who's signed in. Cookies resolve via the
+  // session; a Bearer token (iOS) is validated explicitly.
+  const token = authHeader?.match(/^Bearer (.+)$/i)?.[1];
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = token ? await supabase.auth.getUser(token) : await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
   const isPublic = path.startsWith("/login") || path.startsWith("/auth");

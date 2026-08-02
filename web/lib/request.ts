@@ -1,7 +1,7 @@
 import { config } from "./config";
 import { metadata } from "./metadata";
 import type { MetadataStore } from "./metadata";
-import { getSupabaseServer } from "./supabase/server";
+import { getRequestUser, getSupabaseServer } from "./supabase/server";
 
 /**
  * Resolve the metadata store and current user for an API request.
@@ -15,8 +15,6 @@ export async function storeForRequest(): Promise<{ store: MetadataStore; userId:
   if (!config.authEnabled) return { store: metadata(), userId: null };
 
   const supabase = await getSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getRequestUser(supabase);
   return { store: metadata(supabase), userId: user?.id ?? null };
 }

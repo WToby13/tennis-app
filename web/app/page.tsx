@@ -25,6 +25,43 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1e3).toFixed(0)} KB`;
 }
 
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+const STATUS_LABEL: Record<Video["status"], string> = {
+  uploading: "Uploading",
+  processing: "Processing",
+  ready: "Ready",
+  failed: "Failed",
+};
+
+/** Copy a shareable watch link to the clipboard. */
+function ShareButton({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      className="chip"
+      onClick={async () => {
+        const url = `${window.location.origin}/watch/${id}`;
+        try {
+          await navigator.clipboard.writeText(url);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {
+          window.prompt("Copy this link to share:", url);
+        }
+      }}
+    >
+      {copied ? "✓ Copied" : "🔗 Share"}
+    </button>
+  );
+}
+
 export default function MatchesPage() {
   const [videos, setVideos] = useState<Video[] | null>(null);
 
@@ -38,18 +75,25 @@ export default function MatchesPage() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h1>Matches</h1>
+        <div>
+          <h1 style={{ marginBottom: 4 }}>Match library</h1>
+          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+            Everyone signed in can watch these — share a link with a friend.
+          </p>
+        </div>
         <Link href="/upload" className="btn">
           + Upload a match
         </Link>
       </div>
 
-      {videos === null && <p className="muted">Loading…</p>}
+      {videos === null && <p className="muted" style={{ marginTop: 20 }}>Loading…</p>}
 
       {videos?.length === 0 && (
-        <div className="card" style={{ padding: 40, textAlign: "center", marginTop: 16 }}>
+        <div className="card" style={{ padding: 40, textAlign: "center", marginTop: 20 }}>
           <p style={{ fontSize: 40, margin: 0 }}>🎾</p>
-          <p className="muted">No matches yet. Upload your first recording to get started.</p>
+          <p className="muted">
+            No matches yet. Record one in the iPhone app, or upload a file to get started.
+          </p>
           <Link href="/upload" className="btn">
             Upload a match
           </Link>
@@ -59,20 +103,37 @@ export default function MatchesPage() {
       {videos && videos.length > 0 && (
         <div className="grid" style={{ marginTop: 20 }}>
           {videos.map((v) => (
-            <Link key={v.id} href={`/watch/${v.id}`} className="card" style={{ color: "inherit" }}>
-              <div className="thumb">🎾</div>
+            <div key={v.id} className="card">
+              <Link href={`/watch/${v.id}`} style={{ color: "inherit" }}>
+                <div className="thumb">🎾</div>
+              </Link>
               <div style={{ padding: 14 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <Link
+                    href={`/watch/${v.id}`}
+                    style={{
+                      color: "inherit",
+                      fontWeight: 700,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {v.title}
-                  </strong>
-                  <span className={`badge ${v.status}`}>{v.status}</span>
+                  </Link>
+                  <span className={`badge ${v.status}`}>{STATUS_LABEL[v.status]}</span>
                 </div>
                 <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
-                  {formatDuration(v.durationS)} · {formatSize(v.sizeBytes)}
+                  {formatDate(v.createdAt)} · {formatDuration(v.durationS)} · {formatSize(v.sizeBytes)}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  <Link href={`/watch/${v.id}`} className="chip active">
+                    ▶ Watch
+                  </Link>
+                  {v.status === "ready" && <ShareButton id={v.id} />}
                 </div>
               </div>
-            </Link>
+            </div>
           ))}
         </div>
       )}
