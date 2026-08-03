@@ -1,4 +1,4 @@
-# Tennis Recorder & Review — MVP Plan
+# Ojo — MVP Plan
 
 ## Context
 A hobby app to record tennis on an iPhone, upload the video (S3 multipart), and review it online.

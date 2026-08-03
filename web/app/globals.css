@@ -1,22 +1,23 @@
 :root {
-  --bg: #fbfaf7;
-  --surface: #ffffff;
-  --surface-2: #f2f1ec;
-  --border: #e6e4dc;
-  --ink: #17130e; /* dark bar / near-black */
-  --text: #1b1712; /* court ink */
-  --muted: #7c7669;
+  color-scheme: dark;
+  --bg: #14110d; /* deep court ink */
+  --surface: #1c1813;
+  --surface-2: #26211a;
+  --border: #332c22;
+  --ink: #0f0c09; /* header bar / darkest */
+  --text: #f4eee4; /* chalk cream */
+  --muted: #a89c8a;
   --accent: #d9662c; /* clay orange */
-  --accent-dim: #c24e1c;
-  --accent-soft: #fbeee5;
-  --terracotta: #9e3b1f;
-  --sage: #6f9268;
-  --danger: #d1493a;
+  --accent-dim: #e77a42; /* brighter clay for hover on dark */
+  --accent-soft: rgba(217, 102, 44, 0.28); /* focus glow */
+  --terracotta: #b8542f;
+  --sage: #8fb388;
+  --danger: #e5695b;
   --radius: 14px;
   --radius-sm: 10px;
   --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
-  --shadow: 0 1px 2px rgba(23, 19, 14, 0.04), 0 10px 28px rgba(23, 19, 14, 0.07);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 30px rgba(0, 0, 0, 0.5);
 }
 
 * {
@@ -82,6 +83,7 @@ header.site {
   justify-content: space-between;
   padding: 14px 24px;
   background: var(--ink);
+  border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
   z-index: 20;
@@ -183,7 +185,7 @@ header.site .btn.secondary:hover {
   gap: 18px;
 }
 .grid .card:hover {
-  border-color: #d9d6cc;
+  border-color: #4a4032;
   box-shadow: var(--shadow);
   transform: translateY(-2px);
 }
@@ -239,6 +241,13 @@ header.site .btn.secondary:hover {
   background:
     linear-gradient(transparent 49.6%, rgba(255, 255, 255, 0.07) 50%, transparent 50.4%),
     linear-gradient(90deg, transparent 49.6%, rgba(255, 255, 255, 0.07) 50%, transparent 50.4%);
+}
+.thumb-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .thumb .play {
   position: relative;
@@ -300,11 +309,11 @@ header.site .btn.secondary:hover {
   font-weight: 500;
 }
 .chip.active {
-  background: var(--ink);
+  background: var(--accent);
   color: #fff;
 }
 .chip:hover:not(.active) {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 /* ---- inputs ---- */

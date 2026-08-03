@@ -6,19 +6,20 @@ import { getUser } from "@/lib/supabase/server";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Tennis Reel",
+  metadataBase: new URL("https://ojotennis.com"),
+  title: "Ojo",
   description: "Record, review and share your tennis matches.",
-  applicationName: "Tennis Reel",
+  applicationName: "Ojo",
   openGraph: {
-    title: "Tennis Reel",
+    title: "Ojo",
     description: "Record, review and share your tennis matches.",
-    siteName: "Tennis Reel",
+    siteName: "Ojo",
     type: "website",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#d9662c",
+  themeColor: "#14110d",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -39,7 +40,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <Link href="/" className="brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="mark" src="/logo.svg" alt="" width={28} height={28} />
-            Tennis Reel
+            Ojo
           </Link>
           <nav>
             <Link href="/">Matches</Link>

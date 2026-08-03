@@ -1,4 +1,4 @@
-# Tennis Recorder & Review
+# Ojo — Tennis Recorder & Review
 
 Record tennis on an iPhone, upload with **S3 multipart**, and review it online (scrub, frame-step, slow-mo).
 Hobby MVP for me + friends. See the full design in [`docs/PLAN.md`](docs/PLAN.md).

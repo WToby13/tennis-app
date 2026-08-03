@@ -50,7 +50,7 @@ export default function LoginPage() {
     <div style={{ maxWidth: 420, margin: "40px auto" }}>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.svg" alt="Tennis Reel" width={60} height={60} style={{ borderRadius: 14 }} />
+        <img src="/logo.svg" alt="Ojo" width={60} height={60} style={{ borderRadius: 14 }} />
         <div
           style={{
             fontFamily: "var(--font-display)",
@@ -60,7 +60,7 @@ export default function LoginPage() {
             marginTop: 10,
           }}
         >
-          Tennis Reel
+          Ojo
         </div>
       </div>
       <h1 style={{ textAlign: "center" }}>{mode === "signin" ? "Sign in" : "Create account"}</h1>
