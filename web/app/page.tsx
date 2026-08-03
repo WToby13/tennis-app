@@ -10,6 +10,7 @@ interface Video {
   durationS: number | null;
   sizeBytes: number;
   createdAt: string;
+  thumbnailUrl: string | null;
 }
 
 function formatDuration(s: number | null): string {
@@ -108,6 +109,18 @@ export default function MatchesPage() {
             <div key={v.id} className="card">
               <Link href={`/watch/${v.id}`} style={{ color: "inherit" }}>
                 <div className="thumb">
+                  {v.thumbnailUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={v.thumbnailUrl}
+                      alt=""
+                      className="thumb-img"
+                      onError={(e) => {
+                        // No thumbnail uploaded (e.g. older match) — fall back to the court tile.
+                        e.currentTarget.style.display = "none";
+                      }}
+                    />
+                  )}
                   <span className="play" />
                 </div>
               </Link>

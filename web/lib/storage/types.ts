@@ -35,4 +35,18 @@ export interface StorageAdapter {
 
   /** A URL the browser can use to stream/scrub the finished object. */
   getPlaybackUrl(videoId: string, key: string): Promise<string>;
+
+  /** URL + method the client uses to upload a video's poster thumbnail (a JPEG) directly to storage. */
+  getThumbnailUploadUrl(videoId: string): Promise<{ url: string; method: "PUT" }>;
+
+  /** A URL to fetch a video's thumbnail. May 403/404 if none was uploaded — callers handle that gracefully. */
+  getThumbnailUrl(videoId: string): Promise<string>;
+
+  /** Permanently delete a video's object and its thumbnail. Best-effort per asset. */
+  deleteVideoAssets(videoId: string, key: string): Promise<void>;
+}
+
+/** The storage object key for a video's poster thumbnail. Deterministic — no DB column needed. */
+export function thumbnailKey(videoId: string): string {
+  return `thumbnails/${videoId}.jpg`;
 }

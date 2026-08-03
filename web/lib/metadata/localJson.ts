@@ -61,4 +61,11 @@ export class LocalJsonMetadataStore implements MetadataStore {
       return all[idx];
     });
   }
+
+  delete(id: string): Promise<void> {
+    return withLock(async () => {
+      const all = await readAll();
+      await writeAll(all.filter((v) => v.id !== id));
+    });
+  }
 }

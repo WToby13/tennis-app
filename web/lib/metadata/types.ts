@@ -23,4 +23,5 @@ export interface MetadataStore {
   get(id: string): Promise<Video | null>;
   list(): Promise<Video[]>;
   update(id: string, patch: Partial<Video>): Promise<Video>;
+  delete(id: string): Promise<void>;
 }

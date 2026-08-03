@@ -41,6 +41,19 @@ export function localVideoPath(key: string) {
   return path.join(VIDEOS_DIR, key);
 }
 
+const THUMBS_DIR = path.join(DATA_DIR, "thumbnails");
+
+/** Absolute path to a video's thumbnail, for the local thumbnail route. */
+export function localThumbnailPath(videoId: string) {
+  return path.join(THUMBS_DIR, `${videoId}.jpg`);
+}
+
+/** Write a thumbnail's bytes to disk. Called by the local thumbnail route. */
+export async function writeLocalThumbnail(videoId: string, bytes: Buffer): Promise<void> {
+  await fs.mkdir(THUMBS_DIR, { recursive: true });
+  await fs.writeFile(localThumbnailPath(videoId), bytes);
+}
+
 export class LocalStorageAdapter implements StorageAdapter {
   async initiateMultipart(key: string): Promise<{ uploadId: string }> {
     const uploadId = randomUUID();
@@ -100,5 +113,20 @@ export class LocalStorageAdapter implements StorageAdapter {
   async getPlaybackUrl(videoId: string): Promise<string> {
     // Served with HTTP range support so the browser can scrub without a full download.
     return `/api/local-storage/video/${videoId}`;
+  }
+
+  async getThumbnailUploadUrl(videoId: string) {
+    return { url: `/api/local-storage/thumbnail/${videoId}`, method: "PUT" as const };
+  }
+
+  async getThumbnailUrl(videoId: string): Promise<string> {
+    return `/api/local-storage/thumbnail/${videoId}`;
+  }
+
+  async deleteVideoAssets(videoId: string, key: string): Promise<void> {
+    await Promise.all([
+      fs.rm(localVideoPath(key), { force: true }),
+      fs.rm(localThumbnailPath(videoId), { force: true }),
+    ]);
   }
 }

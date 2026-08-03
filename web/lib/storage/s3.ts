@@ -2,14 +2,16 @@ import {
   AbortMultipartUploadCommand,
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
+  DeleteObjectCommand,
   ListPartsCommand,
+  PutObjectCommand,
   S3Client,
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getSignedUrl as getSignedCloudFrontUrl } from "@aws-sdk/cloudfront-signer";
 import { config } from "../config";
-import type { StorageAdapter, UploadedPart } from "./types";
+import { thumbnailKey, type StorageAdapter, type UploadedPart } from "./types";
 
 /**
  * Real S3 multipart adapter. Enabled with STORAGE_BACKEND=s3.
@@ -82,6 +84,40 @@ export class S3StorageAdapter implements StorageAdapter {
 
     const url = `https://${domain}/${key}`;
     if (!signUrls) return url; // public distribution (not recommended for private video)
+
+    return getSignedCloudFrontUrl({
+      url,
+      keyPairId,
+      privateKey,
+      dateLessThan: new Date(Date.now() + signedUrlTtlSeconds * 1000).toISOString(),
+    });
+  }
+
+  async deleteVideoAssets(videoId: string, key: string): Promise<void> {
+    const del = (k: string) =>
+      this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: k })).catch(() => {});
+    await Promise.all([del(key), del(thumbnailKey(videoId))]);
+  }
+
+  async getThumbnailUploadUrl(videoId: string) {
+    const url = await getSignedUrl(
+      this.client,
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: thumbnailKey(videoId),
+        ContentType: "image/jpeg",
+      }),
+      { expiresIn: 3600 },
+    );
+    return { url, method: "PUT" as const };
+  }
+
+  async getThumbnailUrl(videoId: string): Promise<string> {
+    const { domain, signUrls, keyPairId, privateKey, signedUrlTtlSeconds } = config.cloudfront;
+    if (!domain) throw new Error("CLOUDFRONT_DOMAIN is not set");
+
+    const url = `https://${domain}/${thumbnailKey(videoId)}`;
+    if (!signUrls) return url;
 
     return getSignedCloudFrontUrl({
       url,

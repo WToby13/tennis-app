@@ -92,4 +92,9 @@ export class SupabaseMetadataStore implements MetadataStore {
     if (error) throw new Error(`update video failed: ${error.message}`);
     return toVideo(data as Row);
   }
+
+  async delete(id: string): Promise<void> {
+    const { error } = await this.supabase.from("videos").delete().eq("id", id);
+    if (error) throw new Error(`delete video failed: ${error.message}`);
+  }
 }

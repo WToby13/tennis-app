@@ -19,6 +19,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [video, setVideo] = useState<Video | null>(null);
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1);
   const [copied, setCopied] = useState(false);
 
@@ -43,6 +44,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       if (!active) return;
       setVideo(data.video);
       setPlaybackUrl(data.playbackUrl);
+      setThumbnailUrl(data.thumbnailUrl ?? null);
       if (data.video.status === "processing") setTimeout(load, 2000);
     }
     load();
@@ -104,7 +106,13 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
 
       {video.status === "ready" && playbackUrl ? (
         <>
-          <video ref={videoRef} src={playbackUrl} controls preload="metadata" />
+          <video
+            ref={videoRef}
+            src={playbackUrl}
+            poster={thumbnailUrl ?? undefined}
+            controls
+            preload="metadata"
+          />
 
           <div className="controls">
             <div className="group" aria-label="Playback speed">
