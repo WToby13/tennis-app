@@ -365,6 +365,16 @@ a:hover {
 .chip:hover:not(.active) {
   background: rgba(255, 255, 255, 0.06);
 }
+.chip .kbd {
+  font-size: 10px;
+  font-weight: 600;
+  margin-left: 5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+  vertical-align: middle;
+}
 
 /* ---- inputs ---- */
 input[type="text"],
@@ -584,7 +594,7 @@ video {
 }
 .watch-stage video {
   width: 100%;
-  max-height: 78vh;
+  max-height: 85vh;
   object-fit: contain;
   background: #000;
   border-radius: 0;
@@ -686,6 +696,35 @@ video {
 .btn.secondary.danger-outline:hover {
   background: rgba(229, 105, 91, 0.1);
 }
+/* participant search dropdown — overlays fields below instead of pushing them */
+.search-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  overflow: hidden auto;
+  max-height: 220px;
+}
+.search-pop-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.search-pop-item:hover {
+  background: var(--surface-2);
+}
+
 .danger-confirm {
   margin-top: 12px;
   padding: 16px;

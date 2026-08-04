@@ -44,6 +44,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [editing, setEditing] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [paused, setPaused] = useState(true);
 
   const shareToken = () =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
@@ -136,6 +137,19 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     el.currentTime = Math.max(0, el.currentTime + frames / ASSUMED_FPS);
   }, []);
 
+  const seek = useCallback((deltaSeconds: number) => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.currentTime = Math.max(0, el.currentTime + deltaSeconds);
+  }, []);
+
+  const togglePlay = useCallback(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (el.paused) el.play();
+    else el.pause();
+  }, []);
+
   const changeSpeed = useCallback((s: number) => {
     setSpeed(s);
     if (videoRef.current) videoRef.current.playbackRate = s;
@@ -198,7 +212,15 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
 
       <div className="watch-stage">
         {ready ? (
-          <video ref={videoRef} src={playbackUrl!} poster={thumbnailUrl ?? undefined} controls preload="metadata" />
+          <video
+            ref={videoRef}
+            src={playbackUrl!}
+            poster={thumbnailUrl ?? undefined}
+            controls
+            preload="metadata"
+            onPlay={() => setPaused(false)}
+            onPause={() => setPaused(true)}
+          />
         ) : (
           <div className="placeholder">
             <span className={`badge ${video.status}`}>{video.status}</span>
@@ -229,18 +251,27 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 ))}
               </div>
               <div className="group" aria-label="Frame step">
-                <button className="chip" onClick={() => stepFrames(-1)} title="Previous frame ( , )">
-                  ⏮ frame
+                <button className="chip" onClick={() => stepFrames(-1)} title="Previous frame">
+                  ⏮ frame <span className="kbd">,</span>
                 </button>
-                <button className="chip" onClick={() => stepFrames(1)} title="Next frame ( . )">
-                  frame ⏭
+                <button className="chip" onClick={() => stepFrames(1)} title="Next frame">
+                  frame ⏭ <span className="kbd">.</span>
                 </button>
               </div>
+              <div className="group" aria-label="Skip and play">
+                <button className="chip" onClick={() => seek(-10)}>−10s</button>
+                <button className="chip" onClick={() => seek(-5)}>
+                  −5s <span className="kbd">j</span>
+                </button>
+                <button className="chip" onClick={togglePlay}>
+                  {paused ? "▶ Play" : "⏸ Pause"} <span className="kbd">k</span>
+                </button>
+                <button className="chip" onClick={() => seek(5)}>
+                  +5s <span className="kbd">l</span>
+                </button>
+                <button className="chip" onClick={() => seek(10)}>+10s</button>
+              </div>
             </div>
-            <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
-              Shortcuts: <b>,</b> / <b>.</b> step a frame · <b>j</b> / <b>l</b> jump 5s · <b>k</b>{" "}
-              play/pause. Slow-motion is the 0.25× / 0.5× speeds.
-            </p>
           </>
         )}
 

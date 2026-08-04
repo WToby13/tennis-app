@@ -24,7 +24,6 @@ export function EditDetails({ videoId, initialTitle, initialParticipants, onSave
   const [list, setList] = useState<EditableParticipant[]>(initialParticipants);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<{ id: string; displayName: string }[]>([]);
-  const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,10 +57,10 @@ export function EditDetails({ videoId, initialTitle, initialParticipants, onSave
   }
 
   function addGuest() {
-    const name = guestName.trim();
-    if (!name) return;
-    setList([...list, { userId: null, displayName: name, email: guestEmail.trim() || null }]);
-    setGuestName("");
+    const email = guestEmail.trim().toLowerCase();
+    if (!email.includes("@")) return;
+    // Until they sign up, show the email's local part as their name.
+    setList([...list, { userId: null, displayName: email.split("@")[0], email }]);
     setGuestEmail("");
   }
 
@@ -129,61 +128,45 @@ export function EditDetails({ videoId, initialTitle, initialParticipants, onSave
           </div>
         )}
 
-        <input
-          type="text"
-          placeholder="Search Ojo players by name…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          disabled={saving}
-        />
-        {results.length > 0 && (
-          <div className="card" style={{ marginTop: 6 }}>
-            {results.map((u) => (
-              <button
-                key={u.id}
-                onClick={() => addUser(u)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  background: "none",
-                  border: "none",
-                  color: "var(--text)",
-                  padding: "10px 12px",
-                  cursor: "pointer",
-                }}
-              >
-                {u.displayName}
-              </button>
-            ))}
-          </div>
-        )}
+        <div style={{ position: "relative" }}>
+          <input
+            type="text"
+            placeholder="Search Ojo players by name…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            disabled={saving}
+          />
+          {results.length > 0 && (
+            <div className="search-pop">
+              {results.map((u) => (
+                <button key={u.id} className="search-pop-item" onClick={() => addUser(u)}>
+                  {u.displayName}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="field">
         <span className="lbl">Add someone not on Ojo</span>
         <div style={{ display: "flex", gap: 8 }}>
           <input
-            type="text"
-            placeholder="Name"
-            value={guestName}
-            onChange={(e) => setGuestName(e.target.value)}
-            disabled={saving}
-          />
-          <input
             type="email"
-            placeholder="Email (optional — to invite)"
+            placeholder="Email address"
             value={guestEmail}
             onChange={(e) => setGuestEmail(e.target.value)}
             disabled={saving}
           />
-          <button className="btn secondary" type="button" onClick={addGuest} disabled={saving || !guestName.trim()}>
-            Add
+          <button
+            className="btn secondary"
+            type="button"
+            onClick={addGuest}
+            disabled={saving || !guestEmail.includes("@")}
+          >
+            Invite
           </button>
         </div>
-        <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          With an email, they’ll be linked to this match automatically when they sign up.
-        </p>
       </div>
 
       {error && <p style={{ color: "var(--danger)", fontSize: 14 }}>{error}</p>}
