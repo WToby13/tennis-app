@@ -15,7 +15,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 }
 
 /**
- * Replace a match's participant list. Owner-only (RLS also enforces this).
+ * Replace a match's participant list. Editors only: the owner or any participant
+ * (the set_participants RPC enforces this server-side too).
  * Body: { participants: [{ userId?, displayName, email? }] }.
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -24,7 +25,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const video = await store.get(id);
   if (!video) return notFound("Video not found");
-  if (userId && video.ownerId && video.ownerId !== userId) return notFound("Video not found");
 
   const body = await req.json().catch(() => null);
   const raw = Array.isArray(body?.participants) ? body.participants : [];
@@ -42,8 +42,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   // Only email guests that are newly added (don't re-invite on every edit).
   const before = await store.getParticipants(id);
   const known = new Set(before.filter((p) => p.email).map((p) => p.email!.toLowerCase()));
+  const canEdit =
+    !userId || video.ownerId === userId || before.some((p) => p.userId === userId);
+  if (!canEdit) return notFound("Video not found");
 
-  const participants = await store.setParticipants(id, clean, userId);
+  const participants = await store.setParticipants(id, clean);
 
   const newEmails = clean
     .filter((p) => p.userId === null && p.email && !known.has(p.email.toLowerCase()))

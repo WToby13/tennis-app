@@ -77,6 +77,10 @@ export class LocalJsonMetadataStore implements MetadataStore {
     });
   }
 
+  setTitle(id: string, title: string): Promise<Video> {
+    return this.update(id, { title });
+  }
+
   softDelete(id: string): Promise<void> {
     return withLock(async () => {
       const all = await readAll();

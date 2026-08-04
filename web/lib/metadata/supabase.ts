@@ -113,6 +113,15 @@ export class SupabaseMetadataStore implements MetadataStore {
     return toVideo(data as Row);
   }
 
+  async setTitle(id: string, title: string): Promise<Video> {
+    const { data, error } = await this.supabase.rpc("update_video_title", {
+      p_video_id: id,
+      p_title: title,
+    });
+    if (error || !data) throw new Error(`rename failed: ${error?.message ?? "no data"}`);
+    return toVideo(data as Row);
+  }
+
   async softDelete(id: string): Promise<void> {
     const { error } = await this.supabase
       .from("videos")
@@ -176,25 +185,19 @@ export class SupabaseMetadataStore implements MetadataStore {
     );
   }
 
-  async setParticipants(
-    videoId: string,
-    participants: ParticipantInput[],
-    addedBy: string | null,
-  ): Promise<Participant[]> {
-    // Replace the whole list. RLS restricts both ops to the video's owner.
-    const del = await this.supabase.from("video_participants").delete().eq("video_id", videoId);
-    if (del.error) throw new Error(`clear participants failed: ${del.error.message}`);
-    if (participants.length) {
-      const rows = participants.map((p) => ({
-        video_id: videoId,
-        user_id: p.userId,
-        display_name: p.displayName,
+  async setParticipants(videoId: string, participants: ParticipantInput[]): Promise<Participant[]> {
+    // One definer RPC that checks edit rights once, then replaces the list — so a
+    // participant editor doesn't lose permission mid delete-then-insert. `added_by`
+    // is taken from auth.uid() inside the RPC.
+    const { error } = await this.supabase.rpc("set_participants", {
+      p_video_id: videoId,
+      p_participants: participants.map((p) => ({
+        userId: p.userId,
+        displayName: p.displayName,
         email: p.email,
-        added_by: addedBy,
-      }));
-      const ins = await this.supabase.from("video_participants").insert(rows);
-      if (ins.error) throw new Error(`set participants failed: ${ins.error.message}`);
-    }
+      })),
+    });
+    if (error) throw new Error(`set participants failed: ${error.message}`);
     return this.getParticipants(videoId);
   }
 

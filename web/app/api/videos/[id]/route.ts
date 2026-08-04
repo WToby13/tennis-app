@@ -46,7 +46,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
   if (!video) return notFound("Video not found");
 
+  const participants = await store.getParticipants(video.id).catch(() => []);
+
   const isOwner = Boolean(userId && video.ownerId && video.ownerId === userId);
+  const isParticipant = Boolean(userId && participants.some((p) => p.userId === userId));
+  // Owner or participant may edit; local no-auth mode can too.
+  const canEdit = isOwner || isParticipant || !userId;
 
   const playbackUrl =
     video.status === "ready" ? await storage().getPlaybackUrl(video.id, video.key) : null;
@@ -55,24 +60,36 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     .getThumbnailUrl(video.id)
     .catch(() => null);
 
-  const participants = await store.getParticipants(video.id).catch(() => []);
-
-  return json({ video, playbackUrl, thumbnailUrl, isOwner, inLibrary, canAdd: !inLibrary, participants });
+  return json({
+    video,
+    playbackUrl,
+    thumbnailUrl,
+    isOwner,
+    canEdit,
+    inLibrary,
+    canAdd: !inLibrary,
+    participants,
+  });
 }
 
-/** Edit a match's details (currently the title). Owner-only. */
+/** Rename a match. Allowed for the owner or any participant (editors). */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { store, userId } = await storeForRequest();
 
   const video = await store.get(id);
   if (!video) return notFound("Video not found");
-  if (userId && video.ownerId && video.ownerId !== userId) return notFound("Video not found");
 
   const body = await req.json().catch(() => null);
   const title = typeof body?.title === "string" ? body.title.trim() : "";
   if (!title) return badRequest("title is required");
 
-  const updated = await store.update(id, { title });
+  // The RPC enforces edit rights server-side; a clean 404 for non-editors.
+  const participants = await store.getParticipants(id).catch(() => []);
+  const canEdit =
+    !userId || video.ownerId === userId || participants.some((p) => p.userId === userId);
+  if (!canEdit) return notFound("Video not found");
+
+  const updated = await store.setTitle(id, title);
   return json({ video: updated });
 }

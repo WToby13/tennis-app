@@ -52,7 +52,7 @@ export async function POST(req: Request) {
       }))
       .filter((p: { displayName: string }) => p.displayName.length > 0);
     if (clean.length) {
-      await store.setParticipants(video.id, clean, userId).catch(() => {});
+      await store.setParticipants(video.id, clean).catch(() => {});
       const emails = clean
         .filter((p: { userId: string | null; email: string | null }) => p.userId === null && p.email)
         .map((p: { email: string | null }) => p.email as string);

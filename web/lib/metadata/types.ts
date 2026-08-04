@@ -65,6 +65,8 @@ export interface MetadataStore {
   /** The caller's library (videos they uploaded or added), newest first. */
   list(): Promise<LibraryEntry[]>;
   update(id: string, patch: Partial<Video>): Promise<Video>;
+  /** Rename a match. Allowed for the owner or any participant (editors). */
+  setTitle(id: string, title: string): Promise<Video>;
   /** Soft-delete: mark deleted, hide everywhere. Byte purge is a separate step. */
   softDelete(id: string): Promise<void>;
   /** Hard-delete the metadata row (local mode / admin purge). */
@@ -83,12 +85,8 @@ export interface MetadataStore {
   // --- participants ----------------------------------------------------------
   /** Who played in a match. */
   getParticipants(videoId: string): Promise<Participant[]>;
-  /** Replace a match's participant list (owner-only, enforced by RLS). */
-  setParticipants(
-    videoId: string,
-    participants: ParticipantInput[],
-    addedBy: string | null,
-  ): Promise<Participant[]>;
+  /** Replace a match's participant list. Editors only (owner or participant). */
+  setParticipants(videoId: string, participants: ParticipantInput[]): Promise<Participant[]>;
   /** Search Ojo users by name, for tagging. */
   searchUsers(query: string): Promise<UserResult[]>;
 }

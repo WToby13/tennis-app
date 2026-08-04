@@ -37,6 +37,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [speed, setSpeed] = useState(1);
   const [copied, setCopied] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
   const [canAdd, setCanAdd] = useState(false);
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
@@ -120,6 +121,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       setPlaybackUrl(data.playbackUrl);
       setThumbnailUrl(data.thumbnailUrl ?? null);
       setIsOwner(Boolean(data.isOwner));
+      setCanEdit(Boolean(data.canEdit));
       setCanAdd(Boolean(data.canAdd));
       setParticipants(data.participants ?? []);
       if (data.video.status === "processing") setTimeout(load, 2000);
@@ -202,7 +204,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
           <button className="chip active" onClick={share} title="Copy a link to share">
             {copied ? "✓ Link copied" : "🔗 Share"}
           </button>
-          {isOwner && (
+          {canEdit && (
             <button className="chip" onClick={openEdit}>
               ✎ Edit
             </button>
@@ -328,7 +330,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
               </div>
             </div>
 
-            {confirmingDelete ? (
+            {isOwner && confirmingDelete ? (
               <div className="danger-confirm">
                 <p style={{ margin: "0 0 12px" }}>
                   Delete <b>{video.title}</b> for everyone? Anyone it was shared with loses access
@@ -352,12 +354,15 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 <button className="btn secondary" onClick={share}>
                   {copied ? "✓ Link copied" : "🔗 Share"}
                 </button>
-                <button
-                  className="btn secondary danger-outline"
-                  onClick={() => setConfirmingDelete(true)}
-                >
-                  Delete match
-                </button>
+                {/* Only the owner can delete; participants can edit everything else. */}
+                {isOwner && (
+                  <button
+                    className="btn secondary danger-outline"
+                    onClick={() => setConfirmingDelete(true)}
+                  >
+                    Delete match
+                  </button>
+                )}
               </div>
             )}
           </div>
