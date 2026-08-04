@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { GoogleButton, OrDivider } from "../GoogleButton";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 /** Where to go after auth: the `?next=` path if it's a safe in-app path, else home. */
@@ -40,9 +41,12 @@ export default function SignInPage() {
         <img src="/logo.svg" alt="Ojo Tennis" width={60} height={60} style={{ borderRadius: 14 }} />
       </div>
       <h1 style={{ textAlign: "center" }}>Sign in</h1>
-      <form onSubmit={onSubmit} className="card" style={{ padding: 24, marginTop: 16 }}>
-        <label className="field">
-          <span className="lbl">Email</span>
+      <div className="card" style={{ padding: 24, marginTop: 16 }}>
+        <GoogleButton />
+        <OrDivider />
+        <form onSubmit={onSubmit}>
+          <label className="field">
+            <span className="lbl">Email</span>
           <input
             type="email"
             required
@@ -68,10 +72,11 @@ export default function SignInPage() {
 
         {error && <p style={{ color: "var(--danger)", fontSize: 14 }}>{error}</p>}
 
-        <button className="btn" type="submit" disabled={busy || !email || !password}>
-          {busy ? "…" : "Sign in"}
-        </button>
-      </form>
+          <button className="btn" type="submit" disabled={busy || !email || !password}>
+            {busy ? "…" : "Sign in"}
+          </button>
+        </form>
+      </div>
 
       <p className="auth-alt muted">
         No account yet?{" "}

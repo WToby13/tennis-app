@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { GoogleButton, OrDivider } from "../GoogleButton";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 type Hand = "left" | "right";
@@ -79,7 +80,10 @@ export default function SignUpPage() {
         <img src="/logo.svg" alt="Ojo Tennis" width={60} height={60} style={{ borderRadius: 14 }} />
       </div>
       <h1 style={{ textAlign: "center" }}>Create account</h1>
-      <form onSubmit={onSubmit} className="card" style={{ padding: 24, marginTop: 16 }}>
+      <div className="card" style={{ padding: 24, marginTop: 16 }}>
+        <GoogleButton />
+        <OrDivider />
+        <form onSubmit={onSubmit}>
         <div style={{ display: "flex", gap: 12 }}>
           <label className="field" style={{ flex: 1 }}>
             <span className="lbl">First name</span>
@@ -160,7 +164,8 @@ export default function SignUpPage() {
         >
           {busy ? "…" : "Create account"}
         </button>
-      </form>
+        </form>
+      </div>
 
       <p className="auth-alt muted">
         Already have an account? <Link href="/sign-in">Sign in</Link>
