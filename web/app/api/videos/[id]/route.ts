@@ -1,6 +1,6 @@
 import { storeForRequest } from "@/lib/request";
 import { storage } from "@/lib/storage";
-import { json, notFound } from "@/lib/util";
+import { badRequest, json, notFound } from "@/lib/util";
 
 export const runtime = "nodejs";
 
@@ -55,5 +55,24 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     .getThumbnailUrl(video.id)
     .catch(() => null);
 
-  return json({ video, playbackUrl, thumbnailUrl, isOwner, inLibrary, canAdd: !inLibrary });
+  const participants = await store.getParticipants(video.id).catch(() => []);
+
+  return json({ video, playbackUrl, thumbnailUrl, isOwner, inLibrary, canAdd: !inLibrary, participants });
+}
+
+/** Edit a match's details (currently the title). Owner-only. */
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const { store, userId } = await storeForRequest();
+
+  const video = await store.get(id);
+  if (!video) return notFound("Video not found");
+  if (userId && video.ownerId && video.ownerId !== userId) return notFound("Video not found");
+
+  const body = await req.json().catch(() => null);
+  const title = typeof body?.title === "string" ? body.title.trim() : "";
+  if (!title) return badRequest("title is required");
+
+  const updated = await store.update(id, { title });
+  return json({ video: updated });
 }

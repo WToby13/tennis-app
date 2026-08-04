@@ -23,7 +23,10 @@ export function metadata(supabase?: SupabaseClient): MetadataStore {
 export type {
   LibraryEntry,
   MetadataStore,
+  Participant,
+  ParticipantInput,
   ShareLink,
+  UserResult,
   Video,
   VideoStatus,
   VideoVisibility,

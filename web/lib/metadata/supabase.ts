@@ -1,6 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomToken } from "../util";
-import type { LibraryEntry, MetadataStore, ShareLink, Video } from "./types";
+import type {
+  LibraryEntry,
+  MetadataStore,
+  Participant,
+  ParticipantInput,
+  ShareLink,
+  UserResult,
+  Video,
+} from "./types";
 
 /** DB row shape (snake_case) for the `videos` table. */
 interface Row {
@@ -154,5 +162,56 @@ export class SupabaseMetadataStore implements MetadataStore {
     if (userId) q = q.eq("user_id", userId); // RLS also scopes to the caller
     const { error } = await q;
     if (error) throw new Error(`remove from library failed: ${error.message}`);
+  }
+
+  async getParticipants(videoId: string): Promise<Participant[]> {
+    const { data, error } = await this.supabase
+      .from("video_participants")
+      .select("id, user_id, display_name, email")
+      .eq("video_id", videoId)
+      .order("created_at");
+    if (error) throw new Error(`get participants failed: ${error.message}`);
+    return (data as Array<{ id: string; user_id: string | null; display_name: string; email: string | null }>).map(
+      (r) => ({ id: r.id, userId: r.user_id, displayName: r.display_name, email: r.email }),
+    );
+  }
+
+  async setParticipants(
+    videoId: string,
+    participants: ParticipantInput[],
+    addedBy: string | null,
+  ): Promise<Participant[]> {
+    // Replace the whole list. RLS restricts both ops to the video's owner.
+    const del = await this.supabase.from("video_participants").delete().eq("video_id", videoId);
+    if (del.error) throw new Error(`clear participants failed: ${del.error.message}`);
+    if (participants.length) {
+      const rows = participants.map((p) => ({
+        video_id: videoId,
+        user_id: p.userId,
+        display_name: p.displayName,
+        email: p.email,
+        added_by: addedBy,
+      }));
+      const ins = await this.supabase.from("video_participants").insert(rows);
+      if (ins.error) throw new Error(`set participants failed: ${ins.error.message}`);
+    }
+    return this.getParticipants(videoId);
+  }
+
+  async searchUsers(query: string): Promise<UserResult[]> {
+    const like = `%${query.replace(/[%_]/g, "")}%`;
+    const { data, error } = await this.supabase
+      .from("profiles")
+      .select("id, display_name, first_name, last_name")
+      .or(`display_name.ilike.${like},first_name.ilike.${like},last_name.ilike.${like}`)
+      .limit(10);
+    if (error) throw new Error(`search users failed: ${error.message}`);
+    return (data as Array<{ id: string; display_name: string | null; first_name: string | null; last_name: string | null }>).map(
+      (r) => ({
+        id: r.id,
+        displayName:
+          r.display_name || [r.first_name, r.last_name].filter(Boolean).join(" ") || "Ojo player",
+      }),
+    );
   }
 }

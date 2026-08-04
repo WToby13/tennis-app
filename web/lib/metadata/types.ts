@@ -30,11 +30,33 @@ export interface Video {
 
 /** A video as it appears in a user's library, tagged with how it got there. */
 export interface LibraryEntry extends Video {
-  addedVia: "upload" | "share";
+  addedVia: "upload" | "share" | "participant";
 }
 
 export interface ShareLink {
   token: string;
+}
+
+/** Someone who played in a match — a linked Ojo user or a guest (optionally by email). */
+export interface Participant {
+  id: string;
+  /** Linked Ojo user id, or null for a guest / not-yet-joined invite. */
+  userId: string | null;
+  displayName: string;
+  email: string | null;
+}
+
+/** A participant as supplied by a client when setting the list (no id yet). */
+export interface ParticipantInput {
+  userId: string | null;
+  displayName: string;
+  email: string | null;
+}
+
+/** A user found via search, for tagging as a participant. */
+export interface UserResult {
+  id: string;
+  displayName: string;
 }
 
 export interface MetadataStore {
@@ -57,4 +79,16 @@ export interface MetadataStore {
   addToLibrary(token: string): Promise<Video | null>;
   /** Remove a video from the caller's own library (does not delete the video). */
   removeFromLibrary(videoId: string, userId: string | null): Promise<void>;
+
+  // --- participants ----------------------------------------------------------
+  /** Who played in a match. */
+  getParticipants(videoId: string): Promise<Participant[]>;
+  /** Replace a match's participant list (owner-only, enforced by RLS). */
+  setParticipants(
+    videoId: string,
+    participants: ParticipantInput[],
+    addedBy: string | null,
+  ): Promise<Participant[]>;
+  /** Search Ojo users by name, for tagging. */
+  searchUsers(query: string): Promise<UserResult[]>;
 }

@@ -91,12 +91,13 @@ export default function FeedPage() {
                 <div className="muted mono" style={{ fontSize: 13, marginTop: 6 }}>
                   {formatDate(v.createdAt)} · {formatDuration(v.durationS)} · {formatSize(v.sizeBytes)}
                   {v.addedVia === "share" && " · Added"}
+                  {v.addedVia === "participant" && " · Tagged"}
                 </div>
                 <div className="feed-actions">
                   <Link href={`/watch/${v.id}`} className="chip active">
                     ▶ Watch
                   </Link>
-                  {v.addedVia === "upload" && v.status === "ready" && <ShareButton id={v.id} />}
+                  {v.status === "ready" && <ShareButton id={v.id} />}
                 </div>
               </div>
             </article>

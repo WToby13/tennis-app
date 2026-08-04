@@ -6,8 +6,8 @@ export interface MatchVideo {
   sizeBytes: number;
   createdAt: string;
   thumbnailUrl: string | null;
-  /** How this video got into the library — 'share' = added from someone's link. */
-  addedVia: "upload" | "share";
+  /** How this video got into the library: 'share' = added from a link, 'participant' = tagged in it. */
+  addedVia: "upload" | "share" | "participant";
 }
 
 export const STATUS_LABEL: Record<MatchVideo["status"], string> = {

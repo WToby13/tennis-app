@@ -43,5 +43,24 @@ Run in the SQL editor (after 0003):
   last name and handedness and pass them as sign-up metadata, so the profile row is created with
   those fields by the trigger.
 
+## Troubleshooting
+
+**iOS Google returns to `ojotennis.com/landing` in the in-app browser instead of the app
+(`WebAuthenticationSession error 1`).** The custom scheme isn't in the Supabase **Redirect
+URLs** allow-list, so GoTrue falls back to the Site URL. Add `ojo://auth-callback` (its own
+line) under Authentication → URL Configuration → Redirect URLs and Save. No app rebuild needed.
+
+Verify from a shell (no login required) — a bare probe should bounce back to the *scheme*, not
+the Site URL:
+```
+S=$(curl -s -o /dev/null -w '%{redirect_url}' \
+  'https://<ref>.supabase.co/auth/v1/authorize?provider=google&redirect_to=ojo%3A%2F%2Fauth-callback' \
+  -H 'apikey: <anon>' | sed -n 's/.*[?&]state=\([0-9a-f-]*\).*/\1/p')
+curl -s -o /dev/null -w '%{redirect_url}\n' \
+  "https://<ref>.supabase.co/auth/v1/callback?state=$S&error=access_denied" -H 'apikey: <anon>'
+# allow-listed  → ojo://auth-callback?error=...   (fixed)
+# NOT allow-listed → https://ojotennis.com/?error=... (still broken)
+```
+
 ## Not in this slice
 Participants ("who played") is the remaining Slice 2 item — deferred; see `SHARING.md` §7/§9.

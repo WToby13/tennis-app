@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { config } from "@/lib/config";
+import { sendParticipantInvites } from "@/lib/email/invites";
 import { storeForRequest } from "@/lib/request";
 import { storage } from "@/lib/storage";
 import { badRequest, extForContentType, json } from "@/lib/util";
@@ -39,6 +40,27 @@ export async function POST(req: Request) {
     createdAt: new Date().toISOString(),
     deletedAt: null,
   });
+
+  // Optional participants chosen in the recorder's post-record shelf.
+  if (Array.isArray(body.participants) && body.participants.length) {
+    const clean = body.participants
+      .map((p: Record<string, unknown>) => ({
+        userId: typeof p?.userId === "string" && p.userId ? p.userId : null,
+        displayName: typeof p?.displayName === "string" ? p.displayName.trim() : "",
+        email:
+          typeof p?.email === "string" && p.email.trim() ? p.email.trim().toLowerCase() : null,
+      }))
+      .filter((p: { displayName: string }) => p.displayName.length > 0);
+    if (clean.length) {
+      await store.setParticipants(video.id, clean, userId).catch(() => {});
+      const emails = clean
+        .filter((p: { userId: string | null; email: string | null }) => p.userId === null && p.email)
+        .map((p: { email: string | null }) => p.email as string);
+      if (emails.length) {
+        await sendParticipantInvites({ videoId: video.id, matchTitle: video.title, emails });
+      }
+    }
+  }
 
   return json({
     videoId: video.id,

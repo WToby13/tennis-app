@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { use, useCallback, useEffect, useRef, useState } from "react";
+import { EditDetails, type EditableParticipant } from "../../EditDetails";
 
 interface Video {
   id: string;
@@ -9,6 +10,13 @@ interface Video {
   status: "uploading" | "processing" | "ready" | "failed";
   contentType: string;
   durationS: number | null;
+}
+
+interface Participant {
+  id: string;
+  userId: string | null;
+  displayName: string;
+  email: string | null;
 }
 
 const SPEEDS = [0.25, 0.5, 1, 1.5, 2];
@@ -26,12 +34,15 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [canAdd, setCanAdd] = useState(false);
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [editing, setEditing] = useState(false);
 
   /** The share token from the URL, if the visitor arrived via a share link. */
   const shareToken = () =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
 
-  // Owner: mint (or reuse) a share link, then copy the absolute URL.
+  // Anyone with access can share: mint their own link; a token-only viewer who
+  // can't mint just forwards the link they already have (current URL).
   const share = useCallback(async () => {
     let url = window.location.href;
     try {
@@ -82,6 +93,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       setThumbnailUrl(data.thumbnailUrl ?? null);
       setIsOwner(Boolean(data.isOwner));
       setCanAdd(Boolean(data.canAdd));
+      setParticipants(data.participants ?? []);
       if (data.video.status === "processing") setTimeout(load, 2000);
     }
     load();
@@ -148,12 +160,39 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             </Link>
           )}
           {isOwner && (
-            <button className="chip active" onClick={share} title="Copy a link to send a friend">
-              {copied ? "✓ Link copied" : "🔗 Share"}
+            <button className="chip" onClick={() => setEditing((v) => !v)}>
+              ✎ Edit details
             </button>
           )}
+          <button className="chip active" onClick={share} title="Copy a link to send a friend">
+            {copied ? "✓ Link copied" : "🔗 Share"}
+          </button>
         </div>
       </div>
+
+      {participants.length > 0 && !editing && (
+        <p className="muted" style={{ marginTop: 6, fontSize: 14 }}>
+          Played by {participants.map((p) => p.displayName).join(", ")}
+        </p>
+      )}
+
+      {editing && (
+        <EditDetails
+          videoId={id}
+          initialTitle={video.title}
+          initialParticipants={participants.map(
+            (p): EditableParticipant => ({ userId: p.userId, displayName: p.displayName, email: p.email }),
+          )}
+          onCancel={() => setEditing(false)}
+          onSaved={(title, list) => {
+            setVideo((v) => (v ? { ...v, title } : v));
+            setParticipants(
+              list.map((p, i) => ({ id: String(i), userId: p.userId, displayName: p.displayName, email: p.email })),
+            );
+            setEditing(false);
+          }}
+        />
+      )}
 
       {video.status === "ready" && playbackUrl ? (
         <>

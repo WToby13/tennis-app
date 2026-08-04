@@ -108,13 +108,14 @@ export default function MatchesPage() {
                 <div className="muted mono" style={{ fontSize: 13, marginTop: 6 }}>
                   {formatDate(v.createdAt)} · {formatDuration(v.durationS)} · {formatSize(v.sizeBytes)}
                   {v.addedVia === "share" && " · Added"}
+                  {v.addedVia === "participant" && " · Tagged"}
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <Link href={`/watch/${v.id}`} className="chip active">
                     ▶ Watch
                   </Link>
-                  {v.addedVia === "upload" && v.status === "ready" && <ShareButton id={v.id} />}
-                  {v.addedVia === "share" && (
+                  {v.status === "ready" && <ShareButton id={v.id} />}
+                  {v.addedVia !== "upload" && (
                     <button className="chip" onClick={() => removeFromLibrary(v.id)}>
                       Remove
                     </button>

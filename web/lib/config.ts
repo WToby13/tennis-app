@@ -47,6 +47,16 @@ export const config = {
     anonKey: supabaseAnonKey,
   },
 
+  /** Public base URL, for links in emails and elsewhere. */
+  appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "https://ojotennis.com",
+
+  /** Transactional email via Resend. Sending is a no-op until the API key is set. */
+  email: {
+    resendApiKey: process.env.RESEND_API_KEY ?? "",
+    from: process.env.EMAIL_FROM ?? "Ojo Tennis <no-reply@ojotennis.com>",
+    enabled: Boolean(process.env.RESEND_API_KEY),
+  },
+
   /**
    * Auth + Supabase metadata turn on automatically once Supabase is configured.
    * With no Supabase env, the app stays in zero-auth local mode for dev.

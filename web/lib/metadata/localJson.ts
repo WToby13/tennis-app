@@ -1,6 +1,13 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { LibraryEntry, MetadataStore, ShareLink, Video } from "./types";
+import type {
+  LibraryEntry,
+  MetadataStore,
+  Participant,
+  ShareLink,
+  UserResult,
+  Video,
+} from "./types";
 
 /**
  * Dead-simple JSON-file metadata store for local dev. Reads/writes the whole
@@ -102,5 +109,19 @@ export class LocalJsonMetadataStore implements MetadataStore {
 
   removeFromLibrary(videoId: string): Promise<void> {
     return this.softDelete(videoId);
+  }
+
+  // Participants are a multi-user concept; local dev is single-user, so these
+  // are inert (the real behaviour lives in the Supabase store).
+  async getParticipants(): Promise<Participant[]> {
+    return [];
+  }
+
+  async setParticipants(): Promise<Participant[]> {
+    return [];
+  }
+
+  async searchUsers(): Promise<UserResult[]> {
+    return [];
   }
 }
