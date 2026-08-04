@@ -17,12 +17,20 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   if (isPublic) return <main className="public-main">{children}</main>;
 
+  // The watch page is full-bleed (theater video), so it opts out of the
+  // centered, padded content column and manages its own layout.
+  const isWatch = pathname.startsWith("/watch/");
+
   return (
     <div className="app-shell">
       <Sidebar />
-      <main className="app-main">
-        <div className="app-content">{children}</div>
-      </main>
+      {isWatch ? (
+        <main className="app-main watch-main">{children}</main>
+      ) : (
+        <main className="app-main">
+          <div className="app-content">{children}</div>
+        </main>
+      )}
     </div>
   );
 }

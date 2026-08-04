@@ -547,3 +547,151 @@ video {
   font-size: 14px;
   margin-top: 16px;
 }
+
+/* ---- watch page (full-bleed, theater) ---- */
+.watch-main {
+  padding: 0;
+}
+.watch-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px 26px 14px;
+}
+.watch-header h1 {
+  font-size: 24px;
+  line-height: 1.15;
+}
+.watch-meta {
+  margin-top: 5px;
+  font-size: 13.5px;
+}
+.watch-cta {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+/* Theater stage: spans the full main column, video letterboxed on black. */
+.watch-stage {
+  width: 100%;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.watch-stage video {
+  width: 100%;
+  max-height: 78vh;
+  object-fit: contain;
+  background: #000;
+  border-radius: 0;
+  display: block;
+}
+.watch-stage .placeholder {
+  width: 100%;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  text-align: center;
+  padding: 40px;
+}
+.watch-below {
+  padding: 16px 26px 48px;
+}
+.coming-soon {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  color: var(--muted);
+  margin-top: 16px;
+}
+.coming-soon h3 {
+  font-size: 15px;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+/* ---- modal ---- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  width: 100%;
+  max-width: 480px;
+  max-height: 88vh;
+  overflow: auto;
+  padding: 22px 22px 24px;
+}
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.detail-row:last-child {
+  border-bottom: none;
+}
+.detail-row .k {
+  color: var(--muted);
+}
+
+/* destructive actions */
+.btn.danger {
+  background: var(--danger);
+  color: #fff;
+}
+.btn.danger:hover {
+  background: #d5584a;
+}
+.btn.secondary.danger-outline {
+  color: var(--danger);
+  border-color: rgba(229, 105, 91, 0.5);
+}
+.btn.secondary.danger-outline:hover {
+  background: rgba(229, 105, 91, 0.1);
+}
+.danger-confirm {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid rgba(229, 105, 91, 0.4);
+  border-radius: var(--radius-sm);
+  background: rgba(229, 105, 91, 0.08);
+  font-size: 14px;
+  line-height: 1.5;
+}

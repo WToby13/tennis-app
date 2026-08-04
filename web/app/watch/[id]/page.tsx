@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import { EditDetails, type EditableParticipant } from "../../EditDetails";
+import { formatDate, formatDuration, formatSize } from "@/lib/matchFormat";
 
 interface Video {
   id: string;
@@ -10,6 +12,9 @@ interface Video {
   status: "uploading" | "processing" | "ready" | "failed";
   contentType: string;
   durationS: number | null;
+  sizeBytes: number;
+  createdAt: string;
+  recordedAt: string | null;
 }
 
 interface Participant {
@@ -24,6 +29,7 @@ const ASSUMED_FPS = 30; // frame-step granularity until we read real fps (post-M
 
 export default function WatchPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
   const [video, setVideo] = useState<Video | null>(null);
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
@@ -36,13 +42,14 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [added, setAdded] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
-  /** The share token from the URL, if the visitor arrived via a share link. */
   const shareToken = () =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
 
-  // Anyone with access can share: mint their own link; a token-only viewer who
-  // can't mint just forwards the link they already have (current URL).
+  // Anyone with access can share: mint their own link; a token-only viewer just
+  // forwards the link they already have (current URL).
   const share = useCallback(async () => {
     let url = window.location.href;
     try {
@@ -59,7 +66,6 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     }
   }, [id]);
 
-  // Non-owner viewing via a share link: add it to their own library.
   const addToAccount = useCallback(async () => {
     const token = shareToken();
     if (!token) return;
@@ -78,6 +84,27 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       setAdding(false);
     }
   }, [id]);
+
+  const openEdit = useCallback(() => {
+    videoRef.current?.pause();
+    setConfirmingDelete(false);
+    setEditing(true);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setEditing(false);
+    setConfirmingDelete(false);
+  }, []);
+
+  const remove = useCallback(async () => {
+    setDeleting(true);
+    const res = await fetch(`/api/videos/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      router.push("/");
+    } else {
+      setDeleting(false);
+    }
+  }, [id, router]);
 
   // Load metadata; poll while still processing (relevant to the S3 faststart step).
   useEffect(() => {
@@ -118,7 +145,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const el = videoRef.current;
-      if (!el) return;
+      if (!el || editing) return;
       if (e.key === ",") stepFrames(-1);
       else if (e.key === ".") stepFrames(1);
       else if (e.key === "j") el.currentTime = Math.max(0, el.currentTime - 5);
@@ -129,26 +156,25 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stepFrames]);
+  }, [stepFrames, editing]);
 
-  if (!video) return <p className="muted">Loading…</p>;
+  if (!video) return <p className="muted" style={{ padding: 26 }}>Loading…</p>;
+
+  const players = participants.map((p) => p.displayName).join(", ");
+  const dateStr = formatDate(video.recordedAt ?? video.createdAt);
+  const ready = video.status === "ready" && playbackUrl;
 
   return (
-    <div>
-      <Link href="/" className="muted">
-        ← Match library
-      </Link>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 12,
-          marginTop: 8,
-        }}
-      >
-        <h1 style={{ margin: 0 }}>{video.title}</h1>
-        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+    <>
+      <header className="watch-header">
+        <div style={{ minWidth: 0 }}>
+          <h1>{video.title}</h1>
+          <div className="watch-meta muted">
+            {dateStr} · {formatDuration(video.durationS)}
+            {players && ` · with ${players}`}
+          </div>
+        </div>
+        <div className="watch-cta">
           {canAdd && !added && (
             <button className="btn" onClick={addToAccount} disabled={adding}>
               {adding ? "Adding…" : "+ Add to my account"}
@@ -159,91 +185,153 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
               ✓ Added — go to library
             </Link>
           )}
-          {isOwner && (
-            <button className="chip" onClick={() => setEditing((v) => !v)}>
-              ✎ Edit details
-            </button>
-          )}
-          <button className="chip active" onClick={share} title="Copy a link to send a friend">
+          <button className="chip active" onClick={share} title="Copy a link to share">
             {copied ? "✓ Link copied" : "🔗 Share"}
           </button>
+          {isOwner && (
+            <button className="chip" onClick={openEdit}>
+              ✎ Edit
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="watch-stage">
+        {ready ? (
+          <video ref={videoRef} src={playbackUrl!} poster={thumbnailUrl ?? undefined} controls preload="metadata" />
+        ) : (
+          <div className="placeholder">
+            <span className={`badge ${video.status}`}>{video.status}</span>
+            <p style={{ margin: 0 }}>
+              {video.status === "processing"
+                ? "Preparing the video for smooth scrubbing…"
+                : video.status === "uploading"
+                  ? "This match is still uploading."
+                  : "This video isn't available to play."}
+            </p>
+          </div>
+        )}
+      </div>
+
+      <div className="watch-below">
+        {ready && (
+          <>
+            <div className="controls">
+              <div className="group" aria-label="Playback speed">
+                {SPEEDS.map((s) => (
+                  <button
+                    key={s}
+                    className={`chip ${speed === s ? "active" : ""}`}
+                    onClick={() => changeSpeed(s)}
+                  >
+                    {s}×
+                  </button>
+                ))}
+              </div>
+              <div className="group" aria-label="Frame step">
+                <button className="chip" onClick={() => stepFrames(-1)} title="Previous frame ( , )">
+                  ⏮ frame
+                </button>
+                <button className="chip" onClick={() => stepFrames(1)} title="Next frame ( . )">
+                  frame ⏭
+                </button>
+              </div>
+            </div>
+            <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
+              Shortcuts: <b>,</b> / <b>.</b> step a frame · <b>j</b> / <b>l</b> jump 5s · <b>k</b>{" "}
+              play/pause. Slow-motion is the 0.25× / 0.5× speeds.
+            </p>
+          </>
+        )}
+
+        <div className="coming-soon">
+          <h3>Clips &amp; editing</h3>
+          Trim highlights and build reels from this match — coming soon.
+        </div>
+        <div className="coming-soon">
+          <h3>Comments</h3>
+          Talk through the points with the people you played — coming soon.
         </div>
       </div>
 
-      {participants.length > 0 && !editing && (
-        <p className="muted" style={{ marginTop: 6, fontSize: 14 }}>
-          Played by {participants.map((p) => p.displayName).join(", ")}
-        </p>
-      )}
-
       {editing && (
-        <EditDetails
-          videoId={id}
-          initialTitle={video.title}
-          initialParticipants={participants.map(
-            (p): EditableParticipant => ({ userId: p.userId, displayName: p.displayName, email: p.email }),
-          )}
-          onCancel={() => setEditing(false)}
-          onSaved={(title, list) => {
-            setVideo((v) => (v ? { ...v, title } : v));
-            setParticipants(
-              list.map((p, i) => ({ id: String(i), userId: p.userId, displayName: p.displayName, email: p.email })),
-            );
-            setEditing(false);
-          }}
-        />
-      )}
+        <div className="modal-overlay" onClick={closeModal}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2 style={{ fontSize: 18 }}>Match details</h2>
+              <button className="modal-close" aria-label="Close" onClick={closeModal}>
+                ×
+              </button>
+            </div>
 
-      {video.status === "ready" && playbackUrl ? (
-        <>
-          <video
-            ref={videoRef}
-            src={playbackUrl}
-            poster={thumbnailUrl ?? undefined}
-            controls
-            preload="metadata"
-          />
+            <EditDetails
+              bare
+              videoId={id}
+              initialTitle={video.title}
+              initialParticipants={participants.map(
+                (p): EditableParticipant => ({ userId: p.userId, displayName: p.displayName, email: p.email }),
+              )}
+              onCancel={closeModal}
+              onSaved={(title, list) => {
+                setVideo((v) => (v ? { ...v, title } : v));
+                setParticipants(
+                  list.map((p, i) => ({ id: String(i), userId: p.userId, displayName: p.displayName, email: p.email })),
+                );
+                closeModal();
+              }}
+            />
 
-          <div className="controls">
-            <div className="group" aria-label="Playback speed">
-              {SPEEDS.map((s) => (
-                <button
-                  key={s}
-                  className={`chip ${speed === s ? "active" : ""}`}
-                  onClick={() => changeSpeed(s)}
-                >
-                  {s}×
+            <div className="field" style={{ marginTop: 8 }}>
+              <span className="lbl">Details</span>
+              <div className="detail-row">
+                <span className="k">Recorded</span>
+                <span className="mono">{dateStr}</span>
+              </div>
+              <div className="detail-row">
+                <span className="k">Duration</span>
+                <span className="mono">{formatDuration(video.durationS)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="k">Size</span>
+                <span className="mono">{formatSize(video.sizeBytes)}</span>
+              </div>
+            </div>
+
+            {confirmingDelete ? (
+              <div className="danger-confirm">
+                <p style={{ margin: "0 0 12px" }}>
+                  Delete <b>{video.title}</b> for everyone? Anyone it was shared with loses access
+                  and this can’t be undone.
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn danger" onClick={remove} disabled={deleting}>
+                    {deleting ? "Deleting…" : "Yes, delete match"}
+                  </button>
+                  <button
+                    className="btn secondary"
+                    onClick={() => setConfirmingDelete(false)}
+                    disabled={deleting}
+                  >
+                    Keep it
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <button className="btn secondary" onClick={share}>
+                  {copied ? "✓ Link copied" : "🔗 Share"}
                 </button>
-              ))}
-            </div>
-
-            <div className="group" aria-label="Frame step">
-              <button className="chip" onClick={() => stepFrames(-1)} title="Previous frame ( , )">
-                ⏮ frame
-              </button>
-              <button className="chip" onClick={() => stepFrames(1)} title="Next frame ( . )">
-                frame ⏭
-              </button>
-            </div>
+                <button
+                  className="btn secondary danger-outline"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  Delete match
+                </button>
+              </div>
+            )}
           </div>
-
-          <p className="muted" style={{ fontSize: 13, marginTop: 12 }}>
-            Shortcuts: <b>,</b> / <b>.</b> step a frame · <b>j</b> / <b>l</b> jump 5s · <b>k</b> play/pause.
-            Slow-motion is the 0.25× / 0.5× speeds.
-          </p>
-        </>
-      ) : (
-        <div className="card" style={{ padding: 40, textAlign: "center" }}>
-          <span className={`badge ${video.status}`}>{video.status}</span>
-          <p className="muted" style={{ marginTop: 12 }}>
-            {video.status === "processing"
-              ? "Preparing the video for smooth scrubbing…"
-              : video.status === "uploading"
-                ? "This match is still uploading."
-                : "This video isn't available to play."}
-          </p>
         </div>
       )}
-    </div>
+    </>
   );
 }

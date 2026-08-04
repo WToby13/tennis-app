@@ -14,10 +14,12 @@ interface Props {
   initialParticipants: EditableParticipant[];
   onSaved: (title: string, participants: EditableParticipant[]) => void;
   onCancel: () => void;
+  /** Render without the outer card (e.g. when already inside a modal). */
+  bare?: boolean;
 }
 
 /** Owner editor for a match's title + participants (search users, add guests). */
-export function EditDetails({ videoId, initialTitle, initialParticipants, onSaved, onCancel }: Props) {
+export function EditDetails({ videoId, initialTitle, initialParticipants, onSaved, onCancel, bare }: Props) {
   const [title, setTitle] = useState(initialTitle);
   const [list, setList] = useState<EditableParticipant[]>(initialParticipants);
   const [query, setQuery] = useState("");
@@ -93,7 +95,7 @@ export function EditDetails({ videoId, initialTitle, initialParticipants, onSave
   }
 
   return (
-    <div className="card" style={{ padding: 20, marginTop: 16 }}>
+    <div className={bare ? "" : "card"} style={bare ? undefined : { padding: 20, marginTop: 16 }}>
       <label className="field">
         <span className="lbl">Match name</span>
         <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} disabled={saving} />
