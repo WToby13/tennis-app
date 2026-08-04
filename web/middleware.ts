@@ -41,8 +41,13 @@ export async function middleware(request: NextRequest) {
     if (path.startsWith("/api")) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
+    // Bounce to login, remembering where they were headed (e.g. a shared
+    // /watch/<id>?s=<token> link) so we can return them there after sign-in.
     const redirect = request.nextUrl.clone();
+    const next = request.nextUrl.pathname + request.nextUrl.search;
     redirect.pathname = "/login";
+    redirect.search = "";
+    redirect.searchParams.set("next", next);
     return NextResponse.redirect(redirect);
   }
 

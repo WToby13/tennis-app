@@ -34,8 +34,10 @@ export async function POST(req: Request) {
     partSizeBytes: config.partSizeBytes,
     durationS: null,
     status: "uploading",
+    visibility: "private",
     recordedAt: body.recordedAt ?? null,
     createdAt: new Date().toISOString(),
+    deletedAt: null,
   });
 
   return json({

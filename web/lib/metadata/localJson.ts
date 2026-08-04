@@ -1,11 +1,15 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import type { MetadataStore, Video } from "./types";
+import type { LibraryEntry, MetadataStore, ShareLink, Video } from "./types";
 
 /**
  * Dead-simple JSON-file metadata store for local dev. Reads/writes the whole
  * file under a per-process mutex — fine for one user + a handful of videos.
  * In prod this is replaced by Supabase/Postgres (same MetadataStore interface).
+ *
+ * Local mode is single-user with no auth, so the sharing concepts collapse:
+ * everything is "yours", a share token is just the video id, and adding a shared
+ * video is a no-op. The real multi-user behaviour lives in the Supabase store.
  */
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DB_FILE = path.join(DATA_DIR, "videos.json");
@@ -43,12 +47,16 @@ export class LocalJsonMetadataStore implements MetadataStore {
 
   async get(id: string): Promise<Video | null> {
     const all = await readAll();
-    return all.find((v) => v.id === id) ?? null;
+    const v = all.find((x) => x.id === id) ?? null;
+    return v && !v.deletedAt ? v : null;
   }
 
-  async list(): Promise<Video[]> {
+  async list(): Promise<LibraryEntry[]> {
     const all = await readAll();
-    return all.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return all
+      .filter((v) => !v.deletedAt)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((v) => ({ ...v, addedVia: "upload" as const }));
   }
 
   update(id: string, patch: Partial<Video>): Promise<Video> {
@@ -62,10 +70,37 @@ export class LocalJsonMetadataStore implements MetadataStore {
     });
   }
 
+  softDelete(id: string): Promise<void> {
+    return withLock(async () => {
+      const all = await readAll();
+      const idx = all.findIndex((v) => v.id === id);
+      if (idx === -1) return;
+      all[idx] = { ...all[idx], deletedAt: new Date().toISOString() };
+      await writeAll(all);
+    });
+  }
+
   delete(id: string): Promise<void> {
     return withLock(async () => {
       const all = await readAll();
       await writeAll(all.filter((v) => v.id !== id));
     });
+  }
+
+  // In local mode the token *is* the video id — sharing has no separate table.
+  async createShareLink(videoId: string): Promise<ShareLink> {
+    return { token: videoId };
+  }
+
+  getByShareToken(token: string): Promise<Video | null> {
+    return this.get(token);
+  }
+
+  addToLibrary(token: string): Promise<Video | null> {
+    return this.get(token); // already "yours" — nothing to add
+  }
+
+  removeFromLibrary(videoId: string): Promise<void> {
+    return this.softDelete(videoId);
   }
 }

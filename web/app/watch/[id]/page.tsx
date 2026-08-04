@@ -22,29 +22,66 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [speed, setSpeed] = useState(1);
   const [copied, setCopied] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [canAdd, setCanAdd] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(false);
 
+  /** The share token from the URL, if the visitor arrived via a share link. */
+  const shareToken = () =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
+
+  // Owner: mint (or reuse) a share link, then copy the absolute URL.
   const share = useCallback(async () => {
-    const url = window.location.href;
+    let url = window.location.href;
     try {
+      const res = await fetch(`/api/videos/${id}/share`, { method: "POST" });
+      if (res.ok) {
+        const { path } = await res.json();
+        url = `${window.location.origin}${path}`;
+      }
       await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
       window.prompt("Copy this link to share:", url);
     }
-  }, []);
+  }, [id]);
+
+  // Non-owner viewing via a share link: add it to their own library.
+  const addToAccount = useCallback(async () => {
+    const token = shareToken();
+    if (!token) return;
+    setAdding(true);
+    try {
+      const res = await fetch(`/api/videos/${id}/add`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (res.ok) {
+        setAdded(true);
+        setCanAdd(false);
+      }
+    } finally {
+      setAdding(false);
+    }
+  }, [id]);
 
   // Load metadata; poll while still processing (relevant to the S3 faststart step).
   useEffect(() => {
     let active = true;
     async function load() {
-      const res = await fetch(`/api/videos/${id}`);
+      const token = shareToken();
+      const res = await fetch(`/api/videos/${id}${token ? `?s=${encodeURIComponent(token)}` : ""}`);
       if (!res.ok) return;
       const data = await res.json();
       if (!active) return;
       setVideo(data.video);
       setPlaybackUrl(data.playbackUrl);
       setThumbnailUrl(data.thumbnailUrl ?? null);
+      setIsOwner(Boolean(data.isOwner));
+      setCanAdd(Boolean(data.canAdd));
       if (data.video.status === "processing") setTimeout(load, 2000);
     }
     load();
@@ -99,9 +136,23 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
         }}
       >
         <h1 style={{ margin: 0 }}>{video.title}</h1>
-        <button className="chip active" onClick={share} title="Copy a link to send a friend">
-          {copied ? "✓ Link copied" : "🔗 Share"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          {canAdd && !added && (
+            <button className="btn" onClick={addToAccount} disabled={adding}>
+              {adding ? "Adding…" : "+ Add to my account"}
+            </button>
+          )}
+          {added && (
+            <Link href="/" className="chip active">
+              ✓ Added — go to library
+            </Link>
+          )}
+          {isOwner && (
+            <button className="chip active" onClick={share} title="Copy a link to send a friend">
+              {copied ? "✓ Link copied" : "🔗 Share"}
+            </button>
+          )}
+        </div>
       </div>
 
       {video.status === "ready" && playbackUrl ? (

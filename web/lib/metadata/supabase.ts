@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { MetadataStore, Video } from "./types";
+import { randomToken } from "../util";
+import type { LibraryEntry, MetadataStore, ShareLink, Video } from "./types";
 
 /** DB row shape (snake_case) for the `videos` table. */
 interface Row {
@@ -13,8 +14,10 @@ interface Row {
   part_size_bytes: number;
   duration_s: number | null;
   status: Video["status"];
+  visibility: Video["visibility"];
   recorded_at: string | null;
   created_at: string;
+  deleted_at: string | null;
 }
 
 function toVideo(r: Row): Video {
@@ -29,8 +32,10 @@ function toVideo(r: Row): Video {
     partSizeBytes: r.part_size_bytes,
     durationS: r.duration_s,
     status: r.status,
+    visibility: r.visibility,
     recordedAt: r.recorded_at,
     createdAt: r.created_at,
+    deletedAt: r.deleted_at,
   };
 }
 
@@ -46,13 +51,16 @@ function toRow(patch: Partial<Video>): Partial<Row> {
   if (patch.partSizeBytes !== undefined) row.part_size_bytes = patch.partSizeBytes;
   if (patch.durationS !== undefined) row.duration_s = patch.durationS;
   if (patch.status !== undefined) row.status = patch.status;
+  if (patch.visibility !== undefined) row.visibility = patch.visibility;
   if (patch.recordedAt !== undefined) row.recorded_at = patch.recordedAt;
+  if (patch.deletedAt !== undefined) row.deleted_at = patch.deletedAt;
   return row;
 }
 
 /**
  * Postgres-backed metadata store. Uses a request-scoped Supabase client, so all
- * reads/writes run under the signed-in user's RLS policies.
+ * reads/writes run under the signed-in user's RLS policies. Share-link resolution
+ * goes through security-definer RPCs (see migration 0002) rather than table reads.
  */
 export class SupabaseMetadataStore implements MetadataStore {
   constructor(private supabase: SupabaseClient) {}
@@ -73,13 +81,17 @@ export class SupabaseMetadataStore implements MetadataStore {
     return data ? toVideo(data as Row) : null;
   }
 
-  async list(): Promise<Video[]> {
+  async list(): Promise<LibraryEntry[]> {
+    // Videos in the caller's library, newest addition first. `!inner` drops rows
+    // whose video is inaccessible (e.g. soft-deleted) under the videos RLS policy.
     const { data, error } = await this.supabase
-      .from("videos")
-      .select()
-      .order("created_at", { ascending: false });
-    if (error) throw new Error(`list videos failed: ${error.message}`);
-    return (data as Row[]).map(toVideo);
+      .from("library_items")
+      .select("added_via, videos!inner(*)")
+      .order("added_at", { ascending: false });
+    if (error) throw new Error(`list library failed: ${error.message}`);
+    return (data as unknown as Array<{ added_via: LibraryEntry["addedVia"]; videos: Row }>).map(
+      (r) => ({ ...toVideo(r.videos), addedVia: r.added_via }),
+    );
   }
 
   async update(id: string, patch: Partial<Video>): Promise<Video> {
@@ -93,8 +105,54 @@ export class SupabaseMetadataStore implements MetadataStore {
     return toVideo(data as Row);
   }
 
+  async softDelete(id: string): Promise<void> {
+    const { error } = await this.supabase
+      .from("videos")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", id); // RLS enforces owner-only
+    if (error) throw new Error(`soft-delete video failed: ${error.message}`);
+  }
+
   async delete(id: string): Promise<void> {
     const { error } = await this.supabase.from("videos").delete().eq("id", id);
     if (error) throw new Error(`delete video failed: ${error.message}`);
+  }
+
+  async createShareLink(videoId: string, createdBy: string | null): Promise<ShareLink> {
+    // Reuse an existing live link so the shareable URL stays stable.
+    const { data: existing } = await this.supabase
+      .from("share_links")
+      .select("token")
+      .eq("video_id", videoId)
+      .is("revoked_at", null)
+      .limit(1)
+      .maybeSingle();
+    if (existing?.token) return { token: existing.token as string };
+
+    const token = randomToken();
+    const { error } = await this.supabase
+      .from("share_links")
+      .insert({ token, video_id: videoId, created_by: createdBy });
+    if (error) throw new Error(`create share link failed: ${error.message}`);
+    return { token };
+  }
+
+  async getByShareToken(token: string): Promise<Video | null> {
+    const { data, error } = await this.supabase.rpc("get_shared_video", { p_token: token });
+    if (error || !data) return null;
+    return toVideo(data as Row);
+  }
+
+  async addToLibrary(token: string): Promise<Video | null> {
+    const { data, error } = await this.supabase.rpc("add_shared_video", { p_token: token });
+    if (error || !data) return null;
+    return toVideo(data as Row);
+  }
+
+  async removeFromLibrary(videoId: string, userId: string | null): Promise<void> {
+    let q = this.supabase.from("library_items").delete().eq("video_id", videoId);
+    if (userId) q = q.eq("user_id", userId); // RLS also scopes to the caller
+    const { error } = await q;
+    if (error) throw new Error(`remove from library failed: ${error.message}`);
   }
 }

@@ -4,7 +4,13 @@ import { json, notFound } from "@/lib/util";
 
 export const runtime = "nodejs";
 
-/** Delete a video and its stored assets. Owner-only. */
+/**
+ * Owner soft-delete: hide the video everywhere, then purge its bytes.
+ * These are deliberately two steps — once clips can reference the original,
+ * the purge becomes conditional on nothing else needing the bytes.
+ * Non-owners don't delete here; they remove it from their own library instead
+ * (see ./library).
+ */
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { store, userId } = await storeForRequest();
@@ -13,18 +19,34 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!video) return notFound("Video not found");
   if (userId && video.ownerId && video.ownerId !== userId) return notFound("Video not found");
 
-  await storage().deleteVideoAssets(video.id, video.key);
-  await store.delete(video.id); // RLS also enforces owner-only delete in auth mode
+  await store.softDelete(video.id); // hide everywhere (RLS enforces owner-only)
+  await storage().deleteVideoAssets(video.id, video.key); // separate byte purge
 
   return json({ ok: true });
 }
 
-/** Video detail, including a playback URL once it's ready. */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+/**
+ * Video detail, including a playback URL once it's ready.
+ *
+ * Access: the caller sees it if they own it / have it in their library / it's
+ * public (all via `store.get`), OR they arrived with a valid `?s=<token>` share
+ * link. `canAdd` tells the UI to offer "Add to my account".
+ */
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { store } = await storeForRequest();
-  const video = await store.get(id);
+  const { store, userId } = await storeForRequest();
+
+  const token = new URL(req.url).searchParams.get("s");
+  let video = await store.get(id);
+  const inLibrary = video !== null; // get() only returns it if the caller already has access
+
+  if (!video && token) {
+    const shared = await store.getByShareToken(token);
+    if (shared && shared.id === id) video = shared;
+  }
   if (!video) return notFound("Video not found");
+
+  const isOwner = Boolean(userId && video.ownerId && video.ownerId === userId);
 
   const playbackUrl =
     video.status === "ready" ? await storage().getPlaybackUrl(video.id, video.key) : null;
@@ -33,5 +55,5 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     .getThumbnailUrl(video.id)
     .catch(() => null);
 
-  return json({ video, playbackUrl, thumbnailUrl });
+  return json({ video, playbackUrl, thumbnailUrl, isOwner, inLibrary, canAdd: !inLibrary });
 }

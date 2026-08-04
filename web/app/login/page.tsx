@@ -6,6 +6,14 @@ import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 type Mode = "signin" | "signup";
 
+/** Where to go after auth: the `?next=` path if it's a safe in-app path, else home. */
+function nextTarget(): string {
+  if (typeof window === "undefined") return "/";
+  const next = new URLSearchParams(window.location.search).get("next");
+  // Only allow same-site absolute paths (block "//evil.com" and full URLs).
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
@@ -42,7 +50,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/");
+    router.push(nextTarget());
     router.refresh();
   }
 

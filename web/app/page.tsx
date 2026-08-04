@@ -11,6 +11,8 @@ interface Video {
   sizeBytes: number;
   createdAt: string;
   thumbnailUrl: string | null;
+  /** How this video got into the library — 'share' = added from someone's link. */
+  addedVia: "upload" | "share";
 }
 
 function formatDuration(s: number | null): string {
@@ -41,15 +43,20 @@ const STATUS_LABEL: Record<Video["status"], string> = {
   failed: "Failed",
 };
 
-/** Copy a shareable watch link to the clipboard. */
+/** Mint a revocable share link and copy it to the clipboard. */
 function ShareButton({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
       className="chip"
       onClick={async () => {
-        const url = `${window.location.origin}/watch/${id}`;
+        let url = `${window.location.origin}/watch/${id}`;
         try {
+          const res = await fetch(`/api/videos/${id}/share`, { method: "POST" });
+          if (res.ok) {
+            const { path } = await res.json();
+            url = `${window.location.origin}${path}`;
+          }
           await navigator.clipboard.writeText(url);
           setCopied(true);
           setTimeout(() => setCopied(false), 1500);
@@ -73,6 +80,12 @@ export default function MatchesPage() {
       .catch(() => setVideos([]));
   }, []);
 
+  /** Drop a shared video from my library (does not delete the original). */
+  async function removeFromLibrary(id: string) {
+    setVideos((vs) => (vs ?? []).filter((v) => v.id !== id));
+    await fetch(`/api/videos/${id}/library`, { method: "DELETE" }).catch(() => {});
+  }
+
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -80,7 +93,7 @@ export default function MatchesPage() {
           <div className="eyebrow" style={{ marginBottom: 8 }}>Library</div>
           <h1 style={{ marginBottom: 6 }}>Your matches</h1>
           <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            Everyone signed in can watch these — share a link with a friend.
+            Only you can see these. Share a link to let a friend watch or add it.
           </p>
         </div>
         <Link href="/upload" className="btn">
@@ -142,12 +155,18 @@ export default function MatchesPage() {
                 </div>
                 <div className="muted mono" style={{ fontSize: 13, marginTop: 6 }}>
                   {formatDate(v.createdAt)} · {formatDuration(v.durationS)} · {formatSize(v.sizeBytes)}
+                  {v.addedVia === "share" && " · Added"}
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                   <Link href={`/watch/${v.id}`} className="chip active">
                     ▶ Watch
                   </Link>
-                  {v.status === "ready" && <ShareButton id={v.id} />}
+                  {v.addedVia === "upload" && v.status === "ready" && <ShareButton id={v.id} />}
+                  {v.addedVia === "share" && (
+                    <button className="chip" onClick={() => removeFromLibrary(v.id)}>
+                      Remove
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

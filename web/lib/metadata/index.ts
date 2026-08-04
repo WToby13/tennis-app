@@ -20,4 +20,11 @@ export function metadata(supabase?: SupabaseClient): MetadataStore {
   return localStore;
 }
 
-export type { MetadataStore, Video, VideoStatus } from "./types";
+export type {
+  LibraryEntry,
+  MetadataStore,
+  ShareLink,
+  Video,
+  VideoStatus,
+  VideoVisibility,
+} from "./types";

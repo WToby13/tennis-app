@@ -1,3 +1,10 @@
+import { randomBytes } from "node:crypto";
+
+/** A URL-safe, unguessable share token (~24 chars). */
+export function randomToken(): string {
+  return randomBytes(18).toString("base64url");
+}
+
 export function extForContentType(contentType: string): string {
   switch (contentType) {
     case "video/mp4":
