@@ -2,76 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { ShareButton } from "./ShareButton";
+import {
+  formatDate,
+  formatDuration,
+  formatSize,
+  STATUS_LABEL,
+  type MatchVideo,
+} from "@/lib/matchFormat";
 
-interface Video {
-  id: string;
-  title: string;
-  status: "uploading" | "processing" | "ready" | "failed";
-  durationS: number | null;
-  sizeBytes: number;
-  createdAt: string;
-  thumbnailUrl: string | null;
-  /** How this video got into the library — 'share' = added from someone's link. */
-  addedVia: "upload" | "share";
-}
-
-function formatDuration(s: number | null): string {
-  if (!s) return "—";
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${String(sec).padStart(2, "0")}`;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
-  if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(0)} MB`;
-  return `${(bytes / 1e3).toFixed(0)} KB`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-const STATUS_LABEL: Record<Video["status"], string> = {
-  uploading: "Uploading",
-  processing: "Processing",
-  ready: "Ready",
-  failed: "Failed",
-};
-
-/** Mint a revocable share link and copy it to the clipboard. */
-function ShareButton({ id }: { id: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      className="chip"
-      onClick={async () => {
-        let url = `${window.location.origin}/watch/${id}`;
-        try {
-          const res = await fetch(`/api/videos/${id}/share`, { method: "POST" });
-          if (res.ok) {
-            const { path } = await res.json();
-            url = `${window.location.origin}${path}`;
-          }
-          await navigator.clipboard.writeText(url);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1500);
-        } catch {
-          window.prompt("Copy this link to share:", url);
-        }
-      }}
-    >
-      {copied ? "✓ Copied" : "🔗 Share"}
-    </button>
-  );
-}
-
-export default function MatchesPage() {
-  const [videos, setVideos] = useState<Video[] | null>(null);
+export default function FeedPage() {
+  const [videos, setVideos] = useState<MatchVideo[] | null>(null);
 
   useEffect(() => {
     fetch("/api/videos")
@@ -80,46 +21,47 @@ export default function MatchesPage() {
       .catch(() => setVideos([]));
   }, []);
 
-  /** Drop a shared video from my library (does not delete the original). */
-  async function removeFromLibrary(id: string) {
-    setVideos((vs) => (vs ?? []).filter((v) => v.id !== id));
-    await fetch(`/api/videos/${id}/library`, { method: "DELETE" }).catch(() => {});
-  }
-
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 8 }}>Library</div>
-          <h1 style={{ marginBottom: 6 }}>Your matches</h1>
-          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            Only you can see these. Share a link to let a friend watch or add it.
-          </p>
-        </div>
-        <Link href="/upload" className="btn">
-          Upload a match
-        </Link>
+      <div className="eyebrow" style={{ marginBottom: 8 }}>
+        For you
       </div>
+      <h1 style={{ marginBottom: 6 }}>Latest matches</h1>
+      <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+        Your most recent recordings, newest first.
+      </p>
 
-      {videos === null && <p className="muted" style={{ marginTop: 20 }}>Loading…</p>}
+      {videos === null && (
+        <p className="muted" style={{ marginTop: 20 }}>
+          Loading…
+        </p>
+      )}
 
       {videos?.length === 0 && (
-        <div className="card" style={{ padding: 40, textAlign: "center", marginTop: 20 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/monogram.svg" alt="" width={56} height={56} style={{ opacity: 0.45, margin: "0 auto 8px" }} />
-          <p className="muted">
-            No matches yet. Record one in the iPhone app, or upload a file to get started.
-          </p>
-          <Link href="/upload" className="btn">
-            Upload a match
-          </Link>
+        <div className="feed">
+          <div className="card" style={{ padding: 40, textAlign: "center" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/monogram.svg"
+              alt=""
+              width={56}
+              height={56}
+              style={{ opacity: 0.45, margin: "0 auto 8px" }}
+            />
+            <p className="muted">
+              Nothing here yet. Record a match in the iPhone app, or upload one to get started.
+            </p>
+            <Link href="/upload" className="btn">
+              Upload a match
+            </Link>
+          </div>
         </div>
       )}
 
       {videos && videos.length > 0 && (
-        <div className="grid" style={{ marginTop: 20 }}>
+        <div className="feed">
           {videos.map((v) => (
-            <div key={v.id} className="card">
+            <article key={v.id} className="feed-card">
               <Link href={`/watch/${v.id}`} style={{ color: "inherit" }}>
                 <div className="thumb">
                   {v.thumbnailUrl && (
@@ -129,7 +71,6 @@ export default function MatchesPage() {
                       alt=""
                       className="thumb-img"
                       onError={(e) => {
-                        // No thumbnail uploaded (e.g. older match) — fall back to the court tile.
                         e.currentTarget.style.display = "none";
                       }}
                     />
@@ -137,17 +78,11 @@ export default function MatchesPage() {
                   <span className="play" />
                 </div>
               </Link>
-              <div style={{ padding: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <div className="body">
+                <div className="feed-head">
                   <Link
                     href={`/watch/${v.id}`}
-                    style={{
-                      color: "inherit",
-                      fontWeight: 700,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
+                    style={{ color: "inherit", fontWeight: 700, fontSize: 17 }}
                   >
                     {v.title}
                   </Link>
@@ -157,19 +92,14 @@ export default function MatchesPage() {
                   {formatDate(v.createdAt)} · {formatDuration(v.durationS)} · {formatSize(v.sizeBytes)}
                   {v.addedVia === "share" && " · Added"}
                 </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <div className="feed-actions">
                   <Link href={`/watch/${v.id}`} className="chip active">
                     ▶ Watch
                   </Link>
                   {v.addedVia === "upload" && v.status === "ready" && <ShareButton id={v.id} />}
-                  {v.addedVia === "share" && (
-                    <button className="chip" onClick={() => removeFromLibrary(v.id)}>
-                      Remove
-                    </button>
-                  )}
                 </div>
               </div>
-            </div>
+            </article>
           ))}
         </div>
       )}

@@ -35,19 +35,24 @@ export async function middleware(request: NextRequest) {
   } = token ? await supabase.auth.getUser(token) : await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const isPublic = path.startsWith("/login") || path.startsWith("/auth");
+  const publicPrefixes = ["/landing", "/sign-in", "/sign-up", "/login", "/auth"];
+  const isPublic = publicPrefixes.some((p) => path === p || path.startsWith(`${p}/`));
 
   if (!user && !isPublic) {
     if (path.startsWith("/api")) {
       return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     }
-    // Bounce to login, remembering where they were headed (e.g. a shared
-    // /watch/<id>?s=<token> link) so we can return them there after sign-in.
     const redirect = request.nextUrl.clone();
-    const next = request.nextUrl.pathname + request.nextUrl.search;
-    redirect.pathname = "/login";
     redirect.search = "";
-    redirect.searchParams.set("next", next);
+    if (path === "/") {
+      // A fresh visitor to the root sees the marketing landing page.
+      redirect.pathname = "/landing";
+    } else {
+      // Deep links (e.g. a shared /watch/<id>?s=<token>) go via sign-in and
+      // return to where they were headed.
+      redirect.pathname = "/sign-in";
+      redirect.searchParams.set("next", request.nextUrl.pathname + request.nextUrl.search);
+    }
     return NextResponse.redirect(redirect);
   }
 

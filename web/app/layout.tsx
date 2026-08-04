@@ -1,19 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import Link from "next/link";
-import { AuthNav } from "./AuthNav";
-import { config } from "@/lib/config";
-import { getUser } from "@/lib/supabase/server";
+import { Shell } from "./Shell";
 import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://ojotennis.com"),
-  title: "Ojo",
+  title: "Ojo Tennis",
   description: "Record, review and share your tennis matches.",
-  applicationName: "Ojo",
+  applicationName: "Ojo Tennis",
   openGraph: {
-    title: "Ojo",
+    title: "Ojo Tennis",
     description: "Record, review and share your tennis matches.",
-    siteName: "Ojo",
+    siteName: "Ojo Tennis",
     type: "website",
   },
 };
@@ -22,9 +19,7 @@ export const viewport: Viewport = {
   themeColor: "#14110d",
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const user = config.authEnabled ? await getUser() : null;
-
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
@@ -36,19 +31,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body>
-        <header className="site">
-          <Link href="/" className="brand">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img className="mark" src="/logo.svg" alt="" width={28} height={28} />
-            Ojo
-          </Link>
-          <nav>
-            <Link href="/">Matches</Link>
-            <Link href="/upload">Upload</Link>
-            {config.authEnabled && <AuthNav email={user?.email ?? null} />}
-          </nav>
-        </header>
-        <main className="container">{children}</main>
+        <Shell>{children}</Shell>
       </body>
     </html>
   );
