@@ -66,6 +66,11 @@ export class LocalJsonMetadataStore implements MetadataStore {
       .map((v) => ({ ...v, addedVia: "upload" as const }));
   }
 
+  async listByOwner(): Promise<Video[]> {
+    const all = await readAll();
+    return all.filter((v) => !v.deletedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   update(id: string, patch: Partial<Video>): Promise<Video> {
     return withLock(async () => {
       const all = await readAll();

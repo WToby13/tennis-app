@@ -453,6 +453,87 @@ video {
   margin-top: 14px;
 }
 
+/* ---- avatar ---- */
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* ---- feed author header + like ---- */
+.feed-author {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 0;
+}
+.chip.like {
+  font-variant-numeric: tabular-nums;
+}
+.chip.like.liked {
+  color: var(--danger);
+}
+
+.btn-sm {
+  padding: 7px 13px;
+  font-size: 13px;
+}
+
+/* ---- people search rows ---- */
+.people-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.people-row-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ---- comments ---- */
+.comments {
+  margin-top: 20px;
+  max-width: 620px;
+}
+.comment-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.comment {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.comment-del {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.comment-del:hover {
+  color: var(--danger);
+}
+
 /* ---- landing / marketing ---- */
 .landing {
   max-width: 980px;

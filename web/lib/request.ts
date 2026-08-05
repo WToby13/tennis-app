@@ -1,6 +1,8 @@
 import { config } from "./config";
 import { metadata } from "./metadata";
 import type { MetadataStore } from "./metadata";
+import { social } from "./social";
+import type { SocialStore } from "./social";
 import { getRequestUser, getSupabaseServer } from "./supabase/server";
 
 /**
@@ -17,4 +19,13 @@ export async function storeForRequest(): Promise<{ store: MetadataStore; userId:
   const supabase = await getSupabaseServer();
   const user = await getRequestUser(supabase);
   return { store: metadata(supabase), userId: user?.id ?? null };
+}
+
+/** Like storeForRequest, but for the social store (feed, follows, likes, comments). */
+export async function socialForRequest(): Promise<{ social: SocialStore; userId: string | null }> {
+  if (!config.authEnabled) return { social: social(), userId: null };
+
+  const supabase = await getSupabaseServer();
+  const user = await getRequestUser(supabase);
+  return { social: social(supabase, user?.id ?? null), userId: user?.id ?? null };
 }

@@ -1,7 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { Avatar } from "../Avatar";
 import { config } from "@/lib/config";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
@@ -11,9 +13,12 @@ export default function ProfilePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
+  const [myId, setMyId] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [handedness, setHandedness] = useState<Hand>("right");
+  const [counts, setCounts] = useState({ followers: 0, following: 0 });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,16 +38,23 @@ export default function ProfilePage() {
         return;
       }
       setEmail(user.email ?? null);
+      setMyId(user.id);
       const { data } = await supabase
         .from("profiles")
-        .select("first_name, last_name, handedness")
+        .select("display_name, first_name, last_name, handedness")
         .eq("id", user.id)
         .maybeSingle();
       if (data) {
+        setDisplayName(data.display_name ?? "");
         setFirstName(data.first_name ?? "");
         setLastName(data.last_name ?? "");
         if (data.handedness === "left" || data.handedness === "right") setHandedness(data.handedness);
       }
+      const [{ count: followers }, { count: following }] = await Promise.all([
+        supabase.from("follows").select("*", { count: "exact", head: true }).eq("followee_id", user.id),
+        supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", user.id),
+      ]);
+      setCounts({ followers: followers ?? 0, following: following ?? 0 });
       setLoading(false);
     })();
   }, [router]);
@@ -67,7 +79,8 @@ export default function ProfilePage() {
           first_name: firstName,
           last_name: lastName,
           handedness,
-          display_name: `${firstName} ${lastName}`.trim(),
+          // Use the entered display name; fall back to first+last only when blank.
+          display_name: displayName.trim() || `${firstName} ${lastName}`.trim(),
         })
         .eq("id", user.id);
       setSaving(false);
@@ -78,7 +91,7 @@ export default function ProfilePage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
     },
-    [firstName, lastName, handedness, router],
+    [displayName, firstName, lastName, handedness, router],
   );
 
   async function signOut() {
@@ -103,12 +116,35 @@ export default function ProfilePage() {
       <div className="eyebrow" style={{ marginBottom: 8 }}>
         Account
       </div>
-      <h1 style={{ marginBottom: 6 }}>Profile</h1>
-      <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-        {email}
-      </p>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <Avatar name={displayName || `${firstName} ${lastName}`} size={56} />
+        <div>
+          <h1 style={{ marginBottom: 2 }}>{displayName || "Your profile"}</h1>
+          <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+            <b className="mono">{counts.followers}</b> followers ·{" "}
+            <b className="mono">{counts.following}</b> following · {email}
+          </p>
+        </div>
+      </div>
+      {myId && (
+        <Link href={`/u/${myId}`} className="chip" style={{ marginTop: 12, display: "inline-block" }}>
+          View public profile
+        </Link>
+      )}
 
       <form onSubmit={save} className="card" style={{ padding: 24, marginTop: 18 }}>
+        <label className="field">
+          <span className="lbl">Display name</span>
+          <input
+            type="text"
+            placeholder="Shown on your matches, feed and comments"
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            disabled={saving}
+          />
+        </label>
+
         <div style={{ display: "flex", gap: 12 }}>
           <label className="field" style={{ flex: 1 }}>
             <span className="lbl">First name</span>

@@ -2,23 +2,36 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ShareButton } from "./ShareButton";
-import {
-  formatDate,
-  formatDuration,
-  formatSize,
-  STATUS_LABEL,
-  type MatchVideo,
-} from "@/lib/matchFormat";
+import { Avatar } from "./Avatar";
+import { LikeButton } from "./LikeButton";
+import { PeopleSearch } from "./PeopleSearch";
+import { formatDate, formatDuration, STATUS_LABEL } from "@/lib/matchFormat";
+
+interface FeedItem {
+  id: string;
+  ownerId: string | null;
+  title: string;
+  status: "uploading" | "processing" | "ready" | "failed";
+  durationS: number | null;
+  createdAt: string;
+  authorName: string | null;
+  sharedBy: string | null;
+  sharedByName: string | null;
+  participantNames: string | null;
+  likeCount: number;
+  commentCount: number;
+  likedByMe: boolean;
+  thumbnailUrl: string | null;
+}
 
 export default function FeedPage() {
-  const [videos, setVideos] = useState<MatchVideo[] | null>(null);
+  const [feed, setFeed] = useState<FeedItem[] | null>(null);
 
   useEffect(() => {
-    fetch("/api/videos")
+    fetch("/api/feed")
       .then((r) => r.json())
-      .then((d) => setVideos(d.videos))
-      .catch(() => setVideos([]));
+      .then((d) => setFeed(d.feed))
+      .catch(() => setFeed([]));
   }, []);
 
   return (
@@ -28,80 +41,97 @@ export default function FeedPage() {
       </div>
       <h1 style={{ marginBottom: 6 }}>Latest matches</h1>
       <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-        Your most recent recordings, newest first.
+        Matches from players you follow, and your own.
       </p>
 
-      {videos === null && (
+      {feed === null && (
         <p className="muted" style={{ marginTop: 20 }}>
           Loading…
         </p>
       )}
 
-      {videos?.length === 0 && (
+      {feed?.length === 0 && (
         <div className="feed">
-          <div className="card" style={{ padding: 40, textAlign: "center" }}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/monogram.svg"
-              alt=""
-              width={56}
-              height={56}
-              style={{ opacity: 0.45, margin: "0 auto 8px" }}
-            />
-            <p className="muted">
-              Nothing here yet. Record a match in the iPhone app, or upload one to get started.
+          <div className="card" style={{ padding: 32, textAlign: "center" }}>
+            <p className="muted" style={{ marginBottom: 16 }}>
+              Your feed is empty. Follow players to see their matches here — or record and upload
+              your own.
             </p>
-            <Link href="/upload" className="btn">
-              Upload a match
-            </Link>
+            <PeopleSearch />
           </div>
         </div>
       )}
 
-      {videos && videos.length > 0 && (
+      {feed && feed.length > 0 && (
         <div className="feed">
-          {videos.map((v) => (
-            <article key={v.id} className="feed-card">
-              <Link href={`/watch/${v.id}`} style={{ color: "inherit" }}>
-                <div className="thumb">
-                  {v.thumbnailUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={v.thumbnailUrl}
-                      alt=""
-                      className="thumb-img"
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
+          {feed.map((v) => {
+            const who = v.sharedBy ? v.sharedByName : v.authorName;
+            const whoId = v.sharedBy ?? v.ownerId;
+            return (
+              <article key={v.id} className="feed-card">
+                <div className="feed-author">
+                  <Avatar name={who} size={36} />
+                  <div style={{ lineHeight: 1.3 }}>
+                    {whoId ? (
+                      <Link href={`/u/${whoId}`} style={{ color: "inherit", fontWeight: 600 }}>
+                        {who ?? "Ojo player"}
+                      </Link>
+                    ) : (
+                      <span style={{ fontWeight: 600 }}>{who ?? "Ojo player"}</span>
+                    )}
+                    {v.sharedBy && (
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        shared a match
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Link href={`/watch/${v.id}`} style={{ color: "inherit" }}>
+                  <div className="thumb">
+                    {v.thumbnailUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={v.thumbnailUrl}
+                        alt=""
+                        className="thumb-img"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none";
+                        }}
+                      />
+                    )}
+                    <span className="play" />
+                  </div>
+                </Link>
+
+                <div className="body">
+                  <div className="feed-head">
+                    <Link
+                      href={`/watch/${v.id}`}
+                      style={{ color: "inherit", fontWeight: 700, fontSize: 17 }}
+                    >
+                      {v.title}
+                    </Link>
+                    <span className={`badge ${v.status}`}>{STATUS_LABEL[v.status]}</span>
+                  </div>
+                  <div className="muted mono" style={{ fontSize: 13, marginTop: 6 }}>
+                    {formatDate(v.createdAt)} · {formatDuration(v.durationS)}
+                    {v.participantNames && ` · ${v.participantNames}`}
+                  </div>
+                  <div className="feed-actions">
+                    <LikeButton
+                      videoId={v.id}
+                      initialCount={v.likeCount}
+                      initialLiked={v.likedByMe}
                     />
-                  )}
-                  <span className="play" />
+                    <Link href={`/watch/${v.id}`} className="chip">
+                      💬 {v.commentCount}
+                    </Link>
+                  </div>
                 </div>
-              </Link>
-              <div className="body">
-                <div className="feed-head">
-                  <Link
-                    href={`/watch/${v.id}`}
-                    style={{ color: "inherit", fontWeight: 700, fontSize: 17 }}
-                  >
-                    {v.title}
-                  </Link>
-                  <span className={`badge ${v.status}`}>{STATUS_LABEL[v.status]}</span>
-                </div>
-                <div className="muted mono" style={{ fontSize: 13, marginTop: 6 }}>
-                  {formatDate(v.createdAt)} · {formatDuration(v.durationS)} · {formatSize(v.sizeBytes)}
-                  {v.addedVia === "share" && " · Added"}
-                  {v.addedVia === "participant" && " · Tagged"}
-                </div>
-                <div className="feed-actions">
-                  <Link href={`/watch/${v.id}`} className="chip active">
-                    ▶ Watch
-                  </Link>
-                  {v.status === "ready" && <ShareButton id={v.id} />}
-                </div>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

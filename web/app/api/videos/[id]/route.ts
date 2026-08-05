@@ -1,4 +1,4 @@
-import { storeForRequest } from "@/lib/request";
+import { socialForRequest, storeForRequest } from "@/lib/request";
 import { storage } from "@/lib/storage";
 import { badRequest, json, notFound } from "@/lib/util";
 
@@ -60,6 +60,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     .getThumbnailUrl(video.id)
     .catch(() => null);
 
+  // Social state for the watch page (like/follow/share).
+  const { social } = await socialForRequest();
+  const like = await social.likeState(video.id);
+  const sharedToFollowers = await social.isSharedToFollowers(video.id);
+  const summary = video.ownerId ? await social.profileSummary(video.ownerId) : null;
+
   return json({
     video,
     playbackUrl,
@@ -69,10 +75,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     inLibrary,
     canAdd: !inLibrary,
     participants,
+    likeCount: like.count,
+    likedByMe: like.likedByMe,
+    sharedToFollowers,
+    author: summary ? { id: summary.id, displayName: summary.displayName } : null,
+    isFollowingOwner: summary?.isFollowing ?? false,
   });
 }
 
-/** Rename a match. Allowed for the owner or any participant (editors). */
+/**
+ * Edit a match. Title is editable by the owner or any participant; visibility
+ * (private/public) is owner-only.
+ */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { store, userId } = await storeForRequest();
@@ -82,14 +96,20 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const body = await req.json().catch(() => null);
   const title = typeof body?.title === "string" ? body.title.trim() : "";
-  if (!title) return badRequest("title is required");
+  const visibility =
+    body?.visibility === "private" || body?.visibility === "public" ? body.visibility : null;
+  if (!title && !visibility) return badRequest("nothing to update");
 
-  // The RPC enforces edit rights server-side; a clean 404 for non-editors.
   const participants = await store.getParticipants(id).catch(() => []);
-  const canEdit =
-    !userId || video.ownerId === userId || participants.some((p) => p.userId === userId);
+  const isOwner = !userId || video.ownerId === userId;
+  const canEdit = isOwner || participants.some((p) => p.userId === userId);
   if (!canEdit) return notFound("Video not found");
 
-  const updated = await store.setTitle(id, title);
+  let updated = video;
+  if (title) updated = await store.setTitle(id, title); // RPC enforces edit rights
+  if (visibility) {
+    if (!isOwner) return notFound("Video not found");
+    updated = await store.update(id, { visibility }); // owner-only via videos RLS
+  }
   return json({ video: updated });
 }

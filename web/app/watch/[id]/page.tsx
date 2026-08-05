@@ -3,8 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useRef, useState } from "react";
+import { CommentSection } from "../../CommentSection";
 import { EditDetails, type EditableParticipant } from "../../EditDetails";
+import { FollowButton } from "../../FollowButton";
+import { LikeButton } from "../../LikeButton";
 import { formatDate, formatDuration, formatSize } from "@/lib/matchFormat";
+
+interface Author {
+  id: string;
+  displayName: string;
+}
 
 interface Video {
   id: string;
@@ -15,6 +23,7 @@ interface Video {
   sizeBytes: number;
   createdAt: string;
   recordedAt: string | null;
+  visibility: "private" | "unlisted" | "public";
 }
 
 interface Participant {
@@ -46,6 +55,14 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [paused, setPaused] = useState(true);
+  // Social state.
+  const [likeCount, setLikeCount] = useState(0);
+  const [likedByMe, setLikedByMe] = useState(false);
+  const [author, setAuthor] = useState<Author | null>(null);
+  const [isFollowingOwner, setIsFollowingOwner] = useState(false);
+  const [sharedToFollowers, setSharedToFollowers] = useState(false);
+  const [sharingBusy, setSharingBusy] = useState(false);
+  const [visibility, setVisibility] = useState<"private" | "public">("private");
 
   const shareToken = () =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
@@ -108,6 +125,33 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     }
   }, [id, router]);
 
+  // Post this match to my followers (or stop). Available to owner/participants.
+  const toggleShareToFollowers = useCallback(async () => {
+    setSharingBusy(true);
+    const next = !sharedToFollowers;
+    try {
+      const res = await fetch(`/api/videos/${id}/share-to-followers`, {
+        method: next ? "POST" : "DELETE",
+      });
+      if (res.ok) setSharedToFollowers((await res.json()).shared);
+    } finally {
+      setSharingBusy(false);
+    }
+  }, [id, sharedToFollowers]);
+
+  // Owner-only match visibility (private/public).
+  const changeVisibility = useCallback(
+    async (v: "private" | "public") => {
+      setVisibility(v);
+      await fetch(`/api/videos/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ visibility: v }),
+      }).catch(() => {});
+    },
+    [id],
+  );
+
   // Load metadata; poll while still processing (relevant to the S3 faststart step).
   useEffect(() => {
     let active = true;
@@ -124,6 +168,12 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       setCanEdit(Boolean(data.canEdit));
       setCanAdd(Boolean(data.canAdd));
       setParticipants(data.participants ?? []);
+      setLikeCount(data.likeCount ?? 0);
+      setLikedByMe(Boolean(data.likedByMe));
+      setAuthor(data.author ?? null);
+      setIsFollowingOwner(Boolean(data.isFollowingOwner));
+      setSharedToFollowers(Boolean(data.sharedToFollowers));
+      setVisibility(data.video.visibility === "public" ? "public" : "private");
       if (data.video.status === "processing") setTimeout(load, 2000);
     }
     load();
@@ -186,11 +236,33 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
         <div style={{ minWidth: 0 }}>
           <h1>{video.title}</h1>
           <div className="watch-meta muted">
+            {author && (
+              <>
+                <Link href={`/u/${author.id}`} style={{ color: "inherit", fontWeight: 600 }}>
+                  {author.displayName}
+                </Link>
+                {" · "}
+              </>
+            )}
             {dateStr} · {formatDuration(video.durationS)}
             {players && ` · with ${players}`}
           </div>
         </div>
         <div className="watch-cta">
+          <LikeButton videoId={id} initialCount={likeCount} initialLiked={likedByMe} />
+          {!isOwner && author && (
+            <FollowButton userId={author.id} initialFollowing={isFollowingOwner} size="sm" />
+          )}
+          {canEdit && (
+            <button
+              className={`chip ${sharedToFollowers ? "active" : ""}`}
+              onClick={toggleShareToFollowers}
+              disabled={sharingBusy}
+              title="Post this match to your followers' feeds"
+            >
+              {sharedToFollowers ? "✓ Shared to followers" : "Share to followers"}
+            </button>
+          )}
           {canAdd && !added && (
             <button className="btn" onClick={addToAccount} disabled={adding}>
               {adding ? "Adding…" : "+ Add to my account"}
@@ -201,7 +273,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
               ✓ Added — go to library
             </Link>
           )}
-          <button className="chip active" onClick={share} title="Copy a link to share">
+          <button className="chip" onClick={share} title="Copy a link to share">
             {copied ? "✓ Link copied" : "🔗 Share"}
           </button>
           {canEdit && (
@@ -281,10 +353,8 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
           <h3>Clips &amp; editing</h3>
           Trim highlights and build reels from this match — coming soon.
         </div>
-        <div className="coming-soon">
-          <h3>Comments</h3>
-          Talk through the points with the people you played — coming soon.
-        </div>
+
+        <CommentSection videoId={id} />
       </div>
 
       {editing && (
@@ -329,6 +399,29 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 <span className="mono">{formatSize(video.sizeBytes)}</span>
               </div>
             </div>
+
+            {isOwner && (
+              <div className="field">
+                <span className="lbl">Who can find this match</span>
+                <div className="segmented">
+                  {(["private", "public"] as const).map((v) => (
+                    <label key={v} className={visibility === v ? "on" : ""}>
+                      <input
+                        type="radio"
+                        name="visibility"
+                        checked={visibility === v}
+                        onChange={() => changeVisibility(v)}
+                      />
+                      {v === "private" ? "Private" : "Public"}
+                    </label>
+                  ))}
+                </div>
+                <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                  Public matches can be found by anyone and appear on your profile. Either way, use
+                  “Share to followers” to post it to your feed.
+                </p>
+              </div>
+            )}
 
             {isOwner && confirmingDelete ? (
               <div className="danger-confirm">

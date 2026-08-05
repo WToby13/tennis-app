@@ -102,6 +102,17 @@ export class SupabaseMetadataStore implements MetadataStore {
     );
   }
 
+  async listByOwner(ownerId: string): Promise<Video[]> {
+    const { data, error } = await this.supabase
+      .from("videos")
+      .select()
+      .eq("owner_id", ownerId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(`list by owner failed: ${error.message}`);
+    return (data as Row[]).map(toVideo);
+  }
+
   async update(id: string, patch: Partial<Video>): Promise<Video> {
     const { data, error } = await this.supabase
       .from("videos")

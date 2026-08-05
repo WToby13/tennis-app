@@ -64,6 +64,8 @@ export interface MetadataStore {
   get(id: string): Promise<Video | null>;
   /** The caller's library (videos they uploaded or added), newest first. */
   list(): Promise<LibraryEntry[]>;
+  /** A given owner's videos that the caller may see (RLS-filtered), newest first. */
+  listByOwner(ownerId: string): Promise<Video[]>;
   update(id: string, patch: Partial<Video>): Promise<Video>;
   /** Rename a match. Allowed for the owner or any participant (editors). */
   setTitle(id: string, title: string): Promise<Video>;
