@@ -208,17 +208,58 @@ a:hover {
 .btn:active {
   transform: translateY(1px);
 }
+/* Secondary = same size, clear background, light text, orange outline. */
 .btn.secondary {
   background: transparent;
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid var(--accent);
 }
 .btn.secondary:hover {
-  background: var(--surface-2);
+  background: rgba(217, 102, 44, 0.12);
+}
+.btn.secondary.on {
+  background: rgba(217, 102, 44, 0.16);
 }
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+.btn-sm {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+/* Borderless icon button (feed action row, comment delete, modal close). */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.icon-btn:hover {
+  color: var(--accent);
+}
+.icon-btn.on {
+  color: var(--accent);
+}
+.icon-btn.liked {
+  color: var(--danger);
+}
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+/* chips that contain an icon (playback frame/play controls) */
+.chip-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 /* ---- cards / grid ---- */
@@ -419,38 +460,67 @@ video {
   display: block;
 }
 
-/* ---- vertical "for you" feed ---- */
+/* ---- Instagram-style "for you" feed ---- */
 .feed {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  max-width: 620px;
-  margin: 20px auto 0;
+  gap: 28px;
+  max-width: 500px;
+  margin: 22px auto 0;
 }
 .feed-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
-.feed-card:hover {
-  border-color: #4a4032;
-  box-shadow: var(--shadow);
-}
-.feed-card .body {
-  padding: 15px 18px 18px;
-}
-.feed-head {
+.feed-author {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 11px;
+  padding: 14px 16px;
 }
-.feed-actions {
+.feed-author .name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text);
+}
+.feed-author .sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.feed-media {
+  display: block;
+  background: #000;
+}
+/* IG-style action row: like/comment/share left, add-to-profile right. */
+.feed-row {
   display: flex;
-  gap: 8px;
-  margin-top: 14px;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px 2px;
+}
+.feed-row .spacer {
+  flex: 1;
+}
+.feed-likes {
+  padding: 5px 16px 0;
+  font-weight: 600;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.feed-caption {
+  padding: 4px 16px 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.feed-caption .title {
+  font-weight: 700;
+}
+.feed-caption .meta {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 1px;
 }
 
 /* ---- avatar ---- */
@@ -466,25 +536,6 @@ video {
   letter-spacing: -0.01em;
   flex-shrink: 0;
   overflow: hidden;
-}
-
-/* ---- feed author header + like ---- */
-.feed-author {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 14px 0;
-}
-.chip.like {
-  font-variant-numeric: tabular-nums;
-}
-.chip.like.liked {
-  color: var(--danger);
-}
-
-.btn-sm {
-  padding: 7px 13px;
-  font-size: 13px;
 }
 
 /* ---- people search rows ---- */
@@ -522,16 +573,69 @@ video {
   border-top: 1px solid var(--border);
 }
 .comment-del {
+  display: inline-flex;
+  align-items: center;
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 2px;
 }
 .comment-del:hover {
   color: var(--danger);
+}
+
+/* ---- compact comments inside a feed card ---- */
+.feed-comments {
+  padding: 6px 16px 16px;
+}
+.feed-comment {
+  font-size: 14px;
+  line-height: 1.4;
+  margin-top: 3px;
+  word-break: break-word;
+}
+.feed-comment .who {
+  font-weight: 600;
+}
+.feed-viewall {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 5px;
+  display: inline-block;
+}
+.feed-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+.feed-add input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  font-size: 14px;
+}
+.feed-add input:focus {
+  outline: none;
+  box-shadow: none;
+  border: none;
+}
+.feed-add .post {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0;
+}
+.feed-add .post:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* ---- landing / marketing ---- */
@@ -739,13 +843,16 @@ video {
   margin-bottom: 14px;
 }
 .modal-close {
+  display: inline-flex;
+  align-items: center;
   background: none;
   border: none;
   color: var(--muted);
-  font-size: 22px;
-  line-height: 1;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 2px;
+}
+.modal-close:hover {
+  color: var(--text);
 }
 .detail-row {
   display: flex;

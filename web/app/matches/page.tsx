@@ -110,13 +110,13 @@ export default function MatchesPage() {
                   {v.addedVia === "share" && " · Added"}
                   {v.addedVia === "participant" && " · Tagged"}
                 </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                  <Link href={`/watch/${v.id}`} className="chip active">
-                    ▶ Watch
+                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                  <Link href={`/watch/${v.id}`} className="btn btn-sm">
+                    Watch
                   </Link>
                   {v.status === "ready" && <ShareButton id={v.id} />}
                   {v.addedVia !== "upload" && (
-                    <button className="chip" onClick={() => removeFromLibrary(v.id)}>
+                    <button className="btn secondary btn-sm" onClick={() => removeFromLibrary(v.id)}>
                       Remove
                     </button>
                   )}

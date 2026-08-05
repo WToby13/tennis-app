@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { HeartIcon } from "./icons";
+import { useLike } from "./useLike";
 
-/** Like / unlike a match; shows the current count. */
+/** Like control for the watch header: an outline button with heart + count. */
 export function LikeButton({
   videoId,
   initialCount,
@@ -12,34 +13,18 @@ export function LikeButton({
   initialCount: number;
   initialLiked: boolean;
 }) {
-  const [liked, setLiked] = useState(initialLiked);
-  const [count, setCount] = useState(initialCount);
-  const [busy, setBusy] = useState(false);
-
-  async function toggle() {
-    setBusy(true);
-    const method = liked ? "DELETE" : "POST";
-    try {
-      const res = await fetch(`/api/videos/${videoId}/like`, { method });
-      if (res.ok) {
-        const d = await res.json();
-        setLiked(d.likedByMe);
-        setCount(d.count);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  const { liked, count, busy, toggle } = useLike(videoId, initialCount, initialLiked);
   return (
     <button
-      className={`chip like ${liked ? "liked" : ""}`}
+      className={`btn secondary ${liked ? "on" : ""}`}
       onClick={toggle}
       disabled={busy}
       aria-pressed={liked}
-      title={liked ? "Unlike" : "Like"}
     >
-      {liked ? "♥" : "♡"} {count}
+      <span style={{ display: "inline-flex", color: liked ? "var(--danger)" : "inherit" }}>
+        <HeartIcon size={18} filled={liked} />
+      </span>
+      {count}
     </button>
   );
 }

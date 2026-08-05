@@ -18,6 +18,7 @@ interface FeedRow {
   like_count: number;
   comment_count: number;
   liked_by_me: boolean;
+  in_library: boolean;
 }
 
 /** Supabase-backed social store, scoped to the caller's session (RLS applies). */
@@ -46,6 +47,7 @@ export class SupabaseSocialStore implements SocialStore {
       likeCount: Number(r.like_count),
       commentCount: Number(r.comment_count),
       likedByMe: r.liked_by_me,
+      inLibrary: r.in_library,
     }));
   }
 
@@ -209,5 +211,12 @@ export class SupabaseSocialStore implements SocialStore {
         .eq("user_id", this.userId);
       if (error) throw new Error(`unshare failed: ${error.message}`);
     }
+  }
+
+  async saveToLibrary(videoId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from("library_items")
+      .upsert({ video_id: videoId, user_id: this.userId, added_via: "share" });
+    if (error) throw new Error(`save failed: ${error.message}`);
   }
 }

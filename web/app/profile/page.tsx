@@ -128,7 +128,11 @@ export default function ProfilePage() {
         </div>
       </div>
       {myId && (
-        <Link href={`/u/${myId}`} className="chip" style={{ marginTop: 12, display: "inline-block" }}>
+        <Link
+          href={`/u/${myId}`}
+          className="btn secondary btn-sm"
+          style={{ marginTop: 12, display: "inline-flex" }}
+        >
           View public profile
         </Link>
       )}

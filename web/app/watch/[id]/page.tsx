@@ -7,6 +7,15 @@ import { CommentSection } from "../../CommentSection";
 import { EditDetails, type EditableParticipant } from "../../EditDetails";
 import { FollowButton } from "../../FollowButton";
 import { LikeButton } from "../../LikeButton";
+import {
+  CloseIcon,
+  EditIcon,
+  NextFrameIcon,
+  PauseIcon,
+  PlayIcon,
+  PrevFrameIcon,
+  ShareIcon,
+} from "../../icons";
 import { formatDate, formatDuration, formatSize } from "@/lib/matchFormat";
 
 interface Author {
@@ -251,34 +260,36 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
         <div className="watch-cta">
           <LikeButton videoId={id} initialCount={likeCount} initialLiked={likedByMe} />
           {!isOwner && author && (
-            <FollowButton userId={author.id} initialFollowing={isFollowingOwner} size="sm" />
+            <FollowButton userId={author.id} initialFollowing={isFollowingOwner} />
           )}
           {canEdit && (
             <button
-              className={`chip ${sharedToFollowers ? "active" : ""}`}
+              className={`btn secondary ${sharedToFollowers ? "on" : ""}`}
               onClick={toggleShareToFollowers}
               disabled={sharingBusy}
               title="Post this match to your followers' feeds"
             >
-              {sharedToFollowers ? "✓ Shared to followers" : "Share to followers"}
+              {sharedToFollowers ? "Shared to followers" : "Share to followers"}
             </button>
           )}
           {canAdd && !added && (
             <button className="btn" onClick={addToAccount} disabled={adding}>
-              {adding ? "Adding…" : "+ Add to my account"}
+              {adding ? "Adding…" : "Add to my account"}
             </button>
           )}
           {added && (
-            <Link href="/" className="chip active">
-              ✓ Added — go to library
+            <Link href="/" className="btn secondary">
+              Added — go to library
             </Link>
           )}
-          <button className="chip" onClick={share} title="Copy a link to share">
-            {copied ? "✓ Link copied" : "🔗 Share"}
+          <button className="btn secondary" onClick={share} title="Copy a link to share">
+            <ShareIcon size={17} />
+            {copied ? "Copied" : "Share"}
           </button>
           {canEdit && (
-            <button className="chip" onClick={openEdit}>
-              ✎ Edit
+            <button className="btn secondary" onClick={openEdit}>
+              <EditIcon size={17} />
+              Edit
             </button>
           )}
         </div>
@@ -325,11 +336,11 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 ))}
               </div>
               <div className="group" aria-label="Frame step">
-                <button className="chip" onClick={() => stepFrames(-1)} title="Previous frame">
-                  ⏮ frame <span className="kbd">,</span>
+                <button className="chip chip-icon" onClick={() => stepFrames(-1)} title="Previous frame">
+                  <PrevFrameIcon size={16} /> <span className="kbd">,</span>
                 </button>
-                <button className="chip" onClick={() => stepFrames(1)} title="Next frame">
-                  frame ⏭ <span className="kbd">.</span>
+                <button className="chip chip-icon" onClick={() => stepFrames(1)} title="Next frame">
+                  <span className="kbd">.</span> <NextFrameIcon size={16} />
                 </button>
               </div>
               <div className="group" aria-label="Skip and play">
@@ -337,8 +348,8 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 <button className="chip" onClick={() => seek(-5)}>
                   −5s <span className="kbd">j</span>
                 </button>
-                <button className="chip" onClick={togglePlay}>
-                  {paused ? "▶ Play" : "⏸ Pause"} <span className="kbd">k</span>
+                <button className="chip chip-icon" onClick={togglePlay} title={paused ? "Play" : "Pause"}>
+                  {paused ? <PlayIcon size={16} /> : <PauseIcon size={16} />} <span className="kbd">k</span>
                 </button>
                 <button className="chip" onClick={() => seek(5)}>
                   +5s <span className="kbd">l</span>
@@ -363,7 +374,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             <div className="modal-head">
               <h2 style={{ fontSize: 18 }}>Match details</h2>
               <button className="modal-close" aria-label="Close" onClick={closeModal}>
-                ×
+                <CloseIcon size={20} />
               </button>
             </div>
 
@@ -445,7 +456,8 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             ) : (
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <button className="btn secondary" onClick={share}>
-                  {copied ? "✓ Link copied" : "🔗 Share"}
+                  <ShareIcon size={17} />
+                  {copied ? "Copied" : "Share"}
                 </button>
                 {/* Only the owner can delete; participants can edit everything else. */}
                 {isOwner && (

@@ -18,6 +18,8 @@ export interface FeedItem {
   likeCount: number;
   commentCount: number;
   likedByMe: boolean;
+  /** Whether the match is already in the viewer's library ("add to profile" state). */
+  inLibrary: boolean;
   /** Attached by the API route (signed URL), not by the store. */
   thumbnailUrl?: string | null;
 }
@@ -66,4 +68,7 @@ export interface SocialStore {
 
   isSharedToFollowers(videoId: string): Promise<boolean>;
   setSharedToFollowers(videoId: string, shared: boolean): Promise<void>;
+
+  /** Add a viewable match to my library ("add to profile"). */
+  saveToLibrary(videoId: string): Promise<void>;
 }

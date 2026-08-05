@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import { ShareIcon } from "./icons";
 
 /** Mint a revocable share link for a video and copy it to the clipboard. */
 export function ShareButton({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
-      className="chip"
+      className="btn secondary btn-sm"
       onClick={async () => {
         let url = `${window.location.origin}/watch/${id}`;
         try {
@@ -24,7 +25,8 @@ export function ShareButton({ id }: { id: string }) {
         }
       }}
     >
-      {copied ? "✓ Copied" : "🔗 Share"}
+      <ShareIcon size={16} />
+      {copied ? "Copied" : "Share"}
     </button>
   );
 }

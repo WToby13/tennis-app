@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
+import { TrashIcon } from "./icons";
 
 interface CommentT {
   id: string;
@@ -88,7 +89,7 @@ export function CommentSection({ videoId }: { videoId: string }) {
           </div>
           {c.canDelete && (
             <button className="comment-del" onClick={() => remove(c.id)} aria-label="Delete comment">
-              ×
+              <TrashIcon size={16} />
             </button>
           )}
         </div>

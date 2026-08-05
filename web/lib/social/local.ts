@@ -25,6 +25,7 @@ export class LocalSocialStore implements SocialStore {
       likeCount: 0,
       commentCount: 0,
       likedByMe: false,
+      inLibrary: true,
     }));
   }
 
@@ -51,4 +52,5 @@ export class LocalSocialStore implements SocialStore {
     return false;
   }
   async setSharedToFollowers(): Promise<void> {}
+  async saveToLibrary(): Promise<void> {}
 }
