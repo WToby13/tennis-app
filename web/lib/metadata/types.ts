@@ -1,5 +1,8 @@
 export type VideoStatus = "uploading" | "processing" | "ready" | "failed";
 
+/** State of the (optional) AI analysis pass over a match. */
+export type AnalysisStatus = "none" | "processing" | "ready" | "failed";
+
 /**
  * Who can read a video, beyond its owner + people it's explicitly shared to.
  * 'private' today; 'public' is the future social-feed read path (already honoured
@@ -26,6 +29,27 @@ export interface Video {
   createdAt: string;
   /** Soft-delete marker; a non-null value means the video is gone (bytes purged). */
   deletedAt: string | null;
+  /** AI analysis (rally segmentation) state; 'none' until the owner runs it. */
+  analysisStatus: AnalysisStatus;
+  /** TwelveLabs task id while an analysis is in flight (for polling). */
+  analysisTaskId: string | null;
+  /** Last analysis error, if the run failed. */
+  analysisError: string | null;
+  /** When the last successful analysis completed. */
+  analyzedAt: string | null;
+}
+
+/** One AI-produced segment of a match (e.g. a rally), with custom fields in `metadata`. */
+export interface VideoSegment {
+  id: string;
+  /** Segment type — 'rally' today; room for other analyses later. */
+  kind: string;
+  /** Order within the match. */
+  idx: number;
+  startS: number | null;
+  endS: number | null;
+  /** Custom fields returned by the analysis (e.g. serving_player, shot_count, ended_by). */
+  metadata: Record<string, unknown>;
 }
 
 /** A video as it appears in a user's library, tagged with how it got there. */
@@ -91,4 +115,14 @@ export interface MetadataStore {
   setParticipants(videoId: string, participants: ParticipantInput[]): Promise<Participant[]>;
   /** Search Ojo users by name, for tagging. */
   searchUsers(query: string): Promise<UserResult[]>;
+
+  // --- analysis / segments ---------------------------------------------------
+  /** A match's AI segments of a given kind, ordered. */
+  getSegments(videoId: string, kind?: string): Promise<VideoSegment[]>;
+  /** Replace all segments of one kind for a match (editors only). */
+  replaceSegments(
+    videoId: string,
+    kind: string,
+    segments: Omit<VideoSegment, "id">[],
+  ): Promise<void>;
 }

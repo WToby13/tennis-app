@@ -47,6 +47,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!video) return notFound("Video not found");
 
   const participants = await store.getParticipants(video.id).catch(() => []);
+  const segments = await store.getSegments(video.id).catch(() => []);
 
   const isOwner = Boolean(userId && video.ownerId && video.ownerId === userId);
   const isParticipant = Boolean(userId && participants.some((p) => p.userId === userId));
@@ -80,6 +81,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     sharedToFollowers,
     author: summary ? { id: summary.id, displayName: summary.displayName } : null,
     isFollowingOwner: summary?.isFollowing ?? false,
+    analysisStatus: video.analysisStatus,
+    analysisError: video.analysisError,
+    segments,
+    // Owner-only trigger (local no-auth mode has no owner, so it's allowed there
+    // too — matches the analyze route's own authorization).
+    canAnalyze: !userId || isOwner,
   });
 }
 

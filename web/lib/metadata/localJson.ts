@@ -7,6 +7,7 @@ import type {
   ShareLink,
   UserResult,
   Video,
+  VideoSegment,
 } from "./types";
 
 /**
@@ -20,6 +21,7 @@ import type {
  */
 const DATA_DIR = path.join(process.cwd(), ".data");
 const DB_FILE = path.join(DATA_DIR, "videos.json");
+const SEGMENTS_FILE = path.join(DATA_DIR, "segments.json");
 
 let chain: Promise<unknown> = Promise.resolve();
 /** Serialize read-modify-write cycles to avoid lost updates. */
@@ -29,9 +31,20 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** Default analysis fields for rows written before those columns existed. */
+function normalize(v: Video): Video {
+  return {
+    ...v,
+    analysisStatus: v.analysisStatus ?? "none",
+    analysisTaskId: v.analysisTaskId ?? null,
+    analysisError: v.analysisError ?? null,
+    analyzedAt: v.analyzedAt ?? null,
+  };
+}
+
 async function readAll(): Promise<Video[]> {
   try {
-    return JSON.parse(await fs.readFile(DB_FILE, "utf8")) as Video[];
+    return (JSON.parse(await fs.readFile(DB_FILE, "utf8")) as Video[]).map(normalize);
   } catch {
     return [];
   }
@@ -40,6 +53,22 @@ async function readAll(): Promise<Video[]> {
 async function writeAll(videos: Video[]): Promise<void> {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.writeFile(DB_FILE, JSON.stringify(videos, null, 2));
+}
+
+/** Local segment row carries its videoId (no relational store to join through). */
+type StoredSegment = VideoSegment & { videoId: string };
+
+async function readSegments(): Promise<StoredSegment[]> {
+  try {
+    return JSON.parse(await fs.readFile(SEGMENTS_FILE, "utf8")) as StoredSegment[];
+  } catch {
+    return [];
+  }
+}
+
+async function writeSegments(segments: StoredSegment[]): Promise<void> {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.writeFile(SEGMENTS_FILE, JSON.stringify(segments, null, 2));
 }
 
 export class LocalJsonMetadataStore implements MetadataStore {
@@ -132,5 +161,30 @@ export class LocalJsonMetadataStore implements MetadataStore {
 
   async searchUsers(): Promise<UserResult[]> {
     return [];
+  }
+
+  async getSegments(videoId: string, kind = "rally"): Promise<VideoSegment[]> {
+    const all = await readSegments();
+    return all
+      .filter((s) => s.videoId === videoId && s.kind === kind)
+      .sort((a, b) => a.idx - b.idx)
+      .map(({ videoId: _v, ...seg }) => seg);
+  }
+
+  replaceSegments(
+    videoId: string,
+    kind: string,
+    segments: Omit<VideoSegment, "id">[],
+  ): Promise<void> {
+    return withLock(async () => {
+      const all = await readSegments();
+      const others = all.filter((s) => !(s.videoId === videoId && s.kind === kind));
+      const rows: StoredSegment[] = segments.map((s, i) => ({
+        ...s,
+        id: `${videoId}-${kind}-${i}`,
+        videoId,
+      }));
+      await writeSegments([...others, ...rows]);
+    });
   }
 }

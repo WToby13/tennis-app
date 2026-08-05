@@ -7,6 +7,7 @@ import { CommentSection } from "../../CommentSection";
 import { EditDetails, type EditableParticipant } from "../../EditDetails";
 import { FollowButton } from "../../FollowButton";
 import { LikeButton } from "../../LikeButton";
+import { RallySegments } from "../../RallySegments";
 import {
   CloseIcon,
   EditIcon,
@@ -42,6 +43,16 @@ interface Participant {
   email: string | null;
 }
 
+interface Segment {
+  id: string;
+  idx: number;
+  startS: number | null;
+  endS: number | null;
+  metadata: Record<string, unknown>;
+}
+
+type AnalysisStatus = "none" | "processing" | "ready" | "failed";
+
 const SPEEDS = [0.25, 0.5, 1, 1.5, 2];
 const ASSUMED_FPS = 30; // frame-step granularity until we read real fps (post-MVP)
 
@@ -72,6 +83,11 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [sharedToFollowers, setSharedToFollowers] = useState(false);
   const [sharingBusy, setSharingBusy] = useState(false);
   const [visibility, setVisibility] = useState<"private" | "public">("private");
+  // AI rally analysis.
+  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("none");
+  const [segments, setSegments] = useState<Segment[]>([]);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [canAnalyze, setCanAnalyze] = useState(false);
 
   const shareToken = () =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
@@ -183,6 +199,10 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       setIsFollowingOwner(Boolean(data.isFollowingOwner));
       setSharedToFollowers(Boolean(data.sharedToFollowers));
       setVisibility(data.video.visibility === "public" ? "public" : "private");
+      setAnalysisStatus((data.analysisStatus as AnalysisStatus) ?? "none");
+      setSegments(data.segments ?? []);
+      setAnalysisError(data.analysisError ?? null);
+      setCanAnalyze(Boolean(data.canAnalyze));
       if (data.video.status === "processing") setTimeout(load, 2000);
     }
     load();
@@ -202,6 +222,14 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     const el = videoRef.current;
     if (!el) return;
     el.currentTime = Math.max(0, el.currentTime + deltaSeconds);
+  }, []);
+
+  // Jump to an absolute time (used by the rally list) and start playing.
+  const seekTo = useCallback((seconds: number) => {
+    const el = videoRef.current;
+    if (!el) return;
+    el.currentTime = Math.max(0, seconds);
+    el.play().catch(() => {});
   }, []);
 
   const togglePlay = useCallback(() => {
@@ -360,10 +388,17 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
           </>
         )}
 
-        <div className="coming-soon">
-          <h3>Clips &amp; editing</h3>
-          Trim highlights and build reels from this match — coming soon.
-        </div>
+        {ready && (
+          <RallySegments
+            videoId={id}
+            canRun={canAnalyze}
+            durationS={video.durationS}
+            initialStatus={analysisStatus}
+            initialSegments={segments}
+            initialError={analysisError}
+            onSeek={seekTo}
+          />
+        )}
 
         <CommentSection videoId={id} />
       </div>

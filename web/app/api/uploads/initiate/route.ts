@@ -39,6 +39,10 @@ export async function POST(req: Request) {
     recordedAt: body.recordedAt ?? null,
     createdAt: new Date().toISOString(),
     deletedAt: null,
+    analysisStatus: "none",
+    analysisTaskId: null,
+    analysisError: null,
+    analyzedAt: null,
   });
 
   // Optional participants chosen in the recorder's post-record shelf.

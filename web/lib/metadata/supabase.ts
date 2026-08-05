@@ -8,6 +8,7 @@ import type {
   ShareLink,
   UserResult,
   Video,
+  VideoSegment,
 } from "./types";
 
 /** DB row shape (snake_case) for the `videos` table. */
@@ -26,6 +27,10 @@ interface Row {
   recorded_at: string | null;
   created_at: string;
   deleted_at: string | null;
+  analysis_status: Video["analysisStatus"] | null;
+  analysis_task_id: string | null;
+  analysis_error: string | null;
+  analyzed_at: string | null;
 }
 
 function toVideo(r: Row): Video {
@@ -44,6 +49,10 @@ function toVideo(r: Row): Video {
     recordedAt: r.recorded_at,
     createdAt: r.created_at,
     deletedAt: r.deleted_at,
+    analysisStatus: r.analysis_status ?? "none",
+    analysisTaskId: r.analysis_task_id,
+    analysisError: r.analysis_error,
+    analyzedAt: r.analyzed_at,
   };
 }
 
@@ -62,6 +71,10 @@ function toRow(patch: Partial<Video>): Partial<Row> {
   if (patch.visibility !== undefined) row.visibility = patch.visibility;
   if (patch.recordedAt !== undefined) row.recorded_at = patch.recordedAt;
   if (patch.deletedAt !== undefined) row.deleted_at = patch.deletedAt;
+  if (patch.analysisStatus !== undefined) row.analysis_status = patch.analysisStatus;
+  if (patch.analysisTaskId !== undefined) row.analysis_task_id = patch.analysisTaskId;
+  if (patch.analysisError !== undefined) row.analysis_error = patch.analysisError;
+  if (patch.analyzedAt !== undefined) row.analyzed_at = patch.analyzedAt;
   return row;
 }
 
@@ -227,5 +240,51 @@ export class SupabaseMetadataStore implements MetadataStore {
           r.display_name || [r.first_name, r.last_name].filter(Boolean).join(" ") || "Ojo player",
       }),
     );
+  }
+
+  async getSegments(videoId: string, kind = "rally"): Promise<VideoSegment[]> {
+    const { data, error } = await this.supabase
+      .from("video_segments")
+      .select("id, kind, idx, start_s, end_s, metadata")
+      .eq("video_id", videoId)
+      .eq("kind", kind)
+      .order("idx");
+    if (error) throw new Error(`get segments failed: ${error.message}`);
+    return (
+      data as Array<{
+        id: string;
+        kind: string;
+        idx: number;
+        start_s: number | null;
+        end_s: number | null;
+        metadata: Record<string, unknown> | null;
+      }>
+    ).map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      idx: r.idx,
+      startS: r.start_s,
+      endS: r.end_s,
+      metadata: r.metadata ?? {},
+    }));
+  }
+
+  async replaceSegments(
+    videoId: string,
+    kind: string,
+    segments: Omit<VideoSegment, "id">[],
+  ): Promise<void> {
+    // Definer RPC checks edit rights once, then delete + bulk insert (see 0009).
+    const { error } = await this.supabase.rpc("replace_video_segments", {
+      p_video_id: videoId,
+      p_kind: kind,
+      p_segments: segments.map((s) => ({
+        idx: s.idx,
+        startS: s.startS,
+        endS: s.endS,
+        metadata: s.metadata,
+      })),
+    });
+    if (error) throw new Error(`replace segments failed: ${error.message}`);
   }
 }

@@ -58,6 +58,16 @@ export const config = {
   },
 
   /**
+   * TwelveLabs video AI (rally segmentation). Analysis is a no-op / degrades to a
+   * dev stub until the API key is set, so local dev works without it.
+   */
+  twelvelabs: {
+    apiKey: process.env.TWELVELABS_API_KEY ?? "",
+    baseUrl: process.env.TWELVELABS_BASE_URL ?? "https://api.twelvelabs.io/v1.3",
+    enabled: Boolean(process.env.TWELVELABS_API_KEY),
+  },
+
+  /**
    * Auth + Supabase metadata turn on automatically once Supabase is configured.
    * With no Supabase env, the app stays in zero-auth local mode for dev.
    */
