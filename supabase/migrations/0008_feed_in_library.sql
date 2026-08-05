@@ -2,6 +2,10 @@
 -- in the viewer's profile (the "add to profile" action state).
 -- Run in the Supabase SQL editor after 0007_social.sql.
 
+-- Adding a column changes the function's return type, which `create or replace`
+-- can't do — drop the 0007 version first. Safe: nothing else in the DB depends on it.
+drop function if exists public.get_feed(int);
+
 create or replace function public.get_feed(p_limit int default 50)
 returns table (
   id              uuid,
