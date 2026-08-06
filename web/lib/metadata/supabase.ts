@@ -87,13 +87,13 @@ export class SupabaseMetadataStore implements MetadataStore {
   constructor(private supabase: SupabaseClient) {}
 
   async create(video: Video): Promise<Video> {
-    const { data, error } = await this.supabase
-      .from("videos")
-      .insert({ id: video.id, ...toRow(video) })
-      .select()
-      .single();
+    // No `.select()` here: returning the inserted row would run the videos SELECT
+    // policy (can_view_video), whose STABLE re-query of `videos` can't see the
+    // just-inserted row in its own snapshot → 0 rows → error. We already have the
+    // full row, so insert (INSERT policy only) and return it.
+    const { error } = await this.supabase.from("videos").insert({ id: video.id, ...toRow(video) });
     if (error) throw new Error(`create video failed: ${error.message}`);
-    return toVideo(data as Row);
+    return video;
   }
 
   async get(id: string): Promise<Video | null> {
