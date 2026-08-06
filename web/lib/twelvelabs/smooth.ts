@@ -36,7 +36,8 @@ interface Point {
 export interface SmoothReport {
   gamesDetected: number;
   serverPhaseStartsWith: string;
-  identityStartAndOffset: [string, number];
+  /** Which identity candidate won, e.g. "changeover start=player_1 offset=1" or "constant player_1". */
+  identityFit: string;
   serverAgreementWithRaw: number;
   gameLengths: number[];
 }
@@ -172,22 +173,36 @@ export function smoothTennis(
   }
   const srvFit = altPattern(bestSrv);
 
-  // Fit the "switch every 2 games" identity pattern over {start} × {offset}.
+  // Fit the near-player identity per game. Two families of candidate:
+  //  - CHANGEOVER: players change ends after odd games, so the near player is
+  //    constant for ~2 games then flips. `offset` covers "change after game 1"
+  //    (offset 1, standard tennis) vs "pairs from game 1" (offset 0). = 4 candidates.
+  //  - CONSTANT: casual play where players never swap ends → near player never
+  //    changes. = 2 candidates.
+  // Changeover candidates are listed first so they win ties (the standard case);
+  // a constant fit only wins when it *strictly* explains the data better.
   const nearFilled = fillUnclear(pts.map((p) => p.near));
   const gameNearObs = games.map(([a, b]) => majorityOr(nearFilled.slice(a, b), P1));
   const idPattern = (start: string, offset: number) =>
     Array.from({ length: G }, (_, g) =>
       Math.floor((g + offset) / 2) % 2 === 0 ? start : other(start),
     );
-  let bestId: [string, number] = [P1, 0];
-  let bestIdScore = -1;
+  const candidates: { label: string; pattern: string[] }[] = [];
   for (const s of [P1, P2]) {
     for (const o of [0, 1]) {
-      const score = idPattern(s, o).reduce((acc, v, i) => acc + (v === gameNearObs[i] ? 1 : 0), 0);
-      if (score > bestIdScore) [bestId, bestIdScore] = [[s, o], score];
+      candidates.push({ label: `changeover start=${s} offset=${o}`, pattern: idPattern(s, o) });
     }
   }
-  const idFit = idPattern(bestId[0], bestId[1]);
+  for (const s of [P1, P2]) {
+    candidates.push({ label: `constant ${s}`, pattern: Array.from({ length: G }, () => s) });
+  }
+  let bestId = candidates[0];
+  let bestIdScore = -1;
+  for (const c of candidates) {
+    const score = c.pattern.reduce((acc, v, i) => acc + (v === gameNearObs[i] ? 1 : 0), 0);
+    if (score > bestIdScore) [bestId, bestIdScore] = [c, score];
+  }
+  const idFit = bestId.pattern;
 
   // Stamp cleaned values back onto every point + apply the shot floor.
   const out: Seg[] = segments.map((s) => s);
@@ -228,7 +243,7 @@ export function smoothTennis(
     report: {
       gamesDetected: G,
       serverPhaseStartsWith: bestSrv,
-      identityStartAndOffset: bestId,
+      identityFit: bestId.label,
       serverAgreementWithRaw: Math.round(srvAgree * 1000) / 1000,
       gameLengths: games.map(([a, b]) => b - a),
     },

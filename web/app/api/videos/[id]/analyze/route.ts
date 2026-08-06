@@ -127,13 +127,18 @@ async function ownedVideo(
   return { store, userId, video };
 }
 
-export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const owned = await ownedVideo(id);
   if (!owned) return notFound("Video not found");
   const { store, video } = owned;
 
   if (video.status !== "ready") return badRequest("This match isn't ready to analyze yet.");
+
+  // Optional warm-up trim: analyse only from this second onward.
+  const body = await req.json().catch(() => null);
+  const startTimeSec =
+    typeof body?.startTimeSec === "number" && body.startTimeSec > 0 ? body.startTimeSec : undefined;
 
   // Pre-flight size guard: skip the call (and the raw 400) for oversized files.
   if (video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
@@ -155,7 +160,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   try {
     const url = await storage().getPlaybackUrl(video.id, video.key);
-    const task = await createAnalysisTask(buildRallyRequest(url));
+    const task = await createAnalysisTask(buildRallyRequest(url, { startTimeSec }));
     await store.update(id, {
       analysisStatus: "processing",
       analysisTaskId: task.task_id,

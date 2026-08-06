@@ -17,6 +17,7 @@ interface ServiceGame {
   server: string | null; // player_1 | player_2 | null (from the smoother)
   startS: number;
   endS: number;
+  points: number; // rallies in this service game
 }
 
 function fmtTime(s: number | null): string {
@@ -46,11 +47,27 @@ function buildServiceGames(segs: Segment[]): ServiceGame[] {
     const cur = games[games.length - 1];
     if (cur && g != null && cur.game === g) {
       cur.endS = Math.max(cur.endS, end);
+      cur.points++;
     } else {
-      games.push({ game: g ?? games.length + 1, server, startS: start, endS: end });
+      games.push({ game: g ?? games.length + 1, server, startS: start, endS: end, points: 1 });
     }
   }
   return games;
+}
+
+/** Parse a warm-up trim input ("m:ss" or plain seconds) → seconds, or undefined. */
+function parseTrim(s: string): number | undefined {
+  const t = s.trim();
+  if (!t) return undefined;
+  if (t.includes(":")) {
+    const [m, sec] = t.split(":");
+    const mm = Number(m);
+    const ss = Number(sec);
+    if (Number.isFinite(mm) && Number.isFinite(ss)) return mm * 60 + ss;
+    return undefined;
+  }
+  const n = Number(t);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
 /** Tick spacing: 2 / 5 / 10 min for real matches; finer only for very short clips. */
@@ -87,6 +104,7 @@ export function RallySegments({
   const [segments, setSegments] = useState<Segment[]>(initialSegments);
   const [error, setError] = useState<string | null>(initialError);
   const [busy, setBusy] = useState(false);
+  const [trim, setTrim] = useState(""); // optional "skip warm-up to" (m:ss)
   const active = useRef(true);
 
   useEffect(() => {
@@ -117,8 +135,13 @@ export function RallySegments({
   const run = useCallback(async () => {
     setBusy(true);
     setError(null);
+    const startTimeSec = parseTrim(trim);
     try {
-      const res = await fetch(`/api/videos/${videoId}/analyze`, { method: "POST" });
+      const res = await fetch(`/api/videos/${videoId}/analyze`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(startTimeSec ? { startTimeSec } : {}),
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setStatus(data.analysisStatus ?? "processing");
@@ -129,9 +152,16 @@ export function RallySegments({
     } finally {
       setBusy(false);
     }
-  }, [videoId]);
+  }, [videoId, trim]);
 
   const games = useMemo(() => buildServiceGames(segments), [segments]);
+
+  // Per-player service-game counts, for the legend (only players who served show).
+  const serveCounts = useMemo(() => {
+    const c: Record<string, number> = { player_1: 0, player_2: 0 };
+    for (const g of games) if (g.server === "player_1" || g.server === "player_2") c[g.server]++;
+    return c;
+  }, [games]);
 
   // Total timeline length: stored duration, else the last rally's end.
   const total = useMemo(() => {
@@ -182,7 +212,22 @@ export function RallySegments({
         <h3>
           Rallies{segments.length > 0 && <span className="seg-count">{segments.length}</span>}
         </h3>
-        {button}
+        <div className="seg-actions">
+          {canRun && status !== "processing" && (
+            <label className="trim-control" title="Skip warm-up — start the analysis at this time (m:ss)">
+              <span className="muted">Skip to</span>
+              <input
+                type="text"
+                value={trim}
+                onChange={(e) => setTrim(e.target.value)}
+                placeholder="0:00"
+                inputMode="numeric"
+                aria-label="Skip warm-up to (minutes:seconds)"
+              />
+            </label>
+          )}
+          {button}
+        </div>
       </div>
 
       {canRun && status === "none" && segments.length === 0 && (
@@ -198,6 +243,20 @@ export function RallySegments({
 
       {segments.length > 0 && (
         <div className="timeline">
+          {/* Players + serve summary */}
+          <div className="players-legend">
+            {(["player_1", "player_2"] as const).map((p) => (
+              <span key={p} className="player-tag">
+                <span className={`player-dot ${p}`} />
+                {playerLabel(p)}
+                <span className="muted">
+                  {" · "}
+                  {serveCounts[p]} service {serveCounts[p] === 1 ? "game" : "games"}
+                </span>
+              </span>
+            ))}
+          </div>
+
           {/* Row 1 — service games */}
           <div className="tl-row">
             <div className="tl-row-label">Service games</div>
@@ -205,13 +264,17 @@ export function RallySegments({
               {games.map((g, i) => (
                 <button
                   key={`g${i}`}
-                  className="tl-bar tl-bar-game"
+                  className={`tl-bar tl-bar-game ${g.server ?? ""}`}
                   style={{ left: pct(g.startS), width: spanPct(g.startS, g.endS) }}
                   onClick={() => onSeek(g.startS)}
                   title={`${playerLabel(g.server)} serving`}
                 >
+                  <span className="tl-bar-label">{playerLabel(g.server)}</span>
                   <span className={`tl-tip ${tipClass(g.startS)}`}>
                     <span className="tl-tip-strong">{playerLabel(g.server)} serving</span>
+                    <span className="tl-tip-meta">
+                      Game {g.game} · {g.points} {g.points === 1 ? "point" : "points"}
+                    </span>
                   </span>
                 </button>
               ))}
@@ -226,11 +289,16 @@ export function RallySegments({
                 const start = s.startS ?? 0;
                 const end = s.endS ?? start;
                 const server = asStr(s.metadata.server);
+                const receiver = asStr(s.metadata.receiver);
+                const side = asStr(s.metadata.serving_side); // near | far
                 const shots = asNum(s.metadata.shots);
                 const what = asStr(s.metadata.what_you_see);
-                const meta = [
-                  server && `${playerLabel(server)} serving`,
-                  shots != null && `${shots} ${shots === 1 ? "hit" : "hits"}`,
+                const roles = server
+                  ? `${playerLabel(server)} serving${receiver ? ` · ${playerLabel(receiver)} receiving` : ""}`
+                  : "";
+                const detail = [
+                  side === "near" ? "Near end" : side === "far" ? "Far end" : null,
+                  shots != null ? `${shots} ${shots === 1 ? "hit" : "hits"}` : null,
                 ]
                   .filter(Boolean)
                   .join(" · ");
@@ -246,7 +314,8 @@ export function RallySegments({
                       <span className="tl-tip-strong">
                         {fmtTime(start)}–{fmtTime(end)}
                       </span>
-                      {meta && <span className="tl-tip-meta">{meta}</span>}
+                      {roles && <span className="tl-tip-meta">{roles}</span>}
+                      {detail && <span className="tl-tip-meta">{detail}</span>}
                       {what && <span className="tl-tip-what">{what}</span>}
                     </span>
                   </button>

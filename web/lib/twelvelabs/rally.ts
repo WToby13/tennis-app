@@ -68,9 +68,16 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
   };
 }
 
-/** Assemble the full create-task body for a rally analysis of `videoUrl`. */
-export function buildRallyRequest(videoUrl: string, context?: RallyContext): CreateAnalysisTaskBody {
-  return {
+/**
+ * Assemble the full create-task body for a rally analysis of `videoUrl`.
+ * `startTimeSec` skips warm-up at the start (analysis window begins there);
+ * returned segment timestamps stay absolute to the original video.
+ */
+export function buildRallyRequest(
+  videoUrl: string,
+  opts?: { startTimeSec?: number; context?: RallyContext },
+): CreateAnalysisTaskBody {
+  const body: CreateAnalysisTaskBody = {
     video: { type: "url", url: videoUrl },
     model_name: PRESET.model_name,
     analysis_mode: PRESET.analysis_mode,
@@ -81,7 +88,9 @@ export function buildRallyRequest(videoUrl: string, context?: RallyContext): Cre
     response_format: {
       type: "segment_definitions",
       segment_time_format: "seconds",
-      segment_definitions: [rallyDefinition(context)],
+      segment_definitions: [rallyDefinition(opts?.context)],
     },
   };
+  if (opts?.startTimeSec && opts.startTimeSec > 0) body.start_time = Math.floor(opts.startTimeSec);
+  return body;
 }

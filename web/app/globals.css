@@ -844,6 +844,24 @@ video {
   font-size: 13px;
   margin: 0 0 8px;
 }
+.seg-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.trim-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.trim-control input {
+  width: 58px;
+  padding: 6px 8px;
+  font-size: 13px;
+  text-align: center;
+}
 
 /* "Beta" tag inside the AI Breakdown button — black text on a white square. */
 .beta-badge {
@@ -862,6 +880,31 @@ video {
 /* ---- rally timeline ---- */
 .timeline {
   margin-top: 6px;
+}
+.players-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.player-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+}
+.player-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.player-dot.player_1 {
+  background: var(--accent);
+}
+.player-dot.player_2 {
+  background: var(--sage);
 }
 .tl-row {
   margin-bottom: 12px;
@@ -894,11 +937,30 @@ video {
   cursor: pointer;
 }
 .tl-bar-game {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   background: var(--accent-soft);
   border: 1px solid var(--accent);
 }
+/* Colour service games by server, matching the legend dots. */
+.tl-bar-game.player_2 {
+  background: rgba(169, 194, 166, 0.22);
+  border-color: var(--sage);
+}
 .tl-bar-game:hover {
-  background: rgba(217, 102, 44, 0.42);
+  filter: brightness(1.25);
+}
+.tl-bar-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 6px;
+  pointer-events: none;
 }
 .tl-bar-rally {
   background: var(--accent);

@@ -32,6 +32,9 @@ export interface CreateAnalysisTaskBody {
   max_tokens: number;
   min_segment_duration: number;
   max_segment_duration: number;
+  /** Optional analysis window (seconds) — used to skip warm-up at the start. */
+  start_time?: number;
+  end_time?: number;
   response_format: {
     type: "segment_definitions";
     segment_time_format: "seconds";
