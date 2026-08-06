@@ -9,6 +9,7 @@ import {
   getAnalysisTask,
 } from "@/lib/twelvelabs/client";
 import { RALLY_KIND, buildRallyRequest } from "@/lib/twelvelabs/rally";
+import { smoothTennis } from "@/lib/twelvelabs/smooth";
 import { type AnalysisTask, normalizeSegments } from "@/lib/twelvelabs/types";
 import { badRequest, json, notFound } from "@/lib/util";
 
@@ -53,22 +54,65 @@ const STUB_TASK_ID = "stub-task";
 
 /**
  * Canned rallies for local dev without a TwelveLabs key. Built in the REAL API
- * response shape (result.data = JSON string keyed by definition id) and run back
- * through normalizeSegments, so local verification exercises the actual parser.
+ * response shape (result.data = JSON string keyed by definition id) with the new
+ * field schema, so local verification exercises the real parser AND the smoother:
+ * 3 games × 4 points, server alternating, near identity flipping after game 2,
+ * plus a couple of 'unclear' fields and deliberately-low shot counts.
  */
 function stubSegments(): Omit<VideoSegment, "id">[] {
-  const rally = [
-    { start_time: 4, end_time: 18, metadata: { what_you_see: "Near player serves.", serving_player: "near_bottom" } },
-    { start_time: 26, end_time: 33, metadata: { what_you_see: "Server unclear.", serving_player: "cannot_tell" } },
-    { start_time: 41, end_time: 58, metadata: { what_you_see: "Near player serves again.", serving_player: "near_bottom" } },
-    { start_time: 66, end_time: 72, metadata: { what_you_see: "Far player serves.", serving_player: "far_top" } },
+  const games = [
+    { near: "player_1", role: "serving", base: 4 }, // game 1: P1 serves, near = P1
+    { near: "player_1", role: "receiving", base: 130 }, // game 2: P2 serves, near still P1
+    { near: "player_2", role: "receiving", base: 260 }, // game 3: P1 serves, ends changed → near P2
   ];
+  const rally: Record<string, unknown>[] = [];
+  let idx = 0;
+  for (const g of games) {
+    let t = g.base;
+    for (let p = 0; p < 4; p++) {
+      const dur = 8 + p; // 8..11s
+      rally.push({
+        start_time: t,
+        end_time: t + dur,
+        metadata: {
+          what_you_see: `Point ${idx + 1}: near player ${g.role === "serving" ? "serves" : "returns"}.`,
+          near_player_role: idx === 2 ? "unclear" : g.role, // noise: one unclear role
+          near_player_identity: idx === 5 ? "unclear" : g.near, // noise: one unclear identity
+          times_ball_was_hit: 2 + (p % 3), // deliberately low → exercises the shot floor
+        },
+      });
+      t += dur + 8; // 8s gap within a game (big gaps between games via `base`)
+      idx++;
+    }
+  }
   const task: AnalysisTask = {
     task_id: STUB_TASK_ID,
     status: "ready",
     result: { data: JSON.stringify({ [RALLY_KIND]: rally }) },
   };
   return normalizeSegments(task, RALLY_KIND);
+}
+
+/**
+ * Shared "task is ready" finalize: run the structural smoother over the raw
+ * per-point segments, store the cleaned result, and flip the row to ready.
+ * Returns the updated video.
+ */
+async function finalizeReady(
+  store: MetadataStore,
+  id: string,
+  raw: Omit<VideoSegment, "id">[],
+): Promise<Video> {
+  const { segments, report } = raw.length
+    ? smoothTennis(raw)
+    : { segments: raw, report: null };
+  if (report) console.info("[analyze] smoother report", JSON.stringify(report));
+  await store.replaceSegments(id, RALLY_KIND, segments);
+  return store.update(id, {
+    analysisStatus: "ready",
+    analyzedAt: new Date().toISOString(),
+    analysisError: null,
+  });
 }
 
 /** Resolve + owner-check the video for the caller. Returns null on no-access. */
@@ -139,18 +183,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (video.analysisStatus === "processing" && video.analysisTaskId) {
     if (video.analysisTaskId === STUB_TASK_ID) {
       // Dev stub: resolve to canned rallies on first poll.
-      await store.replaceSegments(id, RALLY_KIND, stubSegments());
-      video = await store.update(id, {
-        analysisStatus: "ready",
-        analyzedAt: new Date().toISOString(),
-        analysisError: null,
-      });
+      video = await finalizeReady(store, id, stubSegments());
     } else {
       try {
         const task = await getAnalysisTask(video.analysisTaskId);
         if (task.status === "ready") {
-          const segs = normalizeSegments(task, RALLY_KIND);
-          if (segs.length === 0) {
+          const raw = normalizeSegments(task, RALLY_KIND);
+          if (raw.length === 0) {
             // Ready but nothing parsed → likely a result-shape mismatch. Log the
             // raw shape (truncated) so it can be diagnosed from server logs.
             console.warn(
@@ -158,12 +197,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
               JSON.stringify(task.result)?.slice(0, 2000),
             );
           }
-          await store.replaceSegments(id, RALLY_KIND, segs);
-          video = await store.update(id, {
-            analysisStatus: "ready",
-            analyzedAt: new Date().toISOString(),
-            analysisError: null,
-          });
+          video = await finalizeReady(store, id, raw);
         } else if (task.status === "failed") {
           const message =
             (typeof task.error === "string" ? task.error : task.error?.message) ??

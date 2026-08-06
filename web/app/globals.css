@@ -933,6 +933,16 @@ video {
 .tl-bar:hover .tl-tip {
   display: flex;
 }
+/* Edge bars: anchor the tooltip to the bar's left/right so it stays on-screen. */
+.tl-tip.tip-left {
+  left: 0;
+  transform: none;
+}
+.tl-tip.tip-right {
+  left: auto;
+  right: 0;
+  transform: none;
+}
 .tl-tip-strong {
   font-weight: 600;
 }

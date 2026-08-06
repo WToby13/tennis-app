@@ -13,10 +13,10 @@ interface Segment {
 }
 
 interface ServiceGame {
-  server: string | null; // near_bottom | far_top | null (unknown)
+  game: number;
+  server: string | null; // player_1 | player_2 | null (from the smoother)
   startS: number;
   endS: number;
-  rallies: number;
 }
 
 function fmtTime(s: number | null): string {
@@ -26,49 +26,30 @@ function fmtTime(s: number | null): string {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-const SERVE: Record<string, string> = { near_bottom: "Near", far_top: "Far" };
-const serveLabel = (sp: string | null) => (sp && SERVE[sp]) || "Unclear";
-const isClearServe = (sp: string) => sp === "near_bottom" || sp === "far_top";
-
-function serveOf(s: Segment): string {
-  return typeof s.metadata.serving_player === "string" ? s.metadata.serving_player : "cannot_tell";
-}
+const PLAYER: Record<string, string> = { player_1: "Player 1", player_2: "Player 2" };
+const playerLabel = (p: string | null | undefined) => (p && PLAYER[p]) || "Unknown";
+const asStr = (v: unknown): string | null => (typeof v === "string" ? v : null);
+const asNum = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
 /**
- * Group consecutive rallies into service games: a run of points where the same
- * player serves, from the first such rally to the last before the *other* player
- * clearly takes over. A 'cannot_tell' rally is absorbed into the current game and
- * never counts as a switch (Toby's call — matches the model's run-length prior).
+ * Group rallies into service games using the smoother's per-point `game` number:
+ * consecutive points sharing a game become one bar, labelled with the smoothed
+ * `server` (which player served that game). See lib/twelvelabs/smooth.ts.
  */
 function buildServiceGames(segs: Segment[]): ServiceGame[] {
   const games: ServiceGame[] = [];
-  let cur: ServiceGame | null = null;
-
   for (const s of segs) {
-    const sp = serveOf(s);
     const start = s.startS ?? 0;
     const end = s.endS ?? start;
-
-    if (!cur) {
-      cur = { server: isClearServe(sp) ? sp : null, startS: start, endS: end, rallies: 1 };
-      continue;
-    }
-    if (!isClearServe(sp)) {
-      // cannot_tell → part of the current game.
-      cur.endS = end;
-      cur.rallies++;
-    } else if (cur.server === null || sp === cur.server) {
-      // First clear server for a so-far-unknown game, or the same server continuing.
-      cur.server = sp;
-      cur.endS = end;
-      cur.rallies++;
+    const g = asNum(s.metadata.game);
+    const server = asStr(s.metadata.server);
+    const cur = games[games.length - 1];
+    if (cur && g != null && cur.game === g) {
+      cur.endS = Math.max(cur.endS, end);
     } else {
-      // The other player is clearly serving now → new game.
-      games.push(cur);
-      cur = { server: sp, startS: start, endS: end, rallies: 1 };
+      games.push({ game: g ?? games.length + 1, server, startS: start, endS: end });
     }
   }
-  if (cur) games.push(cur);
   return games;
 }
 
@@ -167,6 +148,11 @@ export function RallySegments({
 
   const pct = (x: number) => `${Math.min(100, Math.max(0, (x / total) * 100))}%`;
   const spanPct = (a: number, b: number) => `${Math.max(0.4, ((b - a) / total) * 100)}%`;
+  // Anchor the hover tooltip left/right for edge bars so it doesn't clip off-screen.
+  const tipClass = (x: number) => {
+    const lp = (x / total) * 100;
+    return lp < 12 ? "tip-left" : lp > 88 ? "tip-right" : "";
+  };
 
   if (!canRun && segments.length === 0) return null;
 
@@ -222,10 +208,10 @@ export function RallySegments({
                   className="tl-bar tl-bar-game"
                   style={{ left: pct(g.startS), width: spanPct(g.startS, g.endS) }}
                   onClick={() => onSeek(g.startS)}
-                  title={`${serveLabel(g.server)} serving`}
+                  title={`${playerLabel(g.server)} serving`}
                 >
-                  <span className="tl-tip">
-                    <span className="tl-tip-strong">{serveLabel(g.server)} serving</span>
+                  <span className={`tl-tip ${tipClass(g.startS)}`}>
+                    <span className="tl-tip-strong">{playerLabel(g.server)} serving</span>
                   </span>
                 </button>
               ))}
@@ -239,8 +225,15 @@ export function RallySegments({
               {segments.map((s) => {
                 const start = s.startS ?? 0;
                 const end = s.endS ?? start;
-                const sp = serveOf(s);
-                const what = s.metadata.what_you_see;
+                const server = asStr(s.metadata.server);
+                const shots = asNum(s.metadata.shots);
+                const what = asStr(s.metadata.what_you_see);
+                const meta = [
+                  server && `${playerLabel(server)} serving`,
+                  shots != null && `${shots} ${shots === 1 ? "hit" : "hits"}`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
                 return (
                   <button
                     key={s.id}
@@ -249,16 +242,12 @@ export function RallySegments({
                     onClick={() => onSeek(start)}
                     title={`${fmtTime(start)}–${fmtTime(end)}`}
                   >
-                    <span className="tl-tip">
+                    <span className={`tl-tip ${tipClass(start)}`}>
                       <span className="tl-tip-strong">
                         {fmtTime(start)}–{fmtTime(end)}
                       </span>
-                      {sp !== "cannot_tell" && (
-                        <span className="tl-tip-meta">{serveLabel(sp)} serve</span>
-                      )}
-                      {typeof what === "string" && what && (
-                        <span className="tl-tip-what">{what}</span>
-                      )}
+                      {meta && <span className="tl-tip-meta">{meta}</span>}
+                      {what && <span className="tl-tip-what">{what}</span>}
                     </span>
                   </button>
                 );
