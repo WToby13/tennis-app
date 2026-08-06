@@ -43,6 +43,7 @@ export async function POST(req: Request) {
     analysisTaskId: null,
     analysisError: null,
     analyzedAt: null,
+    analysisPlayers: null,
   });
 
   // Optional participants chosen in the recorder's post-record shelf.

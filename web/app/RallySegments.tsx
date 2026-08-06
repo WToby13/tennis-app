@@ -1,8 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CloseIcon } from "./icons";
 
 type Status = "none" | "processing" | "ready" | "failed";
+type Slot = "player_1" | "player_2";
+interface Players {
+  player_1: string | null;
+  player_2: string | null;
+}
 
 interface Segment {
   id: string;
@@ -27,8 +33,7 @@ function fmtTime(s: number | null): string {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-const PLAYER: Record<string, string> = { player_1: "Player 1", player_2: "Player 2" };
-const playerLabel = (p: string | null | undefined) => (p && PLAYER[p]) || "Unknown";
+const DEFAULT_NAME: Record<Slot, string> = { player_1: "Player 1", player_2: "Player 2" };
 const asStr = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const asNum = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
@@ -80,8 +85,9 @@ function tickIntervalSec(total: number): number {
 
 /**
  * AI rally breakdown as a horizontal timeline spanning the video's full length.
- * Two lanes: service games (grouped) and raw rallies. Bars seek on click and show
- * their fields on hover. Owner-only trigger; anyone who can see the match sees it.
+ * Two lanes: service games (grouped) and raw rallies, labelled with owner-assigned
+ * player names. Bars seek on click and show their fields on hover. The setup panel
+ * (start time + player names) drives the owner-only run; names are editable after.
  */
 export function RallySegments({
   videoId,
@@ -90,6 +96,8 @@ export function RallySegments({
   initialStatus,
   initialSegments,
   initialError,
+  initialPlayers,
+  participantNames,
   onSeek,
 }: {
   videoId: string;
@@ -98,14 +106,36 @@ export function RallySegments({
   initialStatus: Status;
   initialSegments: Segment[];
   initialError: string | null;
+  initialPlayers: Players | null;
+  participantNames: string[];
   onSeek: (seconds: number) => void;
 }) {
   const [status, setStatus] = useState<Status>(initialStatus);
   const [segments, setSegments] = useState<Segment[]>(initialSegments);
   const [error, setError] = useState<string | null>(initialError);
   const [busy, setBusy] = useState(false);
-  const [trim, setTrim] = useState(""); // optional "skip warm-up to" (m:ss)
+  const [players, setPlayers] = useState<Players>({
+    player_1: initialPlayers?.player_1 ?? null,
+    player_2: initialPlayers?.player_2 ?? null,
+  });
+  // Setup panel state.
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [trim, setTrim] = useState("");
+  const [p1Name, setP1Name] = useState("");
+  const [p2Name, setP2Name] = useState("");
   const active = useRef(true);
+
+  const nameOf = useCallback(
+    (slot: Slot) => {
+      const n = players[slot];
+      return n && n.trim() ? n : DEFAULT_NAME[slot];
+    },
+    [players],
+  );
+  const displayPlayer = useCallback(
+    (p: string | null | undefined) => (p === "player_1" || p === "player_2" ? nameOf(p) : "Unknown"),
+    [nameOf],
+  );
 
   useEffect(() => {
     if (status !== "processing") return;
@@ -132,19 +162,34 @@ export function RallySegments({
     };
   }, [status, videoId]);
 
+  const openSetup = useCallback(() => {
+    setP1Name(players.player_1 ?? "");
+    setP2Name(players.player_2 ?? "");
+    setSetupOpen(true);
+  }, [players]);
+
+  const draftPlayers = (): Players => ({
+    player_1: p1Name.trim() || null,
+    player_2: p2Name.trim() || null,
+  });
+
+  // Start (or re-run) the analysis with the chosen start time + player names.
   const run = useCallback(async () => {
     setBusy(true);
     setError(null);
     const startTimeSec = parseTrim(trim);
+    const nextPlayers = draftPlayers();
     try {
       const res = await fetch(`/api/videos/${videoId}/analyze`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(startTimeSec ? { startTimeSec } : {}),
+        body: JSON.stringify({ ...(startTimeSec ? { startTimeSec } : {}), players: nextPlayers }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
+        setPlayers(nextPlayers);
         setStatus(data.analysisStatus ?? "processing");
+        setSetupOpen(false);
       } else {
         setStatus("failed");
         setError(data.error ?? "Couldn't start analysis.");
@@ -152,18 +197,42 @@ export function RallySegments({
     } finally {
       setBusy(false);
     }
-  }, [videoId, trim]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoId, trim, p1Name, p2Name]);
+
+  // Save renamed / swapped players without re-running the analysis.
+  const saveNames = useCallback(async () => {
+    setBusy(true);
+    const nextPlayers = draftPlayers();
+    try {
+      const res = await fetch(`/api/videos/${videoId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ players: nextPlayers }),
+      });
+      if (res.ok) {
+        setPlayers(nextPlayers);
+        setSetupOpen(false);
+      }
+    } finally {
+      setBusy(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoId, p1Name, p2Name]);
+
+  const swap = useCallback(() => {
+    setP1Name(p2Name);
+    setP2Name(p1Name);
+  }, [p1Name, p2Name]);
 
   const games = useMemo(() => buildServiceGames(segments), [segments]);
 
-  // Per-player service-game counts, for the legend (only players who served show).
   const serveCounts = useMemo(() => {
     const c: Record<string, number> = { player_1: 0, player_2: 0 };
     for (const g of games) if (g.server === "player_1" || g.server === "player_2") c[g.server]++;
     return c;
   }, [games]);
 
-  // Total timeline length: stored duration, else the last rally's end.
   const total = useMemo(() => {
     const lastEnd = segments.reduce((m, s) => Math.max(m, s.endS ?? 0), 0);
     return Math.max(durationS ?? 0, lastEnd, 1);
@@ -178,7 +247,6 @@ export function RallySegments({
 
   const pct = (x: number) => `${Math.min(100, Math.max(0, (x / total) * 100))}%`;
   const spanPct = (a: number, b: number) => `${Math.max(0.4, ((b - a) / total) * 100)}%`;
-  // Anchor the hover tooltip left/right for edge bars so it doesn't clip off-screen.
   const tipClass = (x: number) => {
     const lp = (x / total) * 100;
     return lp < 12 ? "tip-left" : lp > 88 ? "tip-right" : "";
@@ -192,15 +260,15 @@ export function RallySegments({
         Analyzing rallies…
       </button>
     ) : status === "ready" ? (
-      <button className="btn secondary btn-sm" onClick={run} disabled={busy}>
+      <button className="btn secondary btn-sm" onClick={openSetup}>
         Re-analyze
       </button>
     ) : status === "failed" ? (
-      <button className="btn" onClick={run} disabled={busy}>
+      <button className="btn" onClick={openSetup}>
         Try again
       </button>
     ) : (
-      <button className="btn" onClick={run} disabled={busy}>
+      <button className="btn" onClick={openSetup}>
         AI Breakdown <span className="beta-badge">Beta</span>
       </button>
     )
@@ -212,22 +280,7 @@ export function RallySegments({
         <h3>
           Rallies{segments.length > 0 && <span className="seg-count">{segments.length}</span>}
         </h3>
-        <div className="seg-actions">
-          {canRun && status !== "processing" && (
-            <label className="trim-control" title="Skip warm-up — start the analysis at this time (m:ss)">
-              <span className="muted">Skip to</span>
-              <input
-                type="text"
-                value={trim}
-                onChange={(e) => setTrim(e.target.value)}
-                placeholder="0:00"
-                inputMode="numeric"
-                aria-label="Skip warm-up to (minutes:seconds)"
-              />
-            </label>
-          )}
-          {button}
-        </div>
+        {button}
       </div>
 
       {canRun && status === "none" && segments.length === 0 && (
@@ -248,13 +301,18 @@ export function RallySegments({
             {(["player_1", "player_2"] as const).map((p) => (
               <span key={p} className="player-tag">
                 <span className={`player-dot ${p}`} />
-                {playerLabel(p)}
+                {nameOf(p)}
                 <span className="muted">
                   {" · "}
                   {serveCounts[p]} service {serveCounts[p] === 1 ? "game" : "games"}
                 </span>
               </span>
             ))}
+            {canRun && (
+              <button className="player-edit" onClick={openSetup}>
+                Edit players
+              </button>
+            )}
           </div>
 
           {/* Row 1 — service games */}
@@ -267,11 +325,11 @@ export function RallySegments({
                   className={`tl-bar tl-bar-game ${g.server ?? ""}`}
                   style={{ left: pct(g.startS), width: spanPct(g.startS, g.endS) }}
                   onClick={() => onSeek(g.startS)}
-                  title={`${playerLabel(g.server)} serving`}
+                  title={`${displayPlayer(g.server)} serving`}
                 >
-                  <span className="tl-bar-label">{playerLabel(g.server)}</span>
+                  <span className="tl-bar-label">{displayPlayer(g.server)}</span>
                   <span className={`tl-tip ${tipClass(g.startS)}`}>
-                    <span className="tl-tip-strong">{playerLabel(g.server)} serving</span>
+                    <span className="tl-tip-strong">{displayPlayer(g.server)} serving</span>
                     <span className="tl-tip-meta">
                       Game {g.game} · {g.points} {g.points === 1 ? "point" : "points"}
                     </span>
@@ -294,7 +352,7 @@ export function RallySegments({
                 const shots = asNum(s.metadata.shots);
                 const what = asStr(s.metadata.what_you_see);
                 const roles = server
-                  ? `${playerLabel(server)} serving${receiver ? ` · ${playerLabel(receiver)} receiving` : ""}`
+                  ? `${displayPlayer(server)} serving${receiver ? ` · ${displayPlayer(receiver)} receiving` : ""}`
                   : "";
                 const detail = [
                   side === "near" ? "Near end" : side === "far" ? "Far end" : null,
@@ -331,6 +389,90 @@ export function RallySegments({
                 <span className="tl-tick-label">{fmtTime(t)}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {setupOpen && (
+        <div className="modal-overlay" onClick={() => setSetupOpen(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2 style={{ fontSize: 18 }}>AI breakdown</h2>
+              <button className="modal-close" aria-label="Close" onClick={() => setSetupOpen(false)}>
+                <CloseIcon size={20} />
+              </button>
+            </div>
+
+            <div className="field">
+              <span className="lbl">Game start</span>
+              <label className="trim-control">
+                <span className="muted">Skip warm-up to</span>
+                <input
+                  type="text"
+                  value={trim}
+                  onChange={(e) => setTrim(e.target.value)}
+                  placeholder="0:00"
+                  inputMode="numeric"
+                />
+              </label>
+              <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                Leave blank to analyse from the start. Used when you run/re-analyze.
+              </p>
+            </div>
+
+            <div className="field">
+              <span className="lbl">Players</span>
+              <div className="court-hint">
+                <span>Far end (top of frame)</span>
+                <span className="court-net" />
+                <span>Near end (bottom of frame)</span>
+              </div>
+              <div className="player-field">
+                <span className="player-dot player_1" />
+                <span className="player-field-label">Player 1 — starts near</span>
+                <input
+                  list="ai-player-names"
+                  value={p1Name}
+                  onChange={(e) => setP1Name(e.target.value)}
+                  placeholder="Name (optional)"
+                />
+              </div>
+              <div className="player-field">
+                <span className="player-dot player_2" />
+                <span className="player-field-label">Player 2 — starts far</span>
+                <input
+                  list="ai-player-names"
+                  value={p2Name}
+                  onChange={(e) => setP2Name(e.target.value)}
+                  placeholder="Name (optional)"
+                />
+              </div>
+              <datalist id="ai-player-names">
+                {participantNames.map((n) => (
+                  <option key={n} value={n} />
+                ))}
+              </datalist>
+              <button className="btn secondary btn-sm" onClick={swap} style={{ marginTop: 4 }}>
+                Swap players
+              </button>
+            </div>
+
+            <div className="modal-actions">
+              {status === "ready" ? (
+                <>
+                  <button className="btn" onClick={saveNames} disabled={busy}>
+                    Save names
+                  </button>
+                  <button className="btn secondary" onClick={run} disabled={busy}>
+                    Re-analyze
+                  </button>
+                </>
+              ) : (
+                <button className="btn" onClick={run} disabled={busy}>
+                  Run AI breakdown
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

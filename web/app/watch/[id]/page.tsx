@@ -88,6 +88,10 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [segments, setSegments] = useState<Segment[]>([]);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [canAnalyze, setCanAnalyze] = useState(false);
+  const [analysisPlayers, setAnalysisPlayers] = useState<{
+    player_1: string | null;
+    player_2: string | null;
+  } | null>(null);
 
   const shareToken = () =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
@@ -203,6 +207,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       setSegments(data.segments ?? []);
       setAnalysisError(data.analysisError ?? null);
       setCanAnalyze(Boolean(data.canAnalyze));
+      setAnalysisPlayers(data.analysisPlayers ?? null);
       if (data.video.status === "processing") setTimeout(load, 2000);
     }
     load();
@@ -396,6 +401,8 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             initialStatus={analysisStatus}
             initialSegments={segments}
             initialError={analysisError}
+            initialPlayers={analysisPlayers}
+            participantNames={participants.map((p) => p.displayName)}
             onSeek={seekTo}
           />
         )}

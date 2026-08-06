@@ -1,6 +1,6 @@
 import { socialForRequest, storeForRequest } from "@/lib/request";
 import { storage } from "@/lib/storage";
-import { badRequest, json, notFound } from "@/lib/util";
+import { badRequest, json, notFound, sanitizePlayers } from "@/lib/util";
 
 export const runtime = "nodejs";
 
@@ -83,6 +83,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     isFollowingOwner: summary?.isFollowing ?? false,
     analysisStatus: video.analysisStatus,
     analysisError: video.analysisError,
+    analysisPlayers: video.analysisPlayers,
     segments,
     // Owner-only trigger (local no-auth mode has no owner, so it's allowed there
     // too — matches the analyze route's own authorization).
@@ -105,7 +106,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const title = typeof body?.title === "string" ? body.title.trim() : "";
   const visibility =
     body?.visibility === "private" || body?.visibility === "public" ? body.visibility : null;
-  if (!title && !visibility) return badRequest("nothing to update");
+  const hasPlayers = body?.players !== undefined && body?.players !== null;
+  if (!title && !visibility && !hasPlayers) return badRequest("nothing to update");
 
   const participants = await store.getParticipants(id).catch(() => []);
   const isOwner = !userId || video.ownerId === userId;
@@ -117,6 +119,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (visibility) {
     if (!isOwner) return notFound("Video not found");
     updated = await store.update(id, { visibility }); // owner-only via videos RLS
+  }
+  if (hasPlayers) {
+    if (!isOwner) return notFound("Video not found"); // player names are the owner's
+    updated = await store.update(id, { analysisPlayers: sanitizePlayers(body.players) });
   }
   return json({ video: updated });
 }

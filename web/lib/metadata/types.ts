@@ -4,6 +4,15 @@ export type VideoStatus = "uploading" | "processing" | "ready" | "failed";
 export type AnalysisStatus = "none" | "processing" | "ready" | "failed";
 
 /**
+ * Human names for the two analysis players. Display-only relabel of the model's
+ * player_1 (near at the start of the video) / player_2 (far at the start).
+ */
+export interface AnalysisPlayers {
+  player_1: string | null;
+  player_2: string | null;
+}
+
+/**
  * Who can read a video, beyond its owner + people it's explicitly shared to.
  * 'private' today; 'public' is the future social-feed read path (already honoured
  * by the RLS + playback checks so turning it on later is a UI change only).
@@ -37,6 +46,8 @@ export interface Video {
   analysisError: string | null;
   /** When the last successful analysis completed. */
   analyzedAt: string | null;
+  /** Owner-assigned names for player_1 / player_2; null until set. */
+  analysisPlayers: AnalysisPlayers | null;
 }
 
 /** One AI-produced segment of a match (e.g. a rally), with custom fields in `metadata`. */

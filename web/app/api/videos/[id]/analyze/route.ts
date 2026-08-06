@@ -11,7 +11,7 @@ import {
 import { RALLY_KIND, buildRallyRequest } from "@/lib/twelvelabs/rally";
 import { smoothTennis } from "@/lib/twelvelabs/smooth";
 import { type AnalysisTask, normalizeSegments } from "@/lib/twelvelabs/types";
-import { badRequest, json, notFound } from "@/lib/util";
+import { badRequest, json, notFound, sanitizePlayers } from "@/lib/util";
 
 export const runtime = "nodejs";
 
@@ -139,6 +139,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const body = await req.json().catch(() => null);
   const startTimeSec =
     typeof body?.startTimeSec === "number" && body.startTimeSec > 0 ? body.startTimeSec : undefined;
+  // Optional owner-assigned player names, persisted with the analysis.
+  const players = body?.players ? sanitizePlayers(body.players) : null;
+  const playersPatch = players ? { analysisPlayers: players } : {};
 
   // Pre-flight size guard: skip the call (and the raw 400) for oversized files.
   if (video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
@@ -154,6 +157,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       analysisStatus: "processing",
       analysisTaskId: STUB_TASK_ID,
       analysisError: null,
+      ...playersPatch,
     });
     return json({ analysisStatus: "processing" });
   }
@@ -165,6 +169,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       analysisStatus: "processing",
       analysisTaskId: task.task_id,
       analysisError: null,
+      ...playersPatch,
     });
     return json({ analysisStatus: "processing" });
   } catch (err) {

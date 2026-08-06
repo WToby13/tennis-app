@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomToken } from "../util";
 import type {
+  AnalysisPlayers,
   LibraryEntry,
   MetadataStore,
   Participant,
@@ -31,6 +32,7 @@ interface Row {
   analysis_task_id: string | null;
   analysis_error: string | null;
   analyzed_at: string | null;
+  analysis_players: AnalysisPlayers | null;
 }
 
 function toVideo(r: Row): Video {
@@ -53,6 +55,7 @@ function toVideo(r: Row): Video {
     analysisTaskId: r.analysis_task_id,
     analysisError: r.analysis_error,
     analyzedAt: r.analyzed_at,
+    analysisPlayers: r.analysis_players ?? null,
   };
 }
 
@@ -75,6 +78,7 @@ function toRow(patch: Partial<Video>): Partial<Row> {
   if (patch.analysisTaskId !== undefined) row.analysis_task_id = patch.analysisTaskId;
   if (patch.analysisError !== undefined) row.analysis_error = patch.analysisError;
   if (patch.analyzedAt !== undefined) row.analyzed_at = patch.analyzedAt;
+  if (patch.analysisPlayers !== undefined) row.analysis_players = patch.analysisPlayers;
   return row;
 }
 

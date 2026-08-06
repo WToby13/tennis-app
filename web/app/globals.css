@@ -906,6 +906,61 @@ video {
 .player-dot.player_2 {
   background: var(--sage);
 }
+.player-edit {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0;
+}
+.player-edit:hover {
+  color: var(--accent-dim);
+}
+
+/* Setup panel: player fields + court hint */
+.court-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.court-net {
+  height: 1px;
+  background: repeating-linear-gradient(
+    to right,
+    var(--border) 0 6px,
+    transparent 6px 12px
+  );
+}
+.player-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.player-field-label {
+  font-size: 13px;
+  min-width: 150px;
+}
+.player-field input {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
 .tl-row {
   margin-bottom: 12px;
 }

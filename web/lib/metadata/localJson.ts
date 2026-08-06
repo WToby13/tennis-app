@@ -39,6 +39,7 @@ function normalize(v: Video): Video {
     analysisTaskId: v.analysisTaskId ?? null,
     analysisError: v.analysisError ?? null,
     analyzedAt: v.analyzedAt ?? null,
+    analysisPlayers: v.analysisPlayers ?? null,
   };
 }
 
