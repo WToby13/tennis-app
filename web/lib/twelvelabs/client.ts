@@ -29,14 +29,42 @@ async function tlFetch(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
+/** An HTTP error from TwelveLabs, carrying their machine-readable `code` when present. */
+export class TwelveLabsApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "TwelveLabsApiError";
+  }
+}
+
 /** Kick off an async analysis task. Returns the task handle (task_id + status). */
 export async function createAnalysisTask(body: CreateAnalysisTaskBody): Promise<AnalysisTask> {
   const res = await tlFetch("/analyze/tasks", { method: "POST", body: JSON.stringify(body) });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`TwelveLabs create task failed (${res.status}): ${detail}`);
+    let code: string | undefined;
+    let apiMessage: string | undefined;
+    try {
+      const parsed = JSON.parse(detail) as { code?: string; message?: string };
+      code = parsed.code;
+      apiMessage = parsed.message;
+    } catch {
+      // non-JSON body; fall back to the raw text below
+    }
+    throw new TwelveLabsApiError(
+      apiMessage || `TwelveLabs create task failed (${res.status}): ${detail}`,
+      res.status,
+      code,
+    );
   }
-  return (await res.json()) as AnalysisTask;
+  const raw = (await res.json()) as AnalysisTask & { _id?: string; id?: string };
+  // Different endpoints/versions name the id task_id / _id / id — capture whichever.
+  if (!raw.task_id) raw.task_id = raw._id ?? raw.id ?? "";
+  return raw;
 }
 
 /** Poll a task's current status/result. */

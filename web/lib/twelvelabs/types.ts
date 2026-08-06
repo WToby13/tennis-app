@@ -45,31 +45,82 @@ export type AnalysisTaskStatus = "queued" | "pending" | "processing" | "ready" |
 export interface AnalysisTask {
   task_id: string;
   status: AnalysisTaskStatus;
-  /** Keyed by each definition id; each item has start_time/end_time + custom metadata. */
-  result?: Record<string, AnalysisResultSegment[]>;
+  /**
+   * Where the segments live. For time_based_metadata the API returns
+   * `result.data` as a JSON-ENCODED STRING that parses to an object keyed by
+   * each segment definition id (e.g. { "rally": [ {start_time,end_time,metadata} ] }).
+   * Typed loosely + normalized defensively so a minor API shape change doesn't
+   * silently produce zero segments.
+   */
+  result?: unknown;
   error?: { message?: string } | string;
 }
 
-export interface AnalysisResultSegment {
-  start_time: number;
-  end_time: number;
+interface RawSegment {
+  start_time?: number;
+  end_time?: number;
+  start?: number;
+  end?: number;
   metadata?: Record<string, unknown>;
+  [k: string]: unknown;
 }
+
+function safeParse(s: string): unknown {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+const TIME_KEYS = new Set(["start_time", "end_time", "start", "end", "score", "confidence"]);
+
+/**
+ * Pull the segment array for `kind` out of a task result. Handles the documented
+ * shape (`result.data` = JSON string → object keyed by definition id) plus a few
+ * plausible variants (already-parsed object, a raw string, a flat array, or a
+ * differently-named single array), so a wording change doesn't zero us out.
+ */
+function extractSegmentArray(result: unknown, kind: string): RawSegment[] {
+  if (result == null) return [];
+  let container: unknown = result;
+  if (typeof result === "object" && "data" in (result as Record<string, unknown>)) {
+    const d = (result as Record<string, unknown>).data;
+    container = typeof d === "string" ? safeParse(d) : d;
+  } else if (typeof result === "string") {
+    container = safeParse(result);
+  }
+  if (container == null) return [];
+  if (Array.isArray(container)) return container as RawSegment[];
+  if (typeof container === "object") {
+    const obj = container as Record<string, unknown>;
+    if (Array.isArray(obj[kind])) return obj[kind] as RawSegment[];
+    const firstArray = Object.values(obj).find((v) => Array.isArray(v));
+    if (Array.isArray(firstArray)) return firstArray as RawSegment[];
+  }
+  return [];
+}
+
+const num = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? v : null;
 
 /**
  * Map a TwelveLabs result for one definition id into our VideoSegment shape.
+ * Tolerant of start_time/start, end_time/end, and metadata nested-or-inline.
  * Ignores the DB-only `id` field (assigned on insert).
  */
-export function normalizeSegments(
-  task: AnalysisTask,
-  kind: string,
-): Omit<VideoSegment, "id">[] {
-  const raw = task.result?.[kind] ?? [];
-  return raw.map((seg, i) => ({
-    kind,
-    idx: i,
-    startS: seg.start_time,
-    endS: seg.end_time,
-    metadata: seg.metadata ?? {},
-  }));
+export function normalizeSegments(task: AnalysisTask, kind: string): Omit<VideoSegment, "id">[] {
+  return extractSegmentArray(task.result, kind).map((seg, i) => {
+    const metadata =
+      seg.metadata && typeof seg.metadata === "object"
+        ? seg.metadata
+        : Object.fromEntries(Object.entries(seg).filter(([k]) => !TIME_KEYS.has(k)));
+    return {
+      kind,
+      idx: i,
+      startS: num(seg.start_time ?? seg.start),
+      endS: num(seg.end_time ?? seg.end),
+      metadata,
+    };
+  });
 }

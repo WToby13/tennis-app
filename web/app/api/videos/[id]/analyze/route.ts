@@ -3,15 +3,38 @@ import { storeForRequest } from "@/lib/request";
 import { storage } from "@/lib/storage";
 import type { MetadataStore, Video, VideoSegment } from "@/lib/metadata/types";
 import {
+  TwelveLabsApiError,
   TwelveLabsNotConfiguredError,
   createAnalysisTask,
   getAnalysisTask,
 } from "@/lib/twelvelabs/client";
 import { RALLY_KIND, buildRallyRequest } from "@/lib/twelvelabs/rally";
-import { normalizeSegments } from "@/lib/twelvelabs/types";
+import { type AnalysisTask, normalizeSegments } from "@/lib/twelvelabs/types";
 import { badRequest, json, notFound } from "@/lib/util";
 
 export const runtime = "nodejs";
+
+/**
+ * TwelveLabs rejects files ≥ 4 GB. We check up front (we already store the byte
+ * size) so a long/high-bitrate match gets a clear message instead of a raw 400.
+ * A downscaled "analysis proxy" transcode is the planned real fix.
+ */
+const MAX_ANALYSIS_BYTES = 4_000_000_000; // 4.0 GB (decimal, matches TwelveLabs' units)
+const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
+
+/** Turn a TwelveLabs error code (or raw message) into something worth showing a user. */
+function friendlyAnalyzeError(code: string | undefined, fallback: string): string {
+  switch (code) {
+    case "video_filesize_too_large":
+      return `This match is too large for AI analysis (max ${gb(MAX_ANALYSIS_BYTES)}). Automatic compression is coming soon.`;
+    case "video_duration_too_long":
+      return "This match is too long for AI analysis (max 2 hours).";
+    case "usage_limit_exceeded":
+      return "The AI analysis usage limit has been reached — try again later.";
+    default:
+      return fallback || "AI analysis failed. Please try again.";
+  }
+}
 
 /**
  * AI rally segmentation (TwelveLabs). Owner-only.
@@ -28,24 +51,24 @@ export const runtime = "nodejs";
 
 const STUB_TASK_ID = "stub-task";
 
-/** Canned rallies for local dev without a TwelveLabs key. */
+/**
+ * Canned rallies for local dev without a TwelveLabs key. Built in the REAL API
+ * response shape (result.data = JSON string keyed by definition id) and run back
+ * through normalizeSegments, so local verification exercises the actual parser.
+ */
 function stubSegments(): Omit<VideoSegment, "id">[] {
-  const rallies = [
-    { startS: 4, endS: 18, serving_player: "near_bottom" },
-    { startS: 26, endS: 33, serving_player: "cannot_tell" },
-    { startS: 41, endS: 58, serving_player: "near_bottom" },
-    { startS: 66, endS: 72, serving_player: "far_top" },
+  const rally = [
+    { start_time: 4, end_time: 18, metadata: { what_you_see: "Near player serves.", serving_player: "near_bottom" } },
+    { start_time: 26, end_time: 33, metadata: { what_you_see: "Server unclear.", serving_player: "cannot_tell" } },
+    { start_time: 41, end_time: 58, metadata: { what_you_see: "Near player serves again.", serving_player: "near_bottom" } },
+    { start_time: 66, end_time: 72, metadata: { what_you_see: "Far player serves.", serving_player: "far_top" } },
   ];
-  return rallies.map((r, idx) => ({
-    kind: RALLY_KIND,
-    idx,
-    startS: r.startS,
-    endS: r.endS,
-    metadata: {
-      what_you_see: "Stub rally for local dev (no TwelveLabs key set).",
-      serving_player: r.serving_player,
-    },
-  }));
+  const task: AnalysisTask = {
+    task_id: STUB_TASK_ID,
+    status: "ready",
+    result: { data: JSON.stringify({ [RALLY_KIND]: rally }) },
+  };
+  return normalizeSegments(task, RALLY_KIND);
 }
 
 /** Resolve + owner-check the video for the caller. Returns null on no-access. */
@@ -67,6 +90,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const { store, video } = owned;
 
   if (video.status !== "ready") return badRequest("This match isn't ready to analyze yet.");
+
+  // Pre-flight size guard: skip the call (and the raw 400) for oversized files.
+  if (video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
+    const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}, max ${gb(MAX_ANALYSIS_BYTES)}). Automatic compression is coming soon.`;
+    await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null });
+    return json({ analysisStatus: "failed", error: msg }, { status: 400 });
+  }
 
   // Dev stub: no key + local mode → mark processing with a stub task id.
   if (!config.twelvelabs.enabled) {
@@ -92,7 +122,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     if (err instanceof TwelveLabsNotConfiguredError) {
       return json({ error: "AI analysis isn't configured." }, { status: 503 });
     }
-    const message = err instanceof Error ? err.message : "Failed to start analysis";
+    const code = err instanceof TwelveLabsApiError ? err.code : undefined;
+    const message = friendlyAnalyzeError(code, err instanceof Error ? err.message : "");
     await store.update(id, { analysisStatus: "failed", analysisError: message });
     return json({ analysisStatus: "failed", error: message }, { status: 502 });
   }
@@ -118,7 +149,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       try {
         const task = await getAnalysisTask(video.analysisTaskId);
         if (task.status === "ready") {
-          await store.replaceSegments(id, RALLY_KIND, normalizeSegments(task, RALLY_KIND));
+          const segs = normalizeSegments(task, RALLY_KIND);
+          if (segs.length === 0) {
+            // Ready but nothing parsed → likely a result-shape mismatch. Log the
+            // raw shape (truncated) so it can be diagnosed from server logs.
+            console.warn(
+              "[analyze] ready task produced 0 segments; raw result:",
+              JSON.stringify(task.result)?.slice(0, 2000),
+            );
+          }
+          await store.replaceSegments(id, RALLY_KIND, segs);
           video = await store.update(id, {
             analysisStatus: "ready",
             analyzedAt: new Date().toISOString(),

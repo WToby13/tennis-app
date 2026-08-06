@@ -175,7 +175,7 @@ export function RallySegments({
       <button className="btn" disabled>
         Analyzing rallies…
       </button>
-    ) : status === "ready" && segments.length > 0 ? (
+    ) : status === "ready" ? (
       <button className="btn secondary btn-sm" onClick={run} disabled={busy}>
         Re-analyze
       </button>
@@ -204,6 +204,9 @@ export function RallySegments({
       )}
       {status === "processing" && (
         <p className="muted seg-hint">Analyzing rallies… this can take a few minutes.</p>
+      )}
+      {status === "ready" && segments.length === 0 && (
+        <p className="muted seg-hint">No rallies were detected in this match. Try Re-analyze.</p>
       )}
       {status === "failed" && error && <p className="muted seg-hint">{error}</p>}
 
