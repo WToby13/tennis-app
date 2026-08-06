@@ -845,6 +845,20 @@ video {
   margin: 0 0 8px;
 }
 
+/* "Beta" tag inside the AI Breakdown button — black text on a white square. */
+.beta-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 7px;
+  padding: 1px 5px;
+  background: #fff;
+  color: #000;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 4px;
+}
+
 /* ---- rally timeline ---- */
 .timeline {
   margin-top: 6px;

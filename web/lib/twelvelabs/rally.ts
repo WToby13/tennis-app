@@ -46,7 +46,7 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
         name: "what_you_see",
         type: "string",
         description:
-          "Fill this in FIRST, before the other fields, describing only THIS segment. In one or two plain sentences say: (1) at the very start of the point, is the large near player at the bottom of the screen throwing the ball up and hitting it above his head, OR is he standing back and waiting to hit the ball only after it comes over the net? and (2) roughly how many seconds does the point last from the first hit until the ball stops crossing the net, and — since players hit about once every 2 seconds — about how many times is the ball hit? Base the two fields below only on what you describe here. Describe what actually happens in THIS point — do not repeat the wording from the previous point.",
+          "Fill this in FIRST, before the other fields, describing only THIS segment. In one or two plain sentences say: At the very start of the point, is the large near player at the bottom of the screen throwing the ball up and hitting it above his head, OR is he standing back and waiting to hit the ball after it comes over the net? What happens in the rally",
       },
       {
         name: "serving_player",
@@ -57,12 +57,6 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
           farHint +
           notes,
         enum: ["near_bottom", "far_top", "cannot_tell"],
-      },
-      {
-        name: "times_ball_was_hit",
-        type: "integer",
-        description:
-          "Your best WHOLE-NUMBER estimate of how many times a racket hits the ball during this point: count the first overhead hit that starts the point, plus every later time the yellow ball crosses back over the net. The ball is small and fast, so if you cannot count every hit, ESTIMATE from how long the point lasts: players hit the ball about once every 2 seconds, so the number of hits is roughly the length of the point in seconds divided by 2. Guides: a 4-second point is about 2 hits, an 8-second point about 4 hits, a 12-second point about 6 hits, a 20-second point about 10 hits. A LONGER point must be given a HIGHER number than a shorter point. Do NOT answer 2 or 3 for a point that clearly lasts longer than 6 seconds. The minimum is 1.",
       },
     ],
   };

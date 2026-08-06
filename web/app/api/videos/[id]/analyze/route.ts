@@ -31,10 +31,10 @@ const STUB_TASK_ID = "stub-task";
 /** Canned rallies for local dev without a TwelveLabs key. */
 function stubSegments(): Omit<VideoSegment, "id">[] {
   const rallies = [
-    { startS: 4, endS: 18, serving_player: "near_bottom", times_ball_was_hit: 7 },
-    { startS: 26, endS: 33, serving_player: "cannot_tell", times_ball_was_hit: 3 },
-    { startS: 41, endS: 58, serving_player: "near_bottom", times_ball_was_hit: 8 },
-    { startS: 66, endS: 72, serving_player: "far_top", times_ball_was_hit: 2 },
+    { startS: 4, endS: 18, serving_player: "near_bottom" },
+    { startS: 26, endS: 33, serving_player: "cannot_tell" },
+    { startS: 41, endS: 58, serving_player: "near_bottom" },
+    { startS: 66, endS: 72, serving_player: "far_top" },
   ];
   return rallies.map((r, idx) => ({
     kind: RALLY_KIND,
@@ -44,7 +44,6 @@ function stubSegments(): Omit<VideoSegment, "id">[] {
     metadata: {
       what_you_see: "Stub rally for local dev (no TwelveLabs key set).",
       serving_player: r.serving_player,
-      times_ball_was_hit: r.times_ball_was_hit,
     },
   }));
 }

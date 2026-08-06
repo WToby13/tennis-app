@@ -185,7 +185,7 @@ export function RallySegments({
       </button>
     ) : (
       <button className="btn" onClick={run} disabled={busy}>
-        Analyze rallies
+        AI Breakdown <span className="beta-badge">Beta</span>
       </button>
     )
   ) : null;
@@ -237,7 +237,6 @@ export function RallySegments({
                 const start = s.startS ?? 0;
                 const end = s.endS ?? start;
                 const sp = serveOf(s);
-                const hits = s.metadata.times_ball_was_hit;
                 const what = s.metadata.what_you_see;
                 return (
                   <button
@@ -251,11 +250,9 @@ export function RallySegments({
                       <span className="tl-tip-strong">
                         {fmtTime(start)}–{fmtTime(end)}
                       </span>
-                      <span className="tl-tip-meta">
-                        {sp !== "cannot_tell" && `${serveLabel(sp)} serve`}
-                        {typeof hits === "number" &&
-                          `${sp !== "cannot_tell" ? " · " : ""}${hits} ${hits === 1 ? "hit" : "hits"}`}
-                      </span>
+                      {sp !== "cannot_tell" && (
+                        <span className="tl-tip-meta">{serveLabel(sp)} serve</span>
+                      )}
                       {typeof what === "string" && what && (
                         <span className="tl-tip-what">{what}</span>
                       )}
