@@ -11,6 +11,79 @@ export interface UploadHandle {
   videoId: string;
 }
 
+/** Poster-frame timestamp (seconds) and max edge, matching the iOS recorder. */
+const THUMBNAIL_SECONDS = 60;
+const THUMBNAIL_MAX_EDGE = 640;
+
+/**
+ * Grab a poster frame from the file in the browser: 60s in, or the last frame
+ * for clips shorter than a minute (mirrors the iOS Thumbnailer). Returns a JPEG
+ * blob, or null if the browser can't decode this video — a missing thumbnail is
+ * never fatal, and the server-side backfill can cover such files.
+ */
+async function captureThumbnail(file: File): Promise<Blob | null> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    video.src = objectUrl;
+
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error("video decode failed"));
+    });
+
+    const duration = Number.isFinite(video.duration) ? video.duration : 0;
+    // Tolerate a hair before the end so `seeked` fires on a decodable frame.
+    const target = duration > THUMBNAIL_SECONDS ? THUMBNAIL_SECONDS : Math.max(0, duration - 0.1);
+
+    await new Promise<void>((resolve, reject) => {
+      video.onseeked = () => resolve();
+      video.onerror = () => reject(new Error("seek failed"));
+      video.currentTime = target;
+    });
+
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return null;
+
+    // Fit within 640×640 without upscaling.
+    const scale = Math.min(1, THUMBNAIL_MAX_EDGE / Math.max(vw, vh));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(vw * scale);
+    canvas.height = Math.round(vh * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    return await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob((blob) => resolve(blob), "image/jpeg", 0.8),
+    );
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/**
+ * Best-effort poster thumbnail upload — presign a direct PUT and send the JPEG,
+ * the same path the iOS recorder uses. Swallows all errors: the video is already
+ * stored, so a thumbnail failure must not fail the upload.
+ */
+async function uploadThumbnail(videoId: string, file: File): Promise<void> {
+  try {
+    const blob = await captureThumbnail(file);
+    if (!blob) return;
+    const presignRes = await fetch(`/api/uploads/${videoId}/thumbnail-url`, { method: "POST" });
+    if (!presignRes.ok) return;
+    const { url, method } = await presignRes.json();
+    await fetch(url, { method, headers: { "content-type": "image/jpeg" }, body: blob });
+  } catch {
+    // Non-fatal — leave the video thumbnail-less; the backfill can fill it in.
+  }
+}
+
 export async function uploadFile(
   file: File,
   opts: { title: string; onProgress?: (fraction: number) => void },
@@ -61,6 +134,9 @@ export async function uploadFile(
     body: JSON.stringify({ parts }),
   });
   if (!completeRes.ok) throw new Error(`complete failed: ${await completeRes.text()}`);
+
+  // 4. Best-effort poster thumbnail (60s in / last frame). Never fails the upload.
+  await uploadThumbnail(videoId, file);
 
   return { videoId };
 }
