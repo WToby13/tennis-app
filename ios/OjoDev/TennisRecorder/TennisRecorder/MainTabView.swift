@@ -1,0 +1,136 @@
+import SwiftUI
+
+/// The four primary destinations. Record is not a "tab" you stay on — it's a
+/// prominent center button that launches the fullscreen camera as a modal, so
+/// recording is always one tap away while the app itself opens to the feed.
+enum MainTab { case home, matches, profile }
+
+/// The app's home once signed in: a record-forward custom tab bar over the
+/// currently selected destination. Each destination is its own NavigationStack
+/// so author names and match cards can push detail screens.
+struct MainTabView: View {
+    @ObservedObject var auth: AuthModel
+    @ObservedObject var library: RecordingLibrary
+
+    @State private var tab: MainTab = .home
+    @State private var showCamera = false
+    @State private var matchesPath = NavigationPath()
+
+    var body: some View {
+        ZStack {
+            Theme.bg.ignoresSafeArea()
+
+            selectedTab
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    OjoTabBar(tab: $tab, onRecord: { showCamera = true })
+                }
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraScreen(library: library) { recording in
+                // Stop → jump straight to the new match's Watch screen to review,
+                // name and share it.
+                showCamera = false
+                tab = .matches
+                matchesPath.append(WatchTarget.recording(recording))
+            }
+        }
+    }
+
+    @ViewBuilder private var selectedTab: some View {
+        switch tab {
+        case .home:
+            NavigationStack {
+                FeedView().ojoDestinations(library: library)
+            }
+        case .matches:
+            NavigationStack(path: $matchesPath) {
+                MatchesView(library: library).ojoDestinations(library: library)
+            }
+        case .profile:
+            NavigationStack {
+                ProfileView(auth: auth).ojoDestinations(library: library)
+            }
+        }
+    }
+}
+
+extension View {
+    /// The shared push destinations every tab's NavigationStack needs: a match's
+    /// Watch screen and a user's public profile.
+    func ojoDestinations(library: RecordingLibrary) -> some View {
+        self
+            .navigationDestination(for: WatchTarget.self) { target in
+                WatchView(target: target, library: library)
+            }
+            .navigationDestination(for: ProfileTarget.self) { target in
+                switch target {
+                case .user(let id): ProfileView(userId: id)
+                }
+            }
+    }
+}
+
+// MARK: - Tab bar
+
+struct OjoTabBar: View {
+    @Binding var tab: MainTab
+    var onRecord: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 0) {
+            TabBarButton(icon: "house.fill", label: "Home", isActive: tab == .home) { tab = .home }
+            TabBarButton(icon: "square.grid.2x2.fill", label: "Matches", isActive: tab == .matches) { tab = .matches }
+            RecordTabButton(action: onRecord)
+            TabBarButton(icon: "person.fill", label: "You", isActive: tab == .profile) { tab = .profile }
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 10)
+        .padding(.bottom, 4)
+        .background(Theme.surface)
+        .overlay(alignment: .top) {
+            Rectangle().fill(Theme.border).frame(height: 0.5)
+        }
+    }
+}
+
+private struct TabBarButton: View {
+    let icon: String
+    let label: String
+    let isActive: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 20, weight: .semibold))
+                Text(label).font(.caption2.weight(.medium))
+            }
+            .foregroundStyle(isActive ? Theme.accent : Theme.muted)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// The emphasized center Record button — a filled clay circle that reads as the
+/// primary action in the bar.
+private struct RecordTabButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                ZStack {
+                    Circle().fill(Theme.accent).frame(width: 46, height: 46)
+                    Circle().stroke(Theme.text.opacity(0.9), lineWidth: 2.5).frame(width: 24, height: 24)
+                }
+                Text("Record").font(.caption2.weight(.semibold)).foregroundStyle(Theme.text)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Record a match")
+    }
+}
