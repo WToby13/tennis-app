@@ -90,6 +90,13 @@ struct VideoDetailResponse: Decodable {
     let sharedToFollowers: Bool?
     let author: VideoAuthor?
     let isFollowingOwner: Bool?
+    // AI rally breakdown — the detail route returns the full analysis state, so one
+    // fetch seeds the breakdown UI and only re-runs/polls need the analyze route.
+    let analysisStatus: String?
+    let analysisError: String?
+    let analysisPlayers: AnalysisPlayers?
+    let segments: [AnalysisSegment]?
+    let canAnalyze: Bool?
 }
 
 // MARK: - Social wire types (mirror web lib/social/types.ts)
@@ -169,6 +176,59 @@ struct UserResult: Decodable, Identifiable {
 
 struct UsersResponse: Decodable {
     let users: [UserResult]
+}
+
+// MARK: - AI rally breakdown wire types (mirror web lib/metadata/types.ts)
+
+/// Display names for the two analysis players. `player_1` is whoever starts near
+/// the camera, `player_2` far — a relabel of the model's own ids, not a re-run.
+struct AnalysisPlayers: Codable, Equatable {
+    var player1: String?
+    var player2: String?
+
+    enum CodingKeys: String, CodingKey {
+        case player1 = "player_1"
+        case player2 = "player_2"
+    }
+}
+
+/// The fields the structural smoother stamps onto every rally (web
+/// lib/twelvelabs/smooth.ts). Counts decode as `Double` so an int or float both
+/// work; unknown keys from the raw model output are ignored.
+struct RallyMetadata: Decodable {
+    let game: Double?
+    let server: String?
+    let receiver: String?
+    let nearPlayer: String?
+    let nearRole: String?
+    let servingSide: String?
+    let shots: Double?
+    let whatYouSee: String?
+
+    enum CodingKeys: String, CodingKey {
+        case game, server, receiver, shots
+        case nearPlayer = "near_player"
+        case nearRole = "near_role"
+        case servingSide = "serving_side"
+        case whatYouSee = "what_you_see"
+    }
+}
+
+/// One AI-produced rally within a match.
+struct AnalysisSegment: Decodable, Identifiable {
+    let id: String
+    let idx: Int?
+    let startS: Double?
+    let endS: Double?
+    let metadata: RallyMetadata?
+}
+
+/// Response shape of both `POST` (start) and `GET` (poll) on the analyze route.
+/// A start returns only the status; a poll carries the segments once ready.
+struct AnalysisResponse: Decodable {
+    let analysisStatus: String?
+    let analysisError: String?
+    let segments: [AnalysisSegment]?
 }
 
 /// Readable upload failures, so the UI can show something better than a raw
@@ -398,5 +458,35 @@ extension UploadAPI {
     func setVisibility(videoId: String, visibility: String) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["visibility": visibility])
         _ = try await perform(try await makeRequest("/api/videos/\(videoId)", method: "PATCH", body: body))
+    }
+}
+
+// MARK: - AI rally breakdown
+
+extension UploadAPI {
+    /// Start (or re-run) the AI rally breakdown. Owner-only, enforced server-side.
+    /// `startTimeSec` trims warm-up hitting so the model starts at the first real
+    /// game; `players` are display names stored alongside the result.
+    @discardableResult
+    func startAnalysis(videoId: String,
+                       startTimeSec: Double? = nil,
+                       players: AnalysisPlayers? = nil) async throws -> AnalysisResponse {
+        var obj: [String: Any] = [:]
+        if let startTimeSec, startTimeSec > 0 { obj["startTimeSec"] = startTimeSec }
+        if let players {
+            obj["players"] = [
+                "player_1": players.player1 ?? "",
+                "player_2": players.player2 ?? "",
+            ]
+        }
+        let body = try JSONSerialization.data(withJSONObject: obj)
+        return try await send("/api/videos/\(videoId)/analyze", method: "POST", body: body)
+    }
+
+    /// Poll the breakdown. There's no background worker — the owner's poll is what
+    /// advances the TwelveLabs task and writes the segments back — so this must keep
+    /// being called while the status is "processing".
+    func getAnalysis(videoId: String) async throws -> AnalysisResponse {
+        try await send("/api/videos/\(videoId)/analyze", method: "GET")
     }
 }
