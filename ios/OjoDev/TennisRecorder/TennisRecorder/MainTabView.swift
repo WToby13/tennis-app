@@ -3,7 +3,9 @@ import SwiftUI
 /// The four primary destinations. Record is not a "tab" you stay on — it's a
 /// prominent center button that launches the fullscreen camera as a modal, so
 /// recording is always one tap away while the app itself opens to the feed.
-enum MainTab { case home, matches, profile }
+/// Matches and Profile are one destination now ("You" — see LibraryView), so the
+/// bar is Home, Record, You.
+enum MainTab { case home, library }
 
 /// The app's home once signed in: a record-forward custom tab bar over the
 /// currently selected destination. Each destination is its own NavigationStack
@@ -14,7 +16,7 @@ struct MainTabView: View {
 
     @State private var tab: MainTab = .home
     @State private var showCamera = false
-    @State private var matchesPath = NavigationPath()
+    @State private var libraryPath = NavigationPath()
 
     var body: some View {
         ZStack {
@@ -30,8 +32,8 @@ struct MainTabView: View {
                 // Stop → jump straight to the new match's Watch screen to review,
                 // name and share it.
                 showCamera = false
-                tab = .matches
-                matchesPath.append(WatchTarget.recording(recording))
+                tab = .library
+                libraryPath.append(WatchTarget.recording(recording))
             }
         }
     }
@@ -42,13 +44,9 @@ struct MainTabView: View {
             NavigationStack {
                 FeedView().ojoDestinations(library: library)
             }
-        case .matches:
-            NavigationStack(path: $matchesPath) {
-                MatchesView(library: library).ojoDestinations(library: library)
-            }
-        case .profile:
-            NavigationStack {
-                ProfileView(auth: auth).ojoDestinations(library: library)
+        case .library:
+            NavigationStack(path: $libraryPath) {
+                LibraryView(auth: auth, library: library).ojoDestinations(library: library)
             }
         }
     }
@@ -79,9 +77,8 @@ struct OjoTabBar: View {
     var body: some View {
         HStack(alignment: .center, spacing: 0) {
             TabBarButton(icon: "house.fill", label: "Home", isActive: tab == .home) { tab = .home }
-            TabBarButton(icon: "square.grid.2x2.fill", label: "Matches", isActive: tab == .matches) { tab = .matches }
             RecordTabButton(action: onRecord)
-            TabBarButton(icon: "person.fill", label: "You", isActive: tab == .profile) { tab = .profile }
+            TabBarButton(icon: "person.fill", label: "You", isActive: tab == .library) { tab = .library }
         }
         .padding(.horizontal, 8)
         .padding(.top, 10)

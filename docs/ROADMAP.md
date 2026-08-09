@@ -9,7 +9,7 @@ doing them separately means building the same thing twice.
 | 0 | Perf quick wins | done |
 | 1 | Shared match-status model | done |
 | 2 | Web: merged library page + processing/analysing UI | done |
-| 3 | iOS: merged Matches + Profile, "Upload & AI Analyse" | todo |
+| 3 | iOS: merged Matches + Profile, "Upload & AI Analyse" | built — needs a device test |
 | 4 | Remaining UX (fullscreen, login, caching, SSR) | todo |
 | 5 | Media pipeline: faststart + analysis proxy | todo |
 
@@ -80,11 +80,25 @@ including local not-yet-uploaded recordings, which only iOS can show.
 "Upload & AI Analyse" chains upload completion into `POST /analyze` so analysis
 starts without a second visit; the CTA becomes "Share" once ready.
 
-Also here, because it's the same file: **`BackgroundUploader` writes the entire
-video out a second time** as part files before enqueuing anything, so a 6 GB
-match needs 12 GB free, and it presigns every part sequentially before a single
-byte uploads (~750 round trips at 8 GB / 8 MB parts). Scale part size with file
-size (target ~300 parts) and presign in batches.
+### The big-upload fixes that shipped with it
+
+`BackgroundUploader` used to write the entire video out a *second* time as part
+files, and presign every part, before enqueuing anything. Three consequences:
+
+1. a 6 GB match needed 12 GB free;
+2. ~750 sequential presign round trips before the first byte moved;
+3. **presigned URLs expire in an hour** — on a long upload the parts at the back
+   of the queue could be handed already-dead URLs.
+
+Now the part size scales with the file (server-side, in `partSizeFor` — so the
+browser client gets it too: a 6 GB upload goes from 750 parts to 287), and parts
+are sliced, presigned and enqueued a window of 6 at a time, refilled from the
+session delegate as each one lands. Disk stays bounded and every URL is minted
+shortly before it's used.
+
+**This needs a real-device test with a large match.** The Simulator can't
+meaningfully exercise a background `URLSession` across suspension and relaunch,
+which is exactly the path this changed.
 
 ## Phase 4 — Remaining UX
 

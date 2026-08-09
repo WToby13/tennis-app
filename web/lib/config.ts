@@ -17,6 +17,28 @@ const privateKey = readPrivateKey(process.env.CLOUDFRONT_PRIVATE_KEY);
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
+/**
+ * Part size for a multipart upload of `sizeBytes`.
+ *
+ * Every part costs a `/part-url` round trip before its bytes can move, so a fixed
+ * 8 MB part size means ~750 sequential presigns for a 6 GB match — minutes of
+ * latency before the first byte, and presigned URLs (1 h TTL) that can expire
+ * before their turn comes up. Scaling the part size keeps the count bounded.
+ *
+ * S3 allows 10,000 parts at a 5 MiB minimum; the 300 target leaves plenty of
+ * headroom while keeping each chunk small enough to buffer comfortably.
+ */
+const MIB = 1024 * 1024;
+const TARGET_PARTS = 300;
+const MAX_PART_SIZE = 512 * MIB;
+
+export function partSizeFor(sizeBytes: number, base: number): number {
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return base;
+  const needed = Math.ceil(sizeBytes / TARGET_PARTS);
+  const rounded = Math.ceil(needed / MIB) * MIB; // whole MiB parts
+  return Math.min(MAX_PART_SIZE, Math.max(base, rounded));
+}
+
 export const config = {
   storageBackend: (process.env.STORAGE_BACKEND ?? "local") as "local" | "s3",
   partSizeBytes: Number(process.env.PART_SIZE_BYTES ?? 8 * 1024 * 1024),

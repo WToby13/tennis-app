@@ -55,6 +55,9 @@ struct RemoteVideo: Decodable {
     let createdAt: String?
     let thumbnailUrl: String?
     let visibility: String?
+    /// Derived upload/analysis/share state. Optional so the app keeps working
+    /// against a server deployed before this field existed.
+    let matchStatus: MatchStatus?
 }
 
 struct VideosResponse: Decodable {
@@ -428,6 +431,12 @@ extension UploadAPI {
     /// A user's public profile: summary, follow state, and their matches.
     func getUserProfile(userId: String) async throws -> UserProfileResponse {
         try await send("/api/users/\(userId)", method: "GET")
+    }
+
+    /// The signed-in user's own profile, without needing their id first — the
+    /// route resolves `me` server-side from the request's session.
+    func getMyProfile() async throws -> UserProfileResponse {
+        try await send("/api/users/me", method: "GET")
     }
 
     /// Add a match to your profile/library ("save"). No un-save from here (matches web).
