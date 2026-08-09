@@ -33,10 +33,10 @@ const icons = {
   ),
 };
 
+// Upload and Profile folded into /matches — see app/matches/page.tsx.
 const NAV = [
   { href: "/", label: "Home", icon: icons.home },
   { href: "/matches", label: "Matches", icon: icons.matches },
-  { href: "/upload", label: "Upload", icon: icons.upload },
 ] as const;
 
 export function Sidebar() {
@@ -70,8 +70,8 @@ export function Sidebar() {
 
         <nav aria-label="Account">
           <Link
-            href="/profile"
-            className={`navlink ${isActive("/profile") ? "active" : ""}`}
+            href="/matches?edit=profile"
+            className="navlink"
             title="Profile"
           >
             {icons.profile}

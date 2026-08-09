@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:local": "NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_ANON_KEY= STORAGE_BACKEND=local next dev -p 3100",
+    "dev:local": "NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_ANON_KEY= TWELVELABS_API_KEY= STORAGE_BACKEND=local next dev -p 3100",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

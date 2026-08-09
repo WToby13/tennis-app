@@ -1,131 +1,152 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ShareButton } from "../ShareButton";
-import {
-  formatDate,
-  formatDuration,
-  formatSize,
-  STATUS_LABEL,
-  type MatchVideo,
-} from "@/lib/matchFormat";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { Avatar } from "../Avatar";
+import { EditProfile, type AccountFields } from "../EditProfile";
+import { MatchCard } from "../MatchCard";
+import { UploadTile } from "../UploadTile";
+import { config } from "@/lib/config";
+import type { MatchVideo } from "@/lib/matchFormat";
 
-export default function MatchesPage() {
+interface Profile {
+  id: string;
+  displayName: string;
+  followers: number;
+  following: number;
+}
+
+/**
+ * The library — profile, uploading and your matches on one page.
+ *
+ * This replaces the old /matches + /profile + /upload trio; those routes now
+ * redirect here. Profile editing is a modal (`?edit=profile` opens it, which is
+ * where the OAuth callback sends first-time users to set their playing hand).
+ */
+function LibraryPage() {
+  const router = useRouter();
+  const params = useSearchParams();
   const [videos, setVideos] = useState<MatchVideo[] | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [account, setAccount] = useState<AccountFields | null>(null);
+  const [editing, setEditing] = useState(params.get("edit") === "profile");
+
+  const loadVideos = useCallback(async () => {
+    const res = await fetch("/api/videos");
+    if (!res.ok) {
+      setVideos([]);
+      return;
+    }
+    const { videos } = await res.json();
+    setVideos(videos);
+  }, []);
 
   useEffect(() => {
-    fetch("/api/videos")
-      .then((r) => r.json())
-      .then((d) => setVideos(d.videos))
-      .catch(() => setVideos([]));
+    loadVideos().catch(() => setVideos([]));
+  }, [loadVideos]);
+
+  useEffect(() => {
+    if (!config.authEnabled) return;
+    (async () => {
+      const res = await fetch("/api/users/me");
+      if (!res.ok) return;
+      const data = await res.json();
+      setProfile(data.profile);
+      if (data.account) setAccount(data.account);
+    })();
   }, []);
 
   /** Drop a shared video from my library (does not delete the original). */
-  async function removeFromLibrary(id: string) {
+  const removeFromLibrary = useCallback(async (id: string) => {
     setVideos((vs) => (vs ?? []).filter((v) => v.id !== id));
     await fetch(`/api/videos/${id}/library`, { method: "DELETE" }).catch(() => {});
-  }
+  }, []);
+
+  const closeEditor = useCallback(() => {
+    setEditing(false);
+    // Drop ?edit=profile so a refresh doesn't reopen the modal.
+    if (params.get("edit")) router.replace("/matches");
+  }, [params, router]);
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <div>
-          <div className="eyebrow" style={{ marginBottom: 8 }}>
-            Library
-          </div>
-          <h1 style={{ marginBottom: 6 }}>Your matches</h1>
+      <div className="library-header">
+        {/* No avatar in local no-auth mode — there's no one to be. */}
+        {profile && <Avatar name={profile.displayName} size={56} />}
+        <div className="who">
+          <h1 style={{ marginBottom: 2 }}>{profile?.displayName ?? "Your matches"}</h1>
           <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            Only you can see these. Share a link to let a friend watch or add it.
+            {profile ? (
+              <>
+                <b className="mono">{profile.followers}</b> followers ·{" "}
+                <b className="mono">{profile.following}</b> following
+                {account?.email ? ` · ${account.email}` : ""}
+              </>
+            ) : (
+              "Your library — only you can see these unless you share them."
+            )}
           </p>
         </div>
-        <Link href="/upload" className="btn">
-          Upload a match
-        </Link>
+        {profile && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <Link href={`/u/${profile.id}`} className="btn secondary btn-sm">
+              Public profile
+            </Link>
+            {account && (
+              <button className="btn secondary btn-sm" onClick={() => setEditing(true)}>
+                Edit profile
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
-      {videos === null && (
-        <p className="muted" style={{ marginTop: 20 }}>
+      {videos === null ? (
+        <p className="muted" style={{ marginTop: 24 }}>
           Loading…
         </p>
-      )}
-
-      {videos?.length === 0 && (
-        <div className="card" style={{ padding: 40, textAlign: "center", marginTop: 20 }}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/monogram.svg"
-            alt=""
-            width={56}
-            height={56}
-            style={{ opacity: 0.45, margin: "0 auto 8px" }}
-          />
-          <p className="muted">
-            No matches yet. Record one in the iPhone app, or upload a file to get started.
-          </p>
-          <Link href="/upload" className="btn">
-            Upload a match
-          </Link>
-        </div>
-      )}
-
-      {videos && videos.length > 0 && (
-        <div className="grid" style={{ marginTop: 20 }}>
+      ) : (
+        <div className="grid" style={{ marginTop: 24 }}>
+          <UploadTile onUploaded={loadVideos} />
           {videos.map((v) => (
-            <div key={v.id} className="card">
-              <Link href={`/watch/${v.id}`} style={{ color: "inherit" }}>
-                <div className="thumb">
-                  {v.thumbnailUrl && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={v.thumbnailUrl}
-                      alt=""
-                      className="thumb-img"
-                      onError={(e) => {
-                        e.currentTarget.style.display = "none";
-                      }}
-                    />
-                  )}
-                  <span className="play" />
-                </div>
-              </Link>
-              <div style={{ padding: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <Link
-                    href={`/watch/${v.id}`}
-                    style={{
-                      color: "inherit",
-                      fontWeight: 700,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {v.title}
-                  </Link>
-                  <span className={`badge ${v.status}`}>{STATUS_LABEL[v.status]}</span>
-                </div>
-                <div className="muted mono" style={{ fontSize: 13, marginTop: 6 }}>
-                  {formatDate(v.createdAt)} · {formatDuration(v.durationS)} · {formatSize(v.sizeBytes)}
-                  {v.addedVia === "share" && " · Added"}
-                  {v.addedVia === "participant" && " · Tagged"}
-                </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                  <Link href={`/watch/${v.id}`} className="btn btn-sm">
-                    Watch
-                  </Link>
-                  {v.status === "ready" && <ShareButton id={v.id} />}
-                  {v.addedVia !== "upload" && (
-                    <button className="btn secondary btn-sm" onClick={() => removeFromLibrary(v.id)}>
-                      Remove
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
+            <MatchCard
+              key={v.id}
+              video={v}
+              isOwner={!profile || v.ownerId === profile.id}
+              onRemove={removeFromLibrary}
+            />
           ))}
         </div>
       )}
+
+      {videos?.length === 0 && (
+        <p className="muted" style={{ marginTop: 20, fontSize: 14 }}>
+          No matches yet — record one in the iPhone app, or upload a file above.
+        </p>
+      )}
+
+      {editing && account && profile && (
+        <EditProfile
+          userId={profile.id}
+          initial={account}
+          onClose={closeEditor}
+          onSaved={(fields) => {
+            setAccount(fields);
+            setProfile((p) => (p ? { ...p, displayName: fields.displayName } : p));
+            closeEditor();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+export default function MatchesPage() {
+  // useSearchParams needs a Suspense boundary in the App Router.
+  return (
+    <Suspense fallback={<p className="muted">Loading…</p>}>
+      <LibraryPage />
+    </Suspense>
   );
 }

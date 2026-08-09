@@ -1204,3 +1204,98 @@ video {
   font-size: 14px;
   line-height: 1.5;
 }
+
+/* ---- merged library page (profile + upload + matches) ------------------- */
+
+/* Status chip tones — the Tone vocabulary from lib/matchStatus.ts, so the same
+   four names mean the same four colours here and in the iOS Theme. */
+.badge.tone-neutral {
+  color: var(--muted);
+}
+.badge.tone-progress {
+  color: var(--accent);
+}
+.badge.tone-good {
+  color: var(--sage);
+}
+.badge.tone-danger {
+  color: var(--danger);
+}
+
+/* Indeterminate variant of .progress, for work with no measurable percentage
+   (a TwelveLabs run reports no progress, only pending → ready). */
+.progress.indeterminate > span {
+  width: 35%;
+  animation: progress-slide 1.5s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress.indeterminate > span {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+.library-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.library-header .who {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* The card's chip row: activity (when something is happening) + share state. */
+.card-chips {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+/* Upload tile — first cell of the grid, so uploading is where the matches are. */
+.upload-tile {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 180px;
+  padding: 20px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  text-align: center;
+  width: 100%;
+}
+.upload-tile:hover,
+.upload-tile.dragover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(217, 102, 44, 0.06);
+}
+.upload-tile.busy {
+  cursor: default;
+  align-items: stretch;
+  justify-content: center;
+}

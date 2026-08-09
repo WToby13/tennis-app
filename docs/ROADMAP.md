@@ -8,7 +8,7 @@ doing them separately means building the same thing twice.
 |-------|------|--------|
 | 0 | Perf quick wins | done |
 | 1 | Shared match-status model | done |
-| 2 | Web: merged library page + processing/analysing UI | todo |
+| 2 | Web: merged library page + processing/analysing UI | done |
 | 3 | iOS: merged Matches + Profile, "Upload & AI Analyse" | todo |
 | 4 | Remaining UX (fullscreen, login, caching, SSR) | todo |
 | 5 | Media pipeline: faststart + analysis proxy | todo |
