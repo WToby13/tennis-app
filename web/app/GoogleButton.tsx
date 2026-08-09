@@ -9,15 +9,25 @@ function safeNext(): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 }
 
-/** "Continue with Google" — starts the Supabase OAuth flow, returns via /auth/callback. */
+/**
+ * "Continue with Google" — starts the Supabase OAuth flow, returns via /auth/callback.
+ *
+ * The post-auth destination rides in a short-lived cookie rather than a `?next=`
+ * on the redirect URL. Supabase matches its redirect allow-list against the FULL
+ * url including the query string, so a query param means every destination needs
+ * its own allow-list entry (or a wildcard) — and when it doesn't match, GoTrue
+ * silently falls back to the project's Site URL instead of erroring. Keeping the
+ * redirect URL constant makes one exact allow-list entry always correct.
+ * SameSite=Lax so the cookie survives the top-level redirect back from Google.
+ */
 export function GoogleButton() {
   const [busy, setBusy] = useState(false);
   async function go() {
     setBusy(true);
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext())}`;
+    document.cookie = `ojo_next=${encodeURIComponent(safeNext())}; Max-Age=600; Path=/; SameSite=Lax`;
     const { error } = await getSupabaseBrowser().auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
     if (error) setBusy(false); // otherwise the browser navigates away to Google
   }
