@@ -164,9 +164,18 @@ final class RecordingLibrary: ObservableObject {
     /// that aren't already represented locally. `/api/videos` returns the caller's
     /// whole library — matches they own, were tagged in, or saved — so Matches
     /// shows all of them (not just ones recorded on this phone).
-    func refreshFromCloud() async {
+    /// When the cloud list was last fetched, so returning to the tab doesn't
+    /// re-hit the network on every appearance.
+    private var lastCloudRefresh: Date?
+    private static let cloudTTL: TimeInterval = 60
+
+    func refreshFromCloud(force: Bool = false) async {
+        if !force, let last = lastCloudRefresh, Date().timeIntervalSince(last) < Self.cloudTTL {
+            return
+        }
         guard (await Supa.currentUserId()) != nil,
               let videos = try? await api.listVideos() else { return }
+        lastCloudRefresh = Date()
 
         // Server status for every match we can see — including ones already in
         // the local index, which are shown from local state but still need the

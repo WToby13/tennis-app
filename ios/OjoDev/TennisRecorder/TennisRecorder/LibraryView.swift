@@ -11,10 +11,11 @@ struct LibraryView: View {
     @ObservedObject var auth: AuthModel
     @ObservedObject var library: RecordingLibrary
 
-    @State private var profile: ProfileSummary?
+    /// Shared so coming back to this tab doesn't blank the header and re-fetch.
+    @ObservedObject private var cache = AppCache.shared
     @State private var editing = false
 
-    private let api = UploadAPI()
+    private var profile: ProfileSummary? { cache.profile }
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
     var body: some View {
@@ -35,15 +36,19 @@ struct LibraryView: View {
         .background(Theme.bg)
         .navigationTitle("You")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await library.refreshFromCloud() }
+        .refreshable {
+            await library.refreshFromCloud(force: true)
+            await cache.refreshProfile(force: true)
+        }
         .task {
             await library.refreshFromCloud()
-            profile = try? await api.getMyProfile().profile
+            await cache.refreshProfile()
         }
         .sheet(isPresented: $editing) {
             EditProfileView(onSaved: {
                 editing = false
-                Task { profile = try? await api.getMyProfile().profile }
+                cache.invalidateProfile()
+                Task { await cache.refreshProfile() }
             })
         }
     }

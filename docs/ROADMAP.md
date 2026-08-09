@@ -10,7 +10,7 @@ doing them separately means building the same thing twice.
 | 1 | Shared match-status model | done |
 | 2 | Web: merged library page + processing/analysing UI | done |
 | 3 | iOS: merged Matches + Profile, "Upload & AI Analyse" | built — needs a device test |
-| 4 | Remaining UX (fullscreen, login, caching, SSR) | todo |
+| 4 | Remaining UX (fullscreen, login, caching, SSR) | done |
 | 5 | Media pipeline: faststart + analysis proxy | todo |
 
 ## Why these groupings
@@ -102,9 +102,32 @@ which is exactly the path this changed.
 
 ## Phase 4 — Remaining UX
 
-Server Components for initial payloads, skeletons instead of "Loading…",
-fullscreen viewing, the login page, and iOS-side caching of profile/library
-responses.
+**Fullscreen keeps the review tools.** Native `<video>` fullscreen drops you into
+a bare player — no frame-step, no speed, no rally timeline — which is the whole
+reason to be on the watch page. A `.theater` container holding the video *and*
+the controls goes fullscreen instead (`f`, or double-click the video).
+
+**Keyboard shortcuts no longer fire while you type.** `j`/`k`/`l`/`,`/`.` were
+bound on `window` with no guard, so typing a comment containing "k" toggled
+playback *and* swallowed the character.
+
+**The library page renders on the server.** It was a client component fetching on
+mount, so every visit ran HTML → JS → auth → fetch → content. `loadLibrary` /
+`loadMe` in `lib/library.ts` are shared with the API routes so the two can't
+drift. Route went from `○` static to `ƒ` server-rendered.
+
+**Skeletons** instead of "Loading…" on the library, feed and watch pages.
+
+**Login**: friendlier auth errors (shared `lib/authErrors.ts`), autofocus, real
+busy labels instead of "…", `role="alert"` on failures.
+
+**iOS caching**: `AppCache` holds the feed and profile across tab switches with a
+60s TTL (they were `@State`, so SwiftUI discarded them on every switch and each
+visit started from a spinner). `refreshFromCloud` gained the same TTL. Cleared on
+sign-out so the next account can't see the last one's data.
+
+Still client-fetched: the home feed and `/u/[id]`. Same treatment would work;
+they just aren't the pages that felt slow.
 
 ## Phase 5 — Media pipeline
 

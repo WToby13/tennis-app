@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { GoogleButton, OrDivider } from "../GoogleButton";
+import { friendlyAuthError } from "@/lib/authErrors";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 /** Where to go after auth: the `?next=` path if it's a safe in-app path, else home. */
@@ -26,7 +27,7 @@ export default function SignInPage() {
     setError(null);
     const { error } = await getSupabaseBrowser().auth.signInWithPassword({ email, password });
     if (error) {
-      setError(error.message);
+      setError(friendlyAuthError(error.message));
       setBusy(false);
       return;
     }
@@ -47,33 +48,38 @@ export default function SignInPage() {
         <form onSubmit={onSubmit}>
           <label className="field">
             <span className="lbl">Email</span>
-          <input
-            type="email"
-            required
-            autoComplete="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <label className="field">
-          <span className="lbl">Password</span>
-          <input
-            type="password"
-            required
-            autoComplete="current-password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={busy}
-          />
-        </label>
+            <input
+              type="email"
+              required
+              autoFocus
+              autoComplete="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <label className="field">
+            <span className="lbl">Password</span>
+            <input
+              type="password"
+              required
+              autoComplete="current-password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={busy}
+            />
+          </label>
 
-        {error && <p style={{ color: "var(--danger)", fontSize: 14 }}>{error}</p>}
+          {error && (
+            <p role="alert" style={{ color: "var(--danger)", fontSize: 14 }}>
+              {error}
+            </p>
+          )}
 
           <button className="btn" type="submit" disabled={busy || !email || !password}>
-            {busy ? "…" : "Sign in"}
+            {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
       </div>

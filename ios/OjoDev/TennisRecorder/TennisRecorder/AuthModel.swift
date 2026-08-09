@@ -97,5 +97,7 @@ final class AuthModel: ObservableObject {
         try? await Supa.client.auth.signOut()
         accountEmail = nil
         isSignedIn = false
+        // Cached feed/profile belong to the account that just left.
+        AppCache.shared.clear()
     }
 }

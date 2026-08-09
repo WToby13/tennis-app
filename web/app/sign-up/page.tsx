@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { GoogleButton, OrDivider } from "../GoogleButton";
+import { friendlyAuthError } from "@/lib/authErrors";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 type Hand = "left" | "right";
@@ -41,7 +42,7 @@ export default function SignUpPage() {
     });
 
     if (error) {
-      setError(error.message);
+      setError(friendlyAuthError(error.message));
       setBusy(false);
       return;
     }
@@ -90,6 +91,7 @@ export default function SignUpPage() {
             <input
               type="text"
               required
+              autoFocus
               autoComplete="given-name"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
@@ -154,7 +156,7 @@ export default function SignUpPage() {
           />
         </label>
 
-        {error && <p style={{ color: "var(--danger)", fontSize: 14 }}>{error}</p>}
+        {error && <p role="alert" style={{ color: "var(--danger)", fontSize: 14 }}>{error}</p>}
         {notice && <p style={{ color: "var(--accent)", fontSize: 14 }}>{notice}</p>}
 
         <button
@@ -162,7 +164,7 @@ export default function SignUpPage() {
           type="submit"
           disabled={busy || !firstName || !lastName || !email || !password}
         >
-          {busy ? "…" : "Create account"}
+          {busy ? "Creating account…" : "Create account"}
         </button>
         </form>
       </div>

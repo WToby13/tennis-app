@@ -4,11 +4,12 @@ import SwiftUI
 /// own, newest first. Tap a card to open the match; like / comment / share /
 /// save inline.
 struct FeedView: View {
-    @State private var items: [FeedItem] = []
-    @State private var loading = true
-    @State private var loadError: String?
+    /// Shared so switching tabs doesn't throw the feed away and re-fetch it.
+    @ObservedObject private var cache = AppCache.shared
+    @State private var loading = false
 
-    private let api = UploadAPI()
+    private var items: [FeedItem] { cache.feed }
+    private var loadError: String? { cache.feedError }
 
     var body: some View {
         Group {
@@ -30,7 +31,7 @@ struct FeedView: View {
         }
         .background(Theme.bg)
         .navigationTitle("Home")
-        .refreshable { await reload() }
+        .refreshable { await reload(force: true) }
         .task { await reload() }
     }
 
@@ -45,17 +46,14 @@ struct FeedView: View {
             }
             .padding(24)
         }
-        .refreshable { await reload() }
+        .refreshable { await reload(force: true) }
     }
 
-    private func reload() async {
+    /// The cache decides whether this actually hits the network; the spinner only
+    /// shows when there's nothing cached to display.
+    private func reload(force: Bool = false) async {
         loading = true
         defer { loading = false }
-        do {
-            items = try await api.getFeed()
-            loadError = nil
-        } catch {
-            loadError = "Couldn't load your feed. Pull to refresh."
-        }
+        await cache.refreshFeed(force: force)
     }
 }
