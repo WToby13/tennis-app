@@ -87,8 +87,12 @@ export class SupabaseSocialStore implements SocialStore {
     if (!profile) return null;
     const p = profile as { id: string; display_name: string | null; first_name: string | null; last_name: string | null };
 
-    const followers = await this.count("follows", "followee_id", userId);
-    const following = await this.count("follows", "follower_id", userId);
+    // Independent of each other — one round trip's worth of latency, not three.
+    const [followers, following, isFollowing] = await Promise.all([
+      this.count("follows", "followee_id", userId),
+      this.count("follows", "follower_id", userId),
+      this.isFollowing(userId),
+    ]);
 
     return {
       id: p.id,
@@ -96,7 +100,7 @@ export class SupabaseSocialStore implements SocialStore {
         p.display_name || [p.first_name, p.last_name].filter(Boolean).join(" ") || "Ojo player",
       followers,
       following,
-      isFollowing: await this.isFollowing(userId),
+      isFollowing,
     };
   }
 

@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { config as appConfig } from "@/lib/config";
+import { VERIFIED_USER_HEADER } from "@/lib/supabase/server";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
 
@@ -8,21 +9,22 @@ export async function middleware(request: NextRequest) {
   // No Supabase configured → zero-auth local mode, let everything through.
   if (!appConfig.authEnabled) return NextResponse.next();
 
-  let response = NextResponse.next({ request });
-
   // Native clients (iOS) authenticate with a Bearer token instead of cookies.
   const authHeader = request.headers.get("authorization") ?? undefined;
+
+  // Cookies the session refresh wants to set. Collected here and applied to the
+  // final response once, so the response is built in one place (below).
+  let refreshedCookies: CookieToSet[] = [];
 
   const supabase = createServerClient(appConfig.supabase.url, appConfig.supabase.anonKey, {
     ...(authHeader ? { global: { headers: { Authorization: authHeader } } } : {}),
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet: CookieToSet[]) => {
+        // Writing to request.cookies also updates the request's `cookie` header,
+        // which is what downstream handlers read.
         for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
-        response = NextResponse.next({ request });
-        for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, options);
-        }
+        refreshedCookies = cookiesToSet;
       },
     },
   });
@@ -56,6 +58,18 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirect);
   }
 
+  // Pass the *verified* user id downstream so route handlers and Server
+  // Components don't each repeat the round trip to Supabase we just made.
+  // The header is deleted unconditionally first — a client must never be able to
+  // supply it themselves. See lib/supabase/server.ts.
+  const headers = new Headers(request.headers);
+  headers.delete(VERIFIED_USER_HEADER);
+  if (user) headers.set(VERIFIED_USER_HEADER, user.id);
+
+  const response = NextResponse.next({ request: { headers } });
+  for (const { name, value, options } of refreshedCookies) {
+    response.cookies.set(name, value, options);
+  }
   return response;
 }
 

@@ -41,21 +41,31 @@ export async function getSupabaseServer() {
 }
 
 /**
- * Resolve the current user for a request. Cookies (web) resolve via the session;
- * a Bearer token (iOS) must be passed to `getUser(token)` explicitly, since the
- * no-arg form only looks at the cookie session.
+ * Header carrying the user id the middleware already verified for this request.
+ *
+ * Trustworthy only because the middleware deletes any inbound copy before
+ * setting its own (see middleware.ts) — never read it anywhere the middleware
+ * hasn't run.
  */
-export async function getRequestUser(supabase: SupabaseClient) {
-  const token = bearerToken((await headers()).get("authorization") ?? undefined);
+export const VERIFIED_USER_HEADER = "x-ojo-user-id";
+
+/**
+ * Resolve the current user id for a request.
+ *
+ * The middleware has already validated the session (cookies for web, a Bearer
+ * token for iOS) on the way in and passed the result along, so the common path
+ * is a header read rather than a second network round trip to Supabase. The
+ * `auth.getUser()` fallback covers requests the middleware didn't handle.
+ */
+export async function getRequestUserId(supabase: SupabaseClient): Promise<string | null> {
+  const requestHeaders = await headers();
+
+  const verified = requestHeaders.get(VERIFIED_USER_HEADER);
+  if (verified) return verified;
+
+  const token = bearerToken(requestHeaders.get("authorization") ?? undefined);
   const {
     data: { user },
   } = token ? await supabase.auth.getUser(token) : await supabase.auth.getUser();
-  return user;
-}
-
-/** The signed-in user, or null. */
-export async function getUser() {
-  if (!config.authEnabled) return null;
-  const supabase = await getSupabaseServer();
-  return getRequestUser(supabase);
+  return user?.id ?? null;
 }

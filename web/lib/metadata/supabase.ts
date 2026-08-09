@@ -88,7 +88,11 @@ function toRow(patch: Partial<Video>): Partial<Row> {
  * goes through security-definer RPCs (see migration 0002) rather than table reads.
  */
 export class SupabaseMetadataStore implements MetadataStore {
-  constructor(private supabase: SupabaseClient) {}
+  constructor(
+    private supabase: SupabaseClient,
+    /** The caller — needed for "did *I* share this", which RLS alone can't express. */
+    private userId: string | null = null,
+  ) {}
 
   async create(video: Video): Promise<Video> {
     // No `.select()` here: returning the inserted row would run the videos SELECT
@@ -114,9 +118,54 @@ export class SupabaseMetadataStore implements MetadataStore {
       .select("added_via, videos!inner(*)")
       .order("added_at", { ascending: false });
     if (error) throw new Error(`list library failed: ${error.message}`);
-    return (data as unknown as Array<{ added_via: LibraryEntry["addedVia"]; videos: Row }>).map(
-      (r) => ({ ...toVideo(r.videos), addedVia: r.added_via }),
-    );
+
+    const rows = data as unknown as Array<{ added_via: LibraryEntry["addedVia"]; videos: Row }>;
+    const { linked, shared } = await this.shareStateFor(rows.map((r) => r.videos.id));
+
+    return rows.map((r) => ({
+      ...toVideo(r.videos),
+      addedVia: r.added_via,
+      hasActiveShareLink: linked.has(r.videos.id),
+      sharedToFollowers: shared.has(r.videos.id),
+    }));
+  }
+
+  /**
+   * Bulk share state for a set of matches: which have a live link, and which the
+   * caller posted to their followers. Two indexed lookups for the whole library
+   * rather than a pair per card.
+   */
+  private async shareStateFor(
+    ids: string[],
+  ): Promise<{ linked: Set<string>; shared: Set<string> }> {
+    if (!ids.length) return { linked: new Set(), shared: new Set() };
+
+    const [links, shares] = await Promise.all([
+      this.supabase
+        .from("share_links")
+        .select("video_id")
+        .in("video_id", ids)
+        .is("revoked_at", null)
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`),
+      // RLS lets you read anyone's shares of a visible video, so scope to the
+      // caller explicitly — "shared" on your own card means *you* posted it.
+      this.userId
+        ? this.supabase
+            .from("match_shares")
+            .select("video_id")
+            .in("video_id", ids)
+            .eq("user_id", this.userId)
+        : { data: [] as Array<{ video_id: string }> },
+    ]);
+
+    const ids_ = (rows: unknown) =>
+      new Set(((rows ?? []) as Array<{ video_id: string }>).map((r) => r.video_id));
+    return { linked: ids_(links.data), shared: ids_(shares.data) };
+  }
+
+  async hasActiveShareLink(videoId: string): Promise<boolean> {
+    const { linked } = await this.shareStateFor([videoId]);
+    return linked.has(videoId);
   }
 
   async listByOwner(ownerId: string): Promise<Video[]> {

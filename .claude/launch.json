@@ -9,11 +9,8 @@
     },
     {
       "name": "tennis-web-local",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": [
-        "-lc",
-        "cd web && NEXT_PUBLIC_SUPABASE_URL= NEXT_PUBLIC_SUPABASE_ANON_KEY= STORAGE_BACKEND=local next dev -p 3100"
-      ],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "web", "run", "dev:local"],
       "port": 3100
     }
   ]

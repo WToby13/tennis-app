@@ -93,7 +93,14 @@ export class LocalJsonMetadataStore implements MetadataStore {
     return all
       .filter((v) => !v.deletedAt)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map((v) => ({ ...v, addedVia: "upload" as const }));
+      .map((v) => ({
+        ...v,
+        addedVia: "upload" as const,
+        // Local mode has no share-link table and no followers — share status
+        // comes from `visibility` alone.
+        hasActiveShareLink: false,
+        sharedToFollowers: false,
+      }));
   }
 
   async listByOwner(): Promise<Video[]> {
@@ -140,6 +147,10 @@ export class LocalJsonMetadataStore implements MetadataStore {
 
   getByShareToken(token: string): Promise<Video | null> {
     return this.get(token);
+  }
+
+  async hasActiveShareLink(): Promise<boolean> {
+    return false; // no share-link table in local mode
   }
 
   addToLibrary(token: string): Promise<Video | null> {

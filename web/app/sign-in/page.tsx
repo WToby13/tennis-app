@@ -51,7 +51,7 @@ export default function SignInPage() {
             type="email"
             required
             autoComplete="email"
-            placeholder="you@example.com"
+            placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={busy}

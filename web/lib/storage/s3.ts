@@ -14,6 +14,23 @@ import { config } from "../config";
 import { thumbnailKey, type StorageAdapter, type UploadedPart } from "./types";
 
 /**
+ * How often a signed playback/thumbnail URL is allowed to change. Signing with a
+ * raw `now + ttl` expiry produces a different signature on every request, so the
+ * browser treats each one as a new resource and re-downloads it — every visit to
+ * the library or feed refetched every thumbnail. Rounding the expiry UP to a
+ * fixed bucket means all requests within the same bucket get a byte-identical
+ * URL (cacheable), while validity is always at least the configured TTL.
+ */
+const URL_STABILITY_BUCKET_SECONDS = 60 * 60;
+
+/** An expiry that's stable within the bucket and never shorter than the TTL. */
+function stableExpiry(ttlSeconds: number): Date {
+  const earliest = Date.now() / 1000 + ttlSeconds;
+  const bucket = URL_STABILITY_BUCKET_SECONDS;
+  return new Date(Math.ceil(earliest / bucket) * bucket * 1000);
+}
+
+/**
  * Real S3 multipart adapter. Enabled with STORAGE_BACKEND=s3.
  *
  * Uploads: bytes go straight from the client to S3 via presigned UploadPart URLs.
@@ -89,7 +106,7 @@ export class S3StorageAdapter implements StorageAdapter {
       url,
       keyPairId,
       privateKey,
-      dateLessThan: new Date(Date.now() + signedUrlTtlSeconds * 1000).toISOString(),
+      dateLessThan: stableExpiry(signedUrlTtlSeconds).toISOString(),
     });
   }
 
@@ -123,7 +140,7 @@ export class S3StorageAdapter implements StorageAdapter {
       url,
       keyPairId,
       privateKey,
-      dateLessThan: new Date(Date.now() + signedUrlTtlSeconds * 1000).toISOString(),
+      dateLessThan: stableExpiry(signedUrlTtlSeconds).toISOString(),
     });
   }
 }

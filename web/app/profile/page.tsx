@@ -23,38 +23,35 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // One request for the whole page: profile, follow counts and the editable
+  // account fields all come back from /api/users/me together. (This used to walk
+  // four sequential Supabase calls from the browser.)
   useEffect(() => {
     if (!config.authEnabled) {
       setLoading(false);
       return;
     }
     (async () => {
-      const supabase = getSupabaseBrowser();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
+      const res = await fetch("/api/users/me");
+      if (res.status === 401) {
         router.push("/sign-in?next=/profile");
         return;
       }
-      setEmail(user.email ?? null);
-      setMyId(user.id);
-      const { data } = await supabase
-        .from("profiles")
-        .select("display_name, first_name, last_name, handedness")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (data) {
-        setDisplayName(data.display_name ?? "");
-        setFirstName(data.first_name ?? "");
-        setLastName(data.last_name ?? "");
-        if (data.handedness === "left" || data.handedness === "right") setHandedness(data.handedness);
+      if (!res.ok) {
+        setError("Couldn't load your profile.");
+        setLoading(false);
+        return;
       }
-      const [{ count: followers }, { count: following }] = await Promise.all([
-        supabase.from("follows").select("*", { count: "exact", head: true }).eq("followee_id", user.id),
-        supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", user.id),
-      ]);
-      setCounts({ followers: followers ?? 0, following: following ?? 0 });
+      const { profile, account } = await res.json();
+      setMyId(profile.id);
+      setCounts({ followers: profile.followers, following: profile.following });
+      if (account) {
+        setEmail(account.email);
+        setDisplayName(account.displayName);
+        setFirstName(account.firstName);
+        setLastName(account.lastName);
+        setHandedness(account.handedness);
+      }
       setLoading(false);
     })();
   }, [router]);
@@ -62,17 +59,14 @@ export default function ProfilePage() {
   const save = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
+      if (!myId) {
+        router.push("/sign-in?next=/profile");
+        return;
+      }
       setSaving(true);
       setError(null);
       setSaved(false);
       const supabase = getSupabaseBrowser();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.push("/sign-in?next=/profile");
-        return;
-      }
       const { error } = await supabase
         .from("profiles")
         .update({
@@ -82,7 +76,7 @@ export default function ProfilePage() {
           // Use the entered display name; fall back to first+last only when blank.
           display_name: displayName.trim() || `${firstName} ${lastName}`.trim(),
         })
-        .eq("id", user.id);
+        .eq("id", myId);
       setSaving(false);
       if (error) {
         setError(error.message);
@@ -91,7 +85,7 @@ export default function ProfilePage() {
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
     },
-    [displayName, firstName, lastName, handedness, router],
+    [displayName, firstName, lastName, handedness, myId, router],
   );
 
   async function signOut() {

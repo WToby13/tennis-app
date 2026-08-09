@@ -38,10 +38,10 @@ struct LoginView: View {
 
             if isSignUp {
                 HStack(spacing: 10) {
-                    TextField("", text: $auth.firstName, prompt: Text("First name").foregroundColor(.secondary))
+                    TextField("First name", text: $auth.firstName)
                         .textFieldStyle(.roundedBorder)
                         .textContentType(.givenName)
-                    TextField("", text: $auth.lastName, prompt: Text("Last name").foregroundColor(.secondary))
+                    TextField("Last name", text: $auth.lastName)
                         .textFieldStyle(.roundedBorder)
                         .textContentType(.familyName)
                 }
@@ -53,7 +53,9 @@ struct LoginView: View {
                 .pickerStyle(.segmented)
             }
 
-            TextField("", text: $auth.email, prompt: Text("you@example.com").foregroundColor(.secondary))
+            // "Email", not a sample address: iOS link-detects an email-shaped
+            // placeholder and renders it in system blue instead of placeholder grey.
+            TextField("Email", text: $auth.email)
                 .textFieldStyle(.roundedBorder)
                 .keyboardType(.emailAddress)
                 .textInputAutocapitalization(.never)

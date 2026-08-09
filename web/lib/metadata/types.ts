@@ -66,6 +66,10 @@ export interface VideoSegment {
 /** A video as it appears in a user's library, tagged with how it got there. */
 export interface LibraryEntry extends Video {
   addedVia: "upload" | "share" | "participant";
+  /** A live (unrevoked, unexpired) share link exists for this match. */
+  hasActiveShareLink: boolean;
+  /** The caller posted this match to their own followers' feeds. */
+  sharedToFollowers: boolean;
 }
 
 export interface ShareLink {
@@ -114,6 +118,8 @@ export interface MetadataStore {
   createShareLink(videoId: string, createdBy: string | null): Promise<ShareLink>;
   /** Resolve a share token → its video, or null if the token is invalid/expired. */
   getByShareToken(token: string): Promise<Video | null>;
+  /** Whether a live share link exists for a match — one input to its share status. */
+  hasActiveShareLink(videoId: string): Promise<boolean>;
   /** Add a shared video to the caller's library via a valid token. */
   addToLibrary(token: string): Promise<Video | null>;
   /** Remove a video from the caller's own library (does not delete the video). */
