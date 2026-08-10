@@ -75,16 +75,25 @@ frequent expression *fails the deployment*. `vercel.json` therefore ships
 `0 3 * * *`. That's a daily safety net, not a real worker: between sweeps, runs
 still only advance while someone has the page open.
 
-To get a real cadence without upgrading, point any external scheduler at the same
-endpoint every ~5 minutes — e.g. [cron-job.org](https://cron-job.org) (free):
+**The real cadence comes from Postgres.** `supabase/migrations/0012_schedule_analysis_sweep.sql`
+uses `pg_cron` + `pg_net` to call the same endpoint every 5 minutes. No third-party
+account, no plan limit, and the bearer token lives in Supabase Vault rather than in
+the job definition. The Vercel daily cron stays as a backstop.
 
-```
-URL:     https://ojotennis.com/api/cron/advance-analyses
-Method:  GET
-Header:  Authorization: Bearer <the CRON_SECRET from Vercel>
+The endpoint is idempotent, so Postgres, Vercel and an open browser tab can all
+drive it at once without conflict.
+
+Check it:
+```sql
+select status, return_message, start_time from cron.job_run_details
+where jobid = (select jobid from cron.job where jobname = 'ojo-advance-analyses')
+order by start_time desc limit 5;
+
+select status_code, content, created from net._http_response
+order by created desc limit 5;   -- 200 swept · 401 secret mismatch · 503 no CRON_SECRET
 ```
 
-On Pro, delete the external scheduler and change the schedule to `*/5 * * * *`.
+On Vercel Pro you could drop all this and use `*/5 * * * *` in `vercel.json`.
 
 ---
 
