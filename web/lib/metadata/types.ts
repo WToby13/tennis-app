@@ -48,6 +48,12 @@ export interface Video {
   analyzedAt: string | null;
   /** Owner-assigned names for player_1 / player_2; null until set. */
   analysisPlayers: AnalysisPlayers | null;
+  /**
+   * A smaller re-encode exists in storage for this match, made to fit
+   * TwelveLabs' input limit. Temporary — cleared and deleted once the breakdown
+   * finishes. See lib/analysisProxy.ts.
+   */
+  hasAnalysisProxy: boolean;
 }
 
 /** One AI-produced segment of a match (e.g. a rally), with custom fields in `metadata`. */

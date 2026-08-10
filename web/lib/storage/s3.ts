@@ -11,7 +11,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getSignedUrl as getSignedCloudFrontUrl } from "@aws-sdk/cloudfront-signer";
 import { config } from "../config";
-import { thumbnailKey, type StorageAdapter, type UploadedPart } from "./types";
+import { analysisProxyKey, thumbnailKey, type StorageAdapter, type UploadedPart } from "./types";
 
 /**
  * How often a signed playback/thumbnail URL is allowed to change. Signing with a
@@ -142,5 +142,42 @@ export class S3StorageAdapter implements StorageAdapter {
       privateKey,
       dateLessThan: stableExpiry(signedUrlTtlSeconds).toISOString(),
     });
+  }
+
+  async getAnalysisProxyUploadUrl(videoId: string) {
+    const url = await getSignedUrl(
+      this.client,
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: analysisProxyKey(videoId),
+        ContentType: "video/mp4",
+      }),
+      { expiresIn: 3600 },
+    );
+    return { url, method: "PUT" as const };
+  }
+
+  async getAnalysisProxyUrl(videoId: string): Promise<string> {
+    const { domain, signUrls, keyPairId, privateKey } = config.cloudfront;
+    if (!domain) throw new Error("CLOUDFRONT_DOMAIN is not set");
+
+    const url = `https://${domain}/${analysisProxyKey(videoId)}`;
+    if (!signUrls) return url;
+
+    // NOT the stable-expiry helper: this URL is handed to TwelveLabs, which may
+    // hold it for the length of a long analysis, so it gets its own generous
+    // window rather than one tuned for browser caching.
+    return getSignedCloudFrontUrl({
+      url,
+      keyPairId,
+      privateKey,
+      dateLessThan: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+    });
+  }
+
+  async deleteAnalysisProxy(videoId: string): Promise<void> {
+    await this.client
+      .send(new DeleteObjectCommand({ Bucket: this.bucket, Key: analysisProxyKey(videoId) }))
+      .catch(() => {});
   }
 }

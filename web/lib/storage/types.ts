@@ -44,9 +44,27 @@ export interface StorageAdapter {
 
   /** Permanently delete a video's object and its thumbnail. Best-effort per asset. */
   deleteVideoAssets(videoId: string, key: string): Promise<void>;
+
+  // --- analysis proxy --------------------------------------------------------
+  // A temporary, smaller re-encode used only to fit TwelveLabs' input limit.
+  // See lib/analysisProxy.ts; deleted as soon as the breakdown finishes.
+
+  /** URL + method for uploading a match's analysis proxy directly to storage. */
+  getAnalysisProxyUploadUrl(videoId: string): Promise<{ url: string; method: "PUT" }>;
+
+  /** A URL TwelveLabs can fetch the proxy from. */
+  getAnalysisProxyUrl(videoId: string): Promise<string>;
+
+  /** Delete the proxy. Best-effort — it's disposable by definition. */
+  deleteAnalysisProxy(videoId: string): Promise<void>;
 }
 
 /** The storage object key for a video's poster thumbnail. Deterministic — no DB column needed. */
 export function thumbnailKey(videoId: string): string {
   return `thumbnails/${videoId}.jpg`;
+}
+
+/** Where a match's (temporary) analysis proxy lives. Deterministic, like thumbnails. */
+export function analysisProxyKey(videoId: string): string {
+  return `proxies/${videoId}.mp4`;
 }

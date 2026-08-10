@@ -1,5 +1,7 @@
+import { needsAnalysisProxy } from "@/lib/analysisProxy";
 import { config } from "@/lib/config";
 import { storeForRequest } from "@/lib/request";
+import { startProxyTranscode, transcodeEnabled } from "@/lib/transcode";
 import { storage } from "@/lib/storage";
 import type { MetadataStore, Video, VideoSegment } from "@/lib/metadata/types";
 import {
@@ -16,9 +18,16 @@ import { badRequest, json, notFound, sanitizePlayers } from "@/lib/util";
 export const runtime = "nodejs";
 
 /**
- * TwelveLabs rejects files ≥ 4 GB. We check up front (we already store the byte
- * size) so a long/high-bitrate match gets a clear message instead of a raw 400.
- * A downscaled "analysis proxy" transcode is the planned real fix.
+ * Hard ceiling before we even call TwelveLabs, so an oversized match gets a
+ * clear message instead of a raw 400.
+ *
+ * NOTE the docs contradict themselves on the real number: the Pegasus model page
+ * says 2 GB, the upload-methods page says 4 GB for public URLs, and the analyze
+ * endpoint doesn't state one. 4 GB is kept here because it's what this code was
+ * originally written against (apparently from an actual rejection) and lowering
+ * it would newly fail matches that work today. The *proxy* threshold in
+ * lib/analysisProxy.ts is the conservative one — a match over it gets
+ * re-encoded rather than rejected, which sidesteps the ambiguity entirely.
  */
 const MAX_ANALYSIS_BYTES = 4_000_000_000; // 4.0 GB (decimal, matches TwelveLabs' units)
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
@@ -94,6 +103,23 @@ function stubSegments(): Omit<VideoSegment, "id">[] {
 }
 
 /**
+ * Drop a match's analysis proxy once the run is over, whatever the outcome.
+ *
+ * The proxy only ever exists to satisfy TwelveLabs' size limit; keeping it would
+ * mean paying to store every match twice. Best-effort and idempotent — if the
+ * delete fails the flag stays set and the next terminal state retries it.
+ */
+async function discardProxy(store: MetadataStore, video: Video): Promise<void> {
+  if (!video.hasAnalysisProxy) return;
+  try {
+    await storage().deleteAnalysisProxy(video.id);
+    await store.update(video.id, { hasAnalysisProxy: false });
+  } catch (err) {
+    console.warn("[analyze] proxy cleanup failed", video.id, err);
+  }
+}
+
+/**
  * Shared "task is ready" finalize: run the structural smoother over the raw
  * per-point segments, store the cleaned result, and flip the row to ready.
  * Returns the updated video.
@@ -144,10 +170,38 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const playersPatch = players ? { analysisPlayers: players } : {};
 
   // Pre-flight size guard: skip the call (and the raw 400) for oversized files.
-  if (video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
+  // A match with a proxy is exempt — the proxy is what gets sent, and it's sized
+  // to fit by construction.
+  if (!video.hasAnalysisProxy && video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
     const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}, max ${gb(MAX_ANALYSIS_BYTES)}). Automatic compression is coming soon.`;
     await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null });
     return json({ analysisStatus: "failed", error: msg }, { status: 400 });
+  }
+
+  // Too big to send as-is → compress it first. The match sits in 'processing'
+  // with no task id, which is how a poll tells "transcoding" from "analysing"
+  // (see GET below) without needing another column.
+  if (!video.hasAnalysisProxy && needsAnalysisProxy(video.sizeBytes)) {
+    if (!transcodeEnabled()) {
+      const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}). Automatic compression isn't set up yet.`;
+      await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null });
+      return json({ analysisStatus: "failed", error: msg }, { status: 503 });
+    }
+    try {
+      await startProxyTranscode(video);
+      await store.update(id, {
+        analysisStatus: "processing",
+        analysisTaskId: null,
+        analysisError: null,
+        ...playersPatch,
+      });
+      return json({ analysisStatus: "processing", stage: "compressing" });
+    } catch (err) {
+      const msg = "Couldn't start compressing this match. Please try again.";
+      console.error("[analyze] transcode start failed", err);
+      await store.update(id, { analysisStatus: "failed", analysisError: msg });
+      return json({ analysisStatus: "failed", error: msg }, { status: 502 });
+    }
   }
 
   // Dev stub: no key + local mode → mark processing with a stub task id.
@@ -163,7 +217,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const url = await storage().getPlaybackUrl(video.id, video.key);
+    // Analyse the proxy when one exists — it's the same match at a size the API
+    // will accept. Empirically the breakdown is indistinguishable from the
+    // original at full resolution; see lib/analysisProxy.ts.
+    const url = video.hasAnalysisProxy
+      ? await storage().getAnalysisProxyUrl(video.id)
+      : await storage().getPlaybackUrl(video.id, video.key);
     const task = await createAnalysisTask(buildRallyRequest(url, { startTimeSec }));
     await store.update(id, {
       analysisStatus: "processing",
@@ -189,6 +248,31 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!owned) return notFound("Video not found");
   let { store, video } = owned;
 
+  // Processing with no task id means the Fargate transcoder is still building the
+  // proxy. Once it flips has_analysis_proxy, hand the proxy to TwelveLabs and the
+  // normal polling below takes over from the next tick.
+  if (video.analysisStatus === "processing" && !video.analysisTaskId) {
+    if (video.hasAnalysisProxy && config.twelvelabs.enabled) {
+      try {
+        const url = await storage().getAnalysisProxyUrl(video.id);
+        const task = await createAnalysisTask(buildRallyRequest(url));
+        video = await store.update(id, { analysisTaskId: task.task_id });
+      } catch (err) {
+        const code = err instanceof TwelveLabsApiError ? err.code : undefined;
+        const message = friendlyAnalyzeError(code, err instanceof Error ? err.message : "");
+        video = await store.update(id, { analysisStatus: "failed", analysisError: message });
+        await discardProxy(store, video);
+      }
+    }
+    // Otherwise the transcode is still running — the client keeps polling.
+    return json({
+      analysisStatus: video.analysisStatus,
+      analysisError: video.analysisError,
+      stage: video.hasAnalysisProxy ? "analysing" : "compressing",
+      segments: [],
+    });
+  }
+
   // Advance a processing task.
   if (video.analysisStatus === "processing" && video.analysisTaskId) {
     if (video.analysisTaskId === STUB_TASK_ID) {
@@ -208,11 +292,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
             );
           }
           video = await finalizeReady(store, id, raw);
+          await discardProxy(store, video); // the run is over — stop paying to store it twice
         } else if (task.status === "failed") {
           const message =
             (typeof task.error === "string" ? task.error : task.error?.message) ??
             "Analysis failed";
           video = await store.update(id, { analysisStatus: "failed", analysisError: message });
+          await discardProxy(store, video);
         }
         // else still queued/pending/processing — leave as is; the client re-polls.
       } catch (err) {

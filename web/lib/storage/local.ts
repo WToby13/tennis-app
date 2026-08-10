@@ -129,4 +129,18 @@ export class LocalStorageAdapter implements StorageAdapter {
       fs.rm(localThumbnailPath(videoId), { force: true }),
     ]);
   }
+
+  // Analysis proxies exist to satisfy a remote API's size limit, and local mode
+  // never calls that API — so these are inert here, like sharing and participants.
+  async getAnalysisProxyUploadUrl(videoId: string) {
+    return { url: `/api/local-storage/video/${videoId}`, method: "PUT" as const };
+  }
+
+  async getAnalysisProxyUrl(videoId: string): Promise<string> {
+    return `/api/local-storage/video/${videoId}`;
+  }
+
+  async deleteAnalysisProxy(): Promise<void> {
+    // No proxy is ever written in local mode.
+  }
 }

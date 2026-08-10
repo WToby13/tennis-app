@@ -90,6 +90,19 @@ export const config = {
   },
 
   /**
+   * Fargate transcoder that builds analysis proxies (see lib/transcode.ts and
+   * infra/transcoder/). Unset in dev — a match too large to analyse then just
+   * reports that, rather than silently doing nothing.
+   */
+  transcode: {
+    cluster: process.env.TRANSCODE_ECS_CLUSTER ?? "",
+    taskDefinition: process.env.TRANSCODE_TASK_DEFINITION ?? "",
+    containerName: process.env.TRANSCODE_CONTAINER_NAME ?? "transcoder",
+    subnets: (process.env.TRANSCODE_SUBNETS ?? "").split(",").filter(Boolean),
+    securityGroups: (process.env.TRANSCODE_SECURITY_GROUPS ?? "").split(",").filter(Boolean),
+  },
+
+  /**
    * Auth + Supabase metadata turn on automatically once Supabase is configured.
    * With no Supabase env, the app stays in zero-auth local mode for dev.
    */

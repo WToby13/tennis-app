@@ -33,6 +33,7 @@ interface Row {
   analysis_error: string | null;
   analyzed_at: string | null;
   analysis_players: AnalysisPlayers | null;
+  has_analysis_proxy: boolean | null;
 }
 
 function toVideo(r: Row): Video {
@@ -56,6 +57,7 @@ function toVideo(r: Row): Video {
     analysisError: r.analysis_error,
     analyzedAt: r.analyzed_at,
     analysisPlayers: r.analysis_players ?? null,
+    hasAnalysisProxy: r.has_analysis_proxy ?? false,
   };
 }
 
@@ -79,6 +81,7 @@ function toRow(patch: Partial<Video>): Partial<Row> {
   if (patch.analysisError !== undefined) row.analysis_error = patch.analysisError;
   if (patch.analyzedAt !== undefined) row.analyzed_at = patch.analyzedAt;
   if (patch.analysisPlayers !== undefined) row.analysis_players = patch.analysisPlayers;
+  if (patch.hasAnalysisProxy !== undefined) row.has_analysis_proxy = patch.hasAnalysisProxy;
   return row;
 }
 

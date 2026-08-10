@@ -40,6 +40,7 @@ function normalize(v: Video): Video {
     analysisError: v.analysisError ?? null,
     analyzedAt: v.analyzedAt ?? null,
     analysisPlayers: v.analysisPlayers ?? null,
+    hasAnalysisProxy: v.hasAnalysisProxy ?? false,
   };
 }
 
