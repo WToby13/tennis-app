@@ -95,6 +95,12 @@ export class SupabaseMetadataStore implements MetadataStore {
     private supabase: SupabaseClient,
     /** The caller — needed for "did *I* share this", which RLS alone can't express. */
     private userId: string | null = null,
+    /**
+     * True when the client holds the service-role key and there is no signed-in
+     * user — the cron sweep. RLS is bypassed, but so is `auth.uid()`, which the
+     * edit-rights RPCs depend on; see `replaceSegments`.
+     */
+    private serviceRole = false,
   ) {}
 
   async create(video: Video): Promise<Video> {
@@ -179,6 +185,18 @@ export class SupabaseMetadataStore implements MetadataStore {
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
     if (error) throw new Error(`list by owner failed: ${error.message}`);
+    return (data as Row[]).map(toVideo);
+  }
+
+  async listInFlightAnalyses(limit = 50): Promise<Video[]> {
+    const { data, error } = await this.supabase
+      .from("videos")
+      .select()
+      .eq("analysis_status", "processing")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .limit(limit);
+    if (error) throw new Error(`list in-flight analyses failed: ${error.message}`);
     return (data as Row[]).map(toVideo);
   }
 
@@ -330,6 +348,33 @@ export class SupabaseMetadataStore implements MetadataStore {
     kind: string,
     segments: Omit<VideoSegment, "id">[],
   ): Promise<void> {
+    // The RPC gates on can_edit_video(), which reads auth.uid(). Under the
+    // service role there is no auth.uid(), so the RPC would refuse — write the
+    // rows directly instead, which the service role is entitled to do. The
+    // authorization that matters already happened: only the owner can start a
+    // run, and the cron only ever advances runs that were already started.
+    if (this.serviceRole) {
+      const { error: delError } = await this.supabase
+        .from("video_segments")
+        .delete()
+        .eq("video_id", videoId)
+        .eq("kind", kind);
+      if (delError) throw new Error(`replace segments (delete) failed: ${delError.message}`);
+      if (!segments.length) return;
+      const { error: insError } = await this.supabase.from("video_segments").insert(
+        segments.map((s) => ({
+          video_id: videoId,
+          kind,
+          idx: s.idx,
+          start_s: s.startS,
+          end_s: s.endS,
+          metadata: s.metadata,
+        })),
+      );
+      if (insError) throw new Error(`replace segments (insert) failed: ${insError.message}`);
+      return;
+    }
+
     // Definer RPC checks edit rights once, then delete + bulk insert (see 0009).
     const { error } = await this.supabase.rpc("replace_video_segments", {
       p_video_id: videoId,

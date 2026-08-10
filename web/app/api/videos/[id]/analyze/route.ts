@@ -1,4 +1,11 @@
 import { needsAnalysisProxy } from "@/lib/analysisProxy";
+import {
+  advanceAnalysis,
+  discardProxy,
+  finalizeReady,
+  friendlyAnalyzeError,
+  stageOf,
+} from "@/lib/analysisRunner";
 import { config } from "@/lib/config";
 import { storeForRequest } from "@/lib/request";
 import { startProxyTranscode, transcodeEnabled } from "@/lib/transcode";
@@ -8,10 +15,8 @@ import {
   TwelveLabsApiError,
   TwelveLabsNotConfiguredError,
   createAnalysisTask,
-  getAnalysisTask,
 } from "@/lib/twelvelabs/client";
 import { RALLY_KIND, buildRallyRequest } from "@/lib/twelvelabs/rally";
-import { smoothTennis } from "@/lib/twelvelabs/smooth";
 import { type AnalysisTask, normalizeSegments } from "@/lib/twelvelabs/types";
 import { badRequest, json, notFound, sanitizePlayers } from "@/lib/util";
 
@@ -31,20 +36,6 @@ export const runtime = "nodejs";
  */
 const MAX_ANALYSIS_BYTES = 4_000_000_000; // 4.0 GB (decimal, matches TwelveLabs' units)
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
-
-/** Turn a TwelveLabs error code (or raw message) into something worth showing a user. */
-function friendlyAnalyzeError(code: string | undefined, fallback: string): string {
-  switch (code) {
-    case "video_filesize_too_large":
-      return `This match is too large for AI analysis (max ${gb(MAX_ANALYSIS_BYTES)}). Automatic compression is coming soon.`;
-    case "video_duration_too_long":
-      return "This match is too long for AI analysis (max 2 hours).";
-    case "usage_limit_exceeded":
-      return "The AI analysis usage limit has been reached — try again later.";
-    default:
-      return fallback || "AI analysis failed. Please try again.";
-  }
-}
 
 /**
  * AI rally segmentation (TwelveLabs). Owner-only.
@@ -100,45 +91,6 @@ function stubSegments(): Omit<VideoSegment, "id">[] {
     result: { data: JSON.stringify({ [RALLY_KIND]: rally }) },
   };
   return normalizeSegments(task, RALLY_KIND);
-}
-
-/**
- * Drop a match's analysis proxy once the run is over, whatever the outcome.
- *
- * The proxy only ever exists to satisfy TwelveLabs' size limit; keeping it would
- * mean paying to store every match twice. Best-effort and idempotent — if the
- * delete fails the flag stays set and the next terminal state retries it.
- */
-async function discardProxy(store: MetadataStore, video: Video): Promise<void> {
-  if (!video.hasAnalysisProxy) return;
-  try {
-    await storage().deleteAnalysisProxy(video.id);
-    await store.update(video.id, { hasAnalysisProxy: false });
-  } catch (err) {
-    console.warn("[analyze] proxy cleanup failed", video.id, err);
-  }
-}
-
-/**
- * Shared "task is ready" finalize: run the structural smoother over the raw
- * per-point segments, store the cleaned result, and flip the row to ready.
- * Returns the updated video.
- */
-async function finalizeReady(
-  store: MetadataStore,
-  id: string,
-  raw: Omit<VideoSegment, "id">[],
-): Promise<Video> {
-  const { segments, report } = raw.length
-    ? smoothTennis(raw)
-    : { segments: raw, report: null };
-  if (report) console.info("[analyze] smoother report", JSON.stringify(report));
-  await store.replaceSegments(id, RALLY_KIND, segments);
-  return store.update(id, {
-    analysisStatus: "ready",
-    analyzedAt: new Date().toISOString(),
-    analysisError: null,
-  });
 }
 
 /** Resolve + owner-check the video for the caller. Returns null on no-access. */
@@ -246,72 +198,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const owned = await ownedVideo(id);
   if (!owned) return notFound("Video not found");
-  let { store, video } = owned;
+  const { store } = owned;
 
-  // Processing with no task id means the Fargate transcoder is still building the
-  // proxy. Once it flips has_analysis_proxy, hand the proxy to TwelveLabs and the
-  // normal polling below takes over from the next tick.
-  if (video.analysisStatus === "processing" && !video.analysisTaskId) {
-    if (video.hasAnalysisProxy && config.twelvelabs.enabled) {
-      try {
-        const url = await storage().getAnalysisProxyUrl(video.id);
-        const task = await createAnalysisTask(buildRallyRequest(url));
-        video = await store.update(id, { analysisTaskId: task.task_id });
-      } catch (err) {
-        const code = err instanceof TwelveLabsApiError ? err.code : undefined;
-        const message = friendlyAnalyzeError(code, err instanceof Error ? err.message : "");
-        video = await store.update(id, { analysisStatus: "failed", analysisError: message });
-        await discardProxy(store, video);
-      }
-    }
-    // Otherwise the transcode is still running — the client keeps polling.
-    return json({
-      analysisStatus: video.analysisStatus,
-      analysisError: video.analysisError,
-      stage: video.hasAnalysisProxy ? "analysing" : "compressing",
-      segments: [],
-    });
-  }
-
-  // Advance a processing task.
-  if (video.analysisStatus === "processing" && video.analysisTaskId) {
-    if (video.analysisTaskId === STUB_TASK_ID) {
-      // Dev stub: resolve to canned rallies on first poll.
-      video = await finalizeReady(store, id, stubSegments());
-    } else {
-      try {
-        const task = await getAnalysisTask(video.analysisTaskId);
-        if (task.status === "ready") {
-          const raw = normalizeSegments(task, RALLY_KIND);
-          if (raw.length === 0) {
-            // Ready but nothing parsed → likely a result-shape mismatch. Log the
-            // raw shape (truncated) so it can be diagnosed from server logs.
-            console.warn(
-              "[analyze] ready task produced 0 segments; raw result:",
-              JSON.stringify(task.result)?.slice(0, 2000),
-            );
-          }
-          video = await finalizeReady(store, id, raw);
-          await discardProxy(store, video); // the run is over — stop paying to store it twice
-        } else if (task.status === "failed") {
-          const message =
-            (typeof task.error === "string" ? task.error : task.error?.message) ??
-            "Analysis failed";
-          video = await store.update(id, { analysisStatus: "failed", analysisError: message });
-          await discardProxy(store, video);
-        }
-        // else still queued/pending/processing — leave as is; the client re-polls.
-      } catch (err) {
-        // Transient poll errors shouldn't wedge the row; report but keep processing.
-        console.error("[analyze] poll error", err);
-      }
-    }
-  }
+  // The same step the cron sweep performs — shared so the interactive poll and
+  // the background sweep can never disagree about how a run progresses.
+  const video = await advanceAnalysis(store, owned.video, {
+    stubTaskId: STUB_TASK_ID,
+    onStub: stubSegments,
+  });
 
   const segments = await store.getSegments(id, RALLY_KIND).catch(() => []);
   return json({
     analysisStatus: video.analysisStatus,
     analysisError: video.analysisError,
+    stage: stageOf(video),
     segments,
   });
 }

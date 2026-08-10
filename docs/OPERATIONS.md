@@ -55,18 +55,36 @@ Results run through `smoothTennis`, which fits tennis's rigid structure (server
 alternates each game, games ≥4 points, ends change every 2 games) to the model's
 noisy per-point guesses.
 
-### ⚠️ The analysis state machine is driven by client polling
-There is no background worker. `GET /analyze` is what advances the TwelveLabs
-task and writes results back, and it's called by the owner's open page.
+### Advancing a run without an open tab
+`GET /analyze` polls TwelveLabs and writes results back — and for a long time that
+was the *only* thing that did, so closing the tab paused a run.
 
-**Consequence:** close the tab or the app mid-analysis and progress pauses. It is
-not lost — the next visit resumes and completes it — but a proxy can sit in S3
-accruing storage until someone comes back, and a user who never returns leaves the
-run permanently unfinished.
+`GET /api/cron/advance-analyses` now does the same step for every in-flight match,
+under the service role, on a schedule. Both callers share `lib/analysisRunner.ts`
+so they can't diverge, and every step is idempotent — Vercel explicitly warns that
+cron delivery is best-effort and can double-fire, so re-running a step is safe by
+design.
 
-**This is the first thing to fix when scaling.** A scheduled job (Vercel cron,
-every few minutes) that advances every row in `processing` would make the pipeline
-independent of who has a tab open.
+It authenticates with `CRON_SECRET` (`Authorization: Bearer <secret>`) and **fails
+closed**: with no secret configured it returns 503 rather than running unprotected.
+`/api/cron` is exempted from the middleware's auth check, since a scheduler has no
+session — the secret is what protects it.
+
+**⚠️ Hobby-plan limit.** Vercel Hobby allows cron **once per day**, and a more
+frequent expression *fails the deployment*. `vercel.json` therefore ships
+`0 3 * * *`. That's a daily safety net, not a real worker: between sweeps, runs
+still only advance while someone has the page open.
+
+To get a real cadence without upgrading, point any external scheduler at the same
+endpoint every ~5 minutes — e.g. [cron-job.org](https://cron-job.org) (free):
+
+```
+URL:     https://ojotennis.com/api/cron/advance-analyses
+Method:  GET
+Header:  Authorization: Bearer <the CRON_SECRET from Vercel>
+```
+
+On Pro, delete the external scheduler and change the schedule to `*/5 * * * *`.
 
 ---
 
@@ -239,7 +257,8 @@ Developer account.
 5. Delete a match; confirm the master and thumbnail leave the bucket.
 
 ### Before real users
-- [ ] Server-side poller so analyses don't depend on an open tab (§1)
+- [x] Server-side poller so analyses don't depend on an open tab (§1) — daily on
+      Hobby; add an external 5-minute scheduler or move to Pro for a real cadence
 - [ ] Settle the TwelveLabs indexing question from an invoice (§3)
 - [ ] One-off sweep for objects orphaned by the old missing `s3:DeleteObject`
 - [ ] A hard-delete path for erasure requests (§4)
