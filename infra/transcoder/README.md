@@ -65,12 +65,27 @@ cd infra/transcoder
 REPO=$(cd ../ && terraform output -raw TRANSCODER_ECR_REPOSITORY_URL)
 aws ecr get-login-password --region eu-west-1 \
   | docker login --username AWS --password-stdin "${REPO%%/*}"
-docker build --platform linux/amd64 -t "$REPO:latest" .
-docker push "$REPO:latest"
+docker build --platform linux/arm64 --provenance=false --sbom=false \
+  -t "${REPO}:latest" --push .
 ```
 
-`--platform linux/amd64` matters on an Apple Silicon Mac — the task definition is
-x86, and an arm64 image will fail to start with an exec-format error.
+Three details, each of which cost an attempt the first time:
+
+- **`--provenance=false --sbom=false`.** Modern buildx defaults to pushing an OCI
+  *image index* containing an `unknown/unknown` attestation manifest. Fargate
+  can't pull that and fails with an opaque `CannotPullContainerError`. These flags
+  produce a plain single manifest. Verify with:
+  ```bash
+  docker buildx imagetools inspect "${REPO}:latest"   # want manifest.v2, not index
+  ```
+- **`linux/arm64`**, matching the task definition's `runtime_platform`. It's also
+  what an Apple Silicon Mac builds natively, so there's no emulation.
+- **`${REPO}:latest`, with braces.** In zsh, `$REPO:latest` is parsed as the `:l`
+  (lowercase) history modifier and silently tags `…tennis-transcoderatest`.
+
+If a stale `~/.docker/config.json` names `credsStore: desktop` from a since-removed
+Docker Desktop, both login and the base-image pull fail with
+`docker-credential-desktop: executable file not found`. Remove that key.
 
 ### 3. Web app
 
