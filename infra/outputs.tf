@@ -32,3 +32,30 @@ output "AWS_SECRET_ACCESS_KEY" {
   value     = aws_iam_access_key.app.secret
   sensitive = true
 }
+
+# --- Analysis-proxy transcoder (copy into the Vercel env) ---------------------
+
+output "TRANSCODE_ECS_CLUSTER" {
+  value = aws_ecs_cluster.transcoder.name
+}
+
+output "TRANSCODE_TASK_DEFINITION" {
+  value = aws_ecs_task_definition.transcoder.family
+}
+
+output "TRANSCODE_CONTAINER_NAME" {
+  value = "transcoder"
+}
+
+output "TRANSCODE_SUBNETS" {
+  value = join(",", data.aws_subnets.default.ids)
+}
+
+output "TRANSCODE_SECURITY_GROUPS" {
+  value = aws_security_group.transcoder.id
+}
+
+output "TRANSCODER_ECR_REPOSITORY_URL" {
+  description = "Push the image here before the first analysis of a large match."
+  value       = aws_ecr_repository.transcoder.repository_url
+}
