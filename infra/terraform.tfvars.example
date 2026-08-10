@@ -8,3 +8,9 @@ allowed_origins = [
   "http://localhost:3000",
   # "https://your-app.vercel.app",
 ]
+
+# --- Analysis-proxy transcoder ------------------------------------------------
+# The Fargate task sets one column in Supabase when a proxy is ready, so it needs
+# these. Same values as web/.env — the URL is public, the service-role key is not.
+supabase_url              = "https://<project-ref>.supabase.co"
+supabase_service_role_key = "<service role key>"
