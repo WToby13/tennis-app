@@ -1,3 +1,4 @@
+import { deriveMatchStatus } from "@/lib/matchStatus";
 import { socialForRequest, storeForRequest } from "@/lib/request";
 import { storage } from "@/lib/storage";
 import { badRequest, json, notFound, sanitizePlayers } from "@/lib/util";
@@ -46,26 +47,37 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
   if (!video) return notFound("Video not found");
 
-  const participants = await store.getParticipants(video.id).catch(() => []);
-  const segments = await store.getSegments(video.id).catch(() => []);
+  // Social state for the watch page (like/follow/share).
+  const { social } = await socialForRequest();
+
+  // Everything below depends only on `video`, so it all goes out at once — this
+  // route used to serialize seven independent round trips.
+  const [
+    participants,
+    segments,
+    playbackUrl,
+    thumbnailUrl,
+    like,
+    sharedToFollowers,
+    summary,
+    hasActiveShareLink,
+  ] = await Promise.all([
+    store.getParticipants(video.id).catch(() => []),
+    store.getSegments(video.id).catch(() => []),
+    video.status === "ready" ? storage().getPlaybackUrl(video.id, video.key) : null,
+    storage()
+      .getThumbnailUrl(video.id)
+      .catch(() => null),
+    social.likeState(video.id),
+    social.isSharedToFollowers(video.id),
+    video.ownerId ? social.profileSummary(video.ownerId) : null,
+    store.hasActiveShareLink(video.id).catch(() => false),
+  ]);
 
   const isOwner = Boolean(userId && video.ownerId && video.ownerId === userId);
   const isParticipant = Boolean(userId && participants.some((p) => p.userId === userId));
   // Owner or participant may edit; local no-auth mode can too.
   const canEdit = isOwner || isParticipant || !userId;
-
-  const playbackUrl =
-    video.status === "ready" ? await storage().getPlaybackUrl(video.id, video.key) : null;
-
-  const thumbnailUrl = await storage()
-    .getThumbnailUrl(video.id)
-    .catch(() => null);
-
-  // Social state for the watch page (like/follow/share).
-  const { social } = await socialForRequest();
-  const like = await social.likeState(video.id);
-  const sharedToFollowers = await social.isSharedToFollowers(video.id);
-  const summary = video.ownerId ? await social.profileSummary(video.ownerId) : null;
 
   return json({
     video,
@@ -84,6 +96,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     analysisStatus: video.analysisStatus,
     analysisError: video.analysisError,
     analysisPlayers: video.analysisPlayers,
+    // The derived upload/analysis/share model — see lib/matchStatus.ts. Additive:
+    // the individual fields above stay for existing clients.
+    matchStatus: deriveMatchStatus(video, {
+      visibility: video.visibility,
+      hasActiveShareLink,
+      sharedToFollowers,
+    }),
     segments,
     // Owner-only trigger (local no-auth mode has no owner, so it's allowed there
     // too — matches the analyze route's own authorization).

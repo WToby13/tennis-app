@@ -82,6 +82,14 @@ final class PlayerModel: ObservableObject {
         player.pause()
         isPlaying = false
     }
+
+    /// Jump to a point in the match and start playing from there — used when a
+    /// rally in the AI breakdown is tapped.
+    func play(from seconds: Double) {
+        seek(to: max(0, seconds))
+        player.playImmediately(atRate: rate)
+        isPlaying = true
+    }
 }
 
 /// AVPlayerLayer wrapped for SwiftUI — the raw video surface, no system controls
@@ -108,14 +116,12 @@ private struct PlayerLayerView: UIViewRepresentable {
 
 /// The match review surface: the video plus a custom control bar with play/pause,
 /// playback speed, single-frame stepping, ±5/±10s skip and a scrubber.
+/// The model is owned by the presenting screen (not this view) so siblings — the
+/// AI breakdown in particular — can seek the same player.
 struct ReviewPlayer: View {
-    @StateObject private var model: PlayerModel
+    @ObservedObject var model: PlayerModel
 
     private static let speeds: [Float] = [0.25, 0.5, 1, 1.5, 2]
-
-    init(url: URL) {
-        _model = StateObject(wrappedValue: PlayerModel(url: url))
-    }
 
     var body: some View {
         ZStack(alignment: .bottom) {

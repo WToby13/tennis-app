@@ -3,7 +3,7 @@ import { metadata } from "./metadata";
 import type { MetadataStore } from "./metadata";
 import { social } from "./social";
 import type { SocialStore } from "./social";
-import { getRequestUser, getSupabaseServer } from "./supabase/server";
+import { getRequestUserId, getSupabaseServer } from "./supabase/server";
 
 /**
  * Resolve the metadata store and current user for an API request.
@@ -17,8 +17,8 @@ export async function storeForRequest(): Promise<{ store: MetadataStore; userId:
   if (!config.authEnabled) return { store: metadata(), userId: null };
 
   const supabase = await getSupabaseServer();
-  const user = await getRequestUser(supabase);
-  return { store: metadata(supabase), userId: user?.id ?? null };
+  const userId = await getRequestUserId(supabase);
+  return { store: metadata(supabase, userId), userId };
 }
 
 /** Like storeForRequest, but for the social store (feed, follows, likes, comments). */
@@ -26,6 +26,6 @@ export async function socialForRequest(): Promise<{ social: SocialStore; userId:
   if (!config.authEnabled) return { social: social(), userId: null };
 
   const supabase = await getSupabaseServer();
-  const user = await getRequestUser(supabase);
-  return { social: social(supabase, user?.id ?? null), userId: user?.id ?? null };
+  const userId = await getRequestUserId(supabase);
+  return { social: social(supabase, userId), userId };
 }

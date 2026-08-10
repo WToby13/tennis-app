@@ -48,6 +48,12 @@ export interface Video {
   analyzedAt: string | null;
   /** Owner-assigned names for player_1 / player_2; null until set. */
   analysisPlayers: AnalysisPlayers | null;
+  /**
+   * A smaller re-encode exists in storage for this match, made to fit
+   * TwelveLabs' input limit. Temporary — cleared and deleted once the breakdown
+   * finishes. See lib/analysisProxy.ts.
+   */
+  hasAnalysisProxy: boolean;
 }
 
 /** One AI-produced segment of a match (e.g. a rally), with custom fields in `metadata`. */
@@ -66,6 +72,10 @@ export interface VideoSegment {
 /** A video as it appears in a user's library, tagged with how it got there. */
 export interface LibraryEntry extends Video {
   addedVia: "upload" | "share" | "participant";
+  /** A live (unrevoked, unexpired) share link exists for this match. */
+  hasActiveShareLink: boolean;
+  /** The caller posted this match to their own followers' feeds. */
+  sharedToFollowers: boolean;
 }
 
 export interface ShareLink {
@@ -114,6 +124,8 @@ export interface MetadataStore {
   createShareLink(videoId: string, createdBy: string | null): Promise<ShareLink>;
   /** Resolve a share token → its video, or null if the token is invalid/expired. */
   getByShareToken(token: string): Promise<Video | null>;
+  /** Whether a live share link exists for a match — one input to its share status. */
+  hasActiveShareLink(videoId: string): Promise<boolean>;
   /** Add a shared video to the caller's library via a valid token. */
   addToLibrary(token: string): Promise<Video | null>;
   /** Remove a video from the caller's own library (does not delete the video). */

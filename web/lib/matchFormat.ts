@@ -1,5 +1,8 @@
+import type { MatchStatus } from "./matchStatus";
+
 export interface MatchVideo {
   id: string;
+  ownerId: string | null;
   title: string;
   status: "uploading" | "processing" | "ready" | "failed";
   durationS: number | null;
@@ -8,6 +11,9 @@ export interface MatchVideo {
   thumbnailUrl: string | null;
   /** How this video got into the library: 'share' = added from a link, 'participant' = tagged in it. */
   addedVia: "upload" | "share" | "participant";
+  /** Derived upload/analysis/share state — see lib/matchStatus.ts. */
+  matchStatus: MatchStatus;
+  analysisError: string | null;
 }
 
 export const STATUS_LABEL: Record<MatchVideo["status"], string> = {
@@ -36,4 +42,12 @@ export function formatDate(iso: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+/** "3m" / "1h 04m" — how long a run has been going. */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }

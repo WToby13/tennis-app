@@ -14,6 +14,17 @@ final class RecordingLibrary: ObservableObject {
     @Published private(set) var cloud: [Recording] = []
     @Published var lastError: String?
 
+    /// Server-derived status per uploaded match, keyed by remote video id. Kept
+    /// out of `Recording` (and so out of the on-disk index) because it's a live
+    /// view of the server, not something this phone owns.
+    @Published private(set) var cloudStatus: [String: MatchStatus] = [:]
+
+    /// The server's view of a match, if it's in the cloud and we've fetched it.
+    func status(for recording: Recording) -> MatchStatus? {
+        guard let id = recording.remoteVideoId else { return nil }
+        return cloudStatus[id]
+    }
+
     private let api = UploadAPI()
 
     /// The full list to show: local recordings + cloud-only matches, newest first.
@@ -119,9 +130,17 @@ final class RecordingLibrary: ObservableObject {
 
     /// Kick off (or retry) a background upload. Progress and completion arrive
     /// via `RecordingStore` updates, so this returns immediately.
-    func upload(_ recording: Recording) {
+    ///
+    /// With `thenAnalyse`, the AI rally breakdown starts as soon as the upload is
+    /// confirmed — the whole point of the "Upload & AI Analyse" action is that you
+    /// don't have to come back and ask for it separately.
+    func upload(_ recording: Recording, thenAnalyse: Bool = false) {
         guard recordings.contains(where: { $0.id == recording.id }) else { return }
-        BackgroundUploader.shared.start(recording: recording, fileURL: fileURL(for: recording))
+        BackgroundUploader.shared.start(
+            recording: recording,
+            fileURL: fileURL(for: recording),
+            analyseWhenDone: thenAnalyse
+        )
     }
 
     /// Proactive, user-initiated delete. Removes the match everywhere: cancels any
@@ -145,9 +164,24 @@ final class RecordingLibrary: ObservableObject {
     /// that aren't already represented locally. `/api/videos` returns the caller's
     /// whole library — matches they own, were tagged in, or saved — so Matches
     /// shows all of them (not just ones recorded on this phone).
-    func refreshFromCloud() async {
+    /// When the cloud list was last fetched, so returning to the tab doesn't
+    /// re-hit the network on every appearance.
+    private var lastCloudRefresh: Date?
+    private static let cloudTTL: TimeInterval = 60
+
+    func refreshFromCloud(force: Bool = false) async {
+        if !force, let last = lastCloudRefresh, Date().timeIntervalSince(last) < Self.cloudTTL {
+            return
+        }
         guard (await Supa.currentUserId()) != nil,
               let videos = try? await api.listVideos() else { return }
+        lastCloudRefresh = Date()
+
+        // Server status for every match we can see — including ones already in
+        // the local index, which are shown from local state but still need the
+        // cloud's view of analysis and sharing.
+        cloudStatus = videos.reduce(into: [:]) { map, v in map[v.id] = v.matchStatus }
+
         let localRemoteIds = Set(recordings.compactMap { $0.remoteVideoId })
         cloud = videos.compactMap { v in
             guard !localRemoteIds.contains(v.id) else { return nil }  // already shown from local index

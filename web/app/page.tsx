@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { FeedCard, type FeedItem } from "./FeedCard";
 import { PeopleSearch } from "./PeopleSearch";
+import { MatchGridSkeleton } from "./Skeleton";
 
 export default function FeedPage() {
   const [feed, setFeed] = useState<FeedItem[] | null>(null);
@@ -24,11 +25,7 @@ export default function FeedPage() {
         Matches from players you follow, and your own.
       </p>
 
-      {feed === null && (
-        <p className="muted" style={{ marginTop: 20 }}>
-          Loading…
-        </p>
-      )}
+      {feed === null && <MatchGridSkeleton count={3} />}
 
       {feed?.length === 0 && (
         <div className="feed">

@@ -3,14 +3,30 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
+/** Same-site absolute paths only — the destination is client-supplied. */
+function safePath(value: string | undefined | null): string | null {
+  if (!value) return null;
+  const decoded = decodeURIComponent(value);
+  return decoded.startsWith("/") && !decoded.startsWith("//") ? decoded : null;
+}
+
 /**
- * Magic-link landing route. Supabase redirects here with a `code`; we exchange
- * it for a session (cookies are set via the server client) and send the user in.
+ * Magic-link / OAuth landing route. Supabase redirects here with a `code`; we
+ * exchange it for a session (cookies are set via the server client) and send the
+ * user in.
+ *
+ * The destination comes from the `ojo_next` cookie that GoogleButton sets before
+ * starting the flow, rather than a `?next=` on this URL — see the comment there
+ * for why the redirect URL has to stay constant. `?next=` is still honoured as a
+ * fallback for any link built the old way.
  */
 export async function GET(request: NextRequest) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/";
+  const next =
+    safePath(searchParams.get("next")) ??
+    safePath(request.cookies.get("ojo_next")?.value) ??
+    "/";
 
   if (code) {
     const supabase = await getSupabaseServer();
@@ -30,9 +46,16 @@ export async function GET(request: NextRequest) {
           .maybeSingle();
         if (!profile?.handedness) dest = "/profile";
       }
-      return NextResponse.redirect(`${origin}${dest}`);
+      return done(`${origin}${dest}`);
     }
   }
 
-  return NextResponse.redirect(`${origin}/sign-in?error=auth`);
+  return done(`${origin}/sign-in?error=auth`);
+}
+
+/** Redirect onward, clearing the one-shot destination cookie either way. */
+function done(url: string) {
+  const response = NextResponse.redirect(url);
+  response.cookies.set("ojo_next", "", { maxAge: 0, path: "/" });
+  return response;
 }

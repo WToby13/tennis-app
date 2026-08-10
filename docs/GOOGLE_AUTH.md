@@ -23,6 +23,13 @@ browser. No separate Google iOS client is needed.
    - `http://localhost:3000/auth/callback` (dev)
    - `ojo://auth-callback` (the iOS app)
 
+   These are exact URLs with no query string, and that's deliberate: the web app
+   keeps its OAuth redirect URL constant and carries the post-login destination
+   in a short-lived `ojo_next` cookie instead (see `app/GoogleButton.tsx`). The
+   allow-list match includes the query string, so a `?next=` on the redirect URL
+   would need a wildcard entry — and when it doesn't match, GoTrue silently falls
+   back to the Site URL rather than erroring.
+
 ## 3. iOS (once, in Xcode — needs Toby)
 - The `ojo` URL scheme is already in `Info.plist` (`CFBundleURLTypes`). Rebuild so it's picked up.
 - Nothing else: `signInWithOAuth(provider: .google, redirectTo: ojo://auth-callback)` presents an
@@ -44,6 +51,19 @@ Run in the SQL editor (after 0003):
   those fields by the trigger.
 
 ## Troubleshooting
+
+**Google sign-in lands on `https://ojotennis.com/?code=…` instead of the callback.**
+The redirect URL didn't match the Redirect URLs allow-list, so GoTrue fell back
+to the Site URL — where nothing exchanges the code, so no session is created.
+Note it fails *silently*: there's no error to see. Either the environment's
+`/auth/callback` isn't in the allow-list, or something appended a query string to
+it (the allow-list match includes the query string; this is why the post-login
+destination travels in a cookie rather than a `?next=` — see §2).
+
+Verify with the probe below. It also works with a **real** state: start a sign-in,
+grab `?state=` off the Google URL, and feed that to the second curl — that tests
+the exact URL the app really sent, not a hand-written guess.
+
 
 **iOS Google returns to `ojotennis.com/landing` in the in-app browser instead of the app
 (`WebAuthenticationSession error 1`).** The custom scheme isn't in the Supabase **Redirect

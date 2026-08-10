@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { config } from "@/lib/config";
+import { config, partSizeFor } from "@/lib/config";
 import { sendParticipantInvites } from "@/lib/email/invites";
 import { storeForRequest } from "@/lib/request";
 import { storage } from "@/lib/storage";
@@ -24,6 +24,11 @@ export async function POST(req: Request) {
   const key = `videos/${videoId}.${extForContentType(body.contentType)}`;
   const { uploadId } = await storage().initiateMultipart(key, body.contentType);
 
+  // Scale the part size to the file so a long match doesn't turn into hundreds
+  // of presign round trips before a single byte moves. Both clients upload with
+  // whatever we return here.
+  const partSizeBytes = partSizeFor(body.sizeBytes, config.partSizeBytes);
+
   const video = await store.create({
     id: videoId,
     ownerId: userId,
@@ -32,7 +37,7 @@ export async function POST(req: Request) {
     uploadId,
     contentType: String(body.contentType),
     sizeBytes: body.sizeBytes,
-    partSizeBytes: config.partSizeBytes,
+    partSizeBytes,
     durationS: null,
     status: "uploading",
     visibility: "private",
@@ -44,6 +49,7 @@ export async function POST(req: Request) {
     analysisError: null,
     analyzedAt: null,
     analysisPlayers: null,
+    hasAnalysisProxy: false,
   });
 
   // Optional participants chosen in the recorder's post-record shelf.
@@ -71,6 +77,6 @@ export async function POST(req: Request) {
     videoId: video.id,
     key: video.key,
     uploadId,
-    partSizeBytes: config.partSizeBytes,
+    partSizeBytes,
   });
 }

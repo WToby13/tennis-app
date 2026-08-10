@@ -22,6 +22,9 @@ struct WatchView: View {
     @State private var detail: VideoDetailResponse?
     @State private var loadError: String?
     @State private var editing = false
+    /// Owned here (not by `ReviewPlayer`) so the AI breakdown can seek the same
+    /// player when a rally is tapped. Created once the playback URL resolves.
+    @State private var playerModel: PlayerModel?
 
     // Social state (seeded from `detail` once loaded, then driven optimistically).
     @State private var didInitSocial = false
@@ -82,6 +85,15 @@ struct WatchView: View {
                 }
                 if let vid = videoId, let d = detail {
                     socialBar(vid: vid, d: d)
+                    RallyBreakdown(
+                        videoId: vid,
+                        canAnalyze: d.canAnalyze ?? false,
+                        initialStatus: d.analysisStatus,
+                        initialError: d.analysisError,
+                        initialSegments: d.segments ?? [],
+                        initialPlayers: d.analysisPlayers,
+                        onSeek: { playerModel?.play(from: $0) }
+                    )
                     manageControls(vid: vid, d: d)
                     Divider().overlay(Theme.border).padding(.horizontal, 16)
                     CommentSection(videoId: vid)
@@ -112,8 +124,8 @@ struct WatchView: View {
     private var stage: some View {
         ZStack {
             Color.black
-            if let url {
-                ReviewPlayer(url: url)
+            if let playerModel {
+                ReviewPlayer(model: playerModel)
             } else if let loadError {
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle").font(.title2)
@@ -236,17 +248,24 @@ struct WatchView: View {
 
     // MARK: Load
 
+    /// Point the stage at a playable URL, building the player model once.
+    private func setURL(_ newURL: URL) {
+        guard url == nil else { return }
+        url = newURL
+        playerModel = PlayerModel(url: newURL)
+    }
+
     private func load() async {
         if let rec = localRecording, library.hasLocalFile(rec) {
-            url = library.fileURL(for: rec)
+            setURL(library.fileURL(for: rec))
         }
         if let vid = videoId {
             do {
                 let d = try await api.getVideo(videoId: vid)
                 detail = d
                 initSocial(d)
-                if url == nil, let pb = d.playbackUrl {
-                    url = api.absolutePartURL(pb)
+                if let pb = d.playbackUrl {
+                    setURL(api.absolutePartURL(pb))
                 }
             } catch {
                 if url == nil { loadError = "Couldn't load this match.\nCheck your connection and try again." }

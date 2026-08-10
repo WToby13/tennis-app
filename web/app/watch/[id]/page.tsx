@@ -60,6 +60,9 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const { id } = use(params);
   const router = useRouter();
   const videoRef = useRef<HTMLVideoElement>(null);
+  /** The video + its review controls, fullscreened as one unit. */
+  const theaterRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [video, setVideo] = useState<Video | null>(null);
   const [playbackUrl, setPlaybackUrl] = useState<string | null>(null);
   const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
@@ -249,24 +252,66 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     if (videoRef.current) videoRef.current.playbackRate = s;
   }, []);
 
-  // Keyboard: , / . step one frame; j / l jump 5s; k toggles play.
+  /**
+   * Fullscreen the whole review area, not the <video>.
+   *
+   * Native video fullscreen drops you into a bare player — no frame-step, no
+   * speed, no rally timeline — which is the entire reason to be on this page.
+   * Fullscreening the container keeps the review tooling with the video.
+   */
+  const toggleFullscreen = useCallback(() => {
+    const el = theaterRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else el.requestFullscreen?.().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", onChange);
+    return () => document.removeEventListener("fullscreenchange", onChange);
+  }, []);
+
+  // Keyboard: , / . step one frame; j / l / arrows jump 5s; k or space toggles
+  // play; f toggles fullscreen.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const el = videoRef.current;
       if (!el || editing) return;
+      // Don't steal keys from whatever the user is typing into (the comment box
+      // is right below the player, and "k" used to toggle playback mid-sentence).
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.isContentEditable ||
+          ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      ) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
       if (e.key === ",") stepFrames(-1);
       else if (e.key === ".") stepFrames(1);
-      else if (e.key === "j") el.currentTime = Math.max(0, el.currentTime - 5);
-      else if (e.key === "l") el.currentTime += 5;
-      else if (e.key === "k") el.paused ? el.play() : el.pause();
+      else if (e.key === "j" || e.key === "ArrowLeft") el.currentTime = Math.max(0, el.currentTime - 5);
+      else if (e.key === "l" || e.key === "ArrowRight") el.currentTime += 5;
+      else if (e.key === "k" || e.key === " ") el.paused ? el.play() : el.pause();
+      else if (e.key === "f") toggleFullscreen();
       else return;
       e.preventDefault();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stepFrames, editing]);
+  }, [stepFrames, editing, toggleFullscreen]);
 
-  if (!video) return <p className="muted" style={{ padding: 26 }}>Loading…</p>;
+  if (!video) {
+    return (
+      <div style={{ padding: 26 }} role="status" aria-label="Loading match">
+        <div className="skeleton skeleton-line" style={{ width: 260, height: 22 }} />
+        <div className="skeleton skeleton-thumb" style={{ marginTop: 18, borderRadius: 12 }} />
+        <div className="skeleton skeleton-line" style={{ width: 320, marginTop: 18 }} />
+      </div>
+    );
+  }
 
   const players = participants.map((p) => p.displayName).join(", ");
   const dateStr = formatDate(video.recordedAt ?? video.createdAt);
@@ -328,35 +373,35 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
         </div>
       </header>
 
-      <div className="watch-stage">
-        {ready ? (
-          <video
-            ref={videoRef}
-            src={playbackUrl!}
-            poster={thumbnailUrl ?? undefined}
-            controls
-            preload="metadata"
-            onPlay={() => setPaused(false)}
-            onPause={() => setPaused(true)}
-          />
-        ) : (
-          <div className="placeholder">
-            <span className={`badge ${video.status}`}>{video.status}</span>
-            <p style={{ margin: 0 }}>
-              {video.status === "processing"
-                ? "Preparing the video for smooth scrubbing…"
-                : video.status === "uploading"
-                  ? "This match is still uploading."
-                  : "This video isn't available to play."}
-            </p>
-          </div>
-        )}
-      </div>
+      <div className={`theater ${isFullscreen ? "is-fullscreen" : ""}`} ref={theaterRef}>
+        <div className="watch-stage">
+          {ready ? (
+            <video
+              ref={videoRef}
+              src={playbackUrl!}
+              poster={thumbnailUrl ?? undefined}
+              controls
+              preload="metadata"
+              onPlay={() => setPaused(false)}
+              onPause={() => setPaused(true)}
+              onDoubleClick={toggleFullscreen}
+            />
+          ) : (
+            <div className="placeholder">
+              <span className={`badge ${video.status}`}>{video.status}</span>
+              <p style={{ margin: 0 }}>
+                {video.status === "processing"
+                  ? "Preparing the video for smooth scrubbing…"
+                  : video.status === "uploading"
+                    ? "This match is still uploading."
+                    : "This video isn't available to play."}
+              </p>
+            </div>
+          )}
+        </div>
 
-      <div className="watch-below">
         {ready && (
-          <>
-            <div className="controls">
+          <div className="controls">
               <div className="group" aria-label="Playback speed">
                 {SPEEDS.map((s) => (
                   <button
@@ -389,10 +434,21 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 </button>
                 <button className="chip" onClick={() => seek(10)}>+10s</button>
               </div>
+              <div className="group" aria-label="View">
+                <button
+                  className="chip"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? "Exit fullscreen" : "Fullscreen (keeps these controls)"}
+                >
+                  {isFullscreen ? "Exit fullscreen" : "Fullscreen"}{" "}
+                  <span className="kbd">f</span>
+                </button>
+              </div>
             </div>
-          </>
         )}
+      </div>
 
+      <div className="watch-below">
         {ready && (
           <RallySegments
             videoId={id}

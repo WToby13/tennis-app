@@ -1,0 +1,150 @@
+# Ojo — Roadmap
+
+Six planned pieces of work, grouped into the order they're being built. The
+grouping isn't arbitrary: several of the items share components or data, and
+doing them separately means building the same thing twice.
+
+| Phase | What | Status |
+|-------|------|--------|
+| 0 | Perf quick wins | done |
+| 1 | Shared match-status model | done |
+| 2 | Web: merged library page + processing/analysing UI | done |
+| 3 | iOS: merged Matches + Profile, "Upload & AI Analyse" | built — needs a device test |
+| 4 | Remaining UX (fullscreen, login, caching, SSR) | done |
+| 5 | Media pipeline: faststart + analysis proxy | todo |
+
+## Why these groupings
+
+- **Web merge and the analysing/processing UI are the same components.** The
+  status chip on a match card *is* the processing UI; splitting them means
+  touching the library page, `FeedCard` and the watch page twice.
+- **Web and iOS need one status vocabulary**, so it's defined server-side once
+  (phase 1) and both clients just render it.
+- **faststart and the 4 GB limit are one pipeline.** Both are "run ffmpeg over
+  the file in S3 after upload, flip a status when done". The S3 trigger, job
+  tracking, status columns and processing UI are shared.
+
+---
+
+## Phase 0 — Perf quick wins
+
+Small, low-risk, and everything in later phases renders on these pages.
+
+1. **Cacheable signed URLs.** `getThumbnailUrl` / `getPlaybackUrl` signed with
+   `dateLessThan: now + TTL`, so the signature differed on every request and the
+   browser could never reuse a thumbnail. Expiries are now rounded up to a fixed
+   bucket, so the same URL comes back for a whole window.
+2. **One auth round trip, not two.** The middleware validated the session with
+   `auth.getUser()` (a network call to Supabase), then every route handler did it
+   again. The middleware now passes the verified user id downstream on a header.
+3. **Profile page waterfall.** It ran four sequential Supabase calls from the
+   browser and didn't use `/api/users/[id]`, which already returns most of it.
+   Now a single request to `/api/users/me`.
+4. **Parallel independent awaits** in the watch detail route and
+   `profileSummary`.
+
+## Phase 1 — Shared match-status model
+
+One derived state per match, computed server-side and returned by `/api/videos`
+and the detail route:
+
+- **upload** — `uploading` / `processing` / `ready` / `failed`
+- **analysis** — `none` / `analysing` / `ready` / `failed`
+- **share** — `private` / `link` / `followers` / `public`
+
+Lives in `lib/matchStatus.ts` — the derivation plus the chip labels and a
+four-value `Tone` vocabulary that web CSS and SwiftUI can both map.
+`MetadataStore.list()` now reports the two share facts it was missing (a live
+share link, and whether the caller posted the match to their followers), fetched
+in bulk for the whole library rather than per card.
+
+Served as a **new** `matchStatus` field on `/api/videos` and the detail route —
+not a richer `status`. The existing `status` is a bare string that both clients
+already decode (iOS as a non-optional `String`), so replacing it would break the
+iOS Matches tab.
+
+## Phase 2 — Web: merged library page
+
+Fold `/matches`, `/profile` and `/upload` into one page — profile header, inline
+upload, match grid. Cards get the phase-1 status tag plus AI Breakdown and Share
+buttons. Processing and analysing become real states with progress and elapsed
+time, since a TwelveLabs run on a full match takes minutes.
+
+Keep `/upload` and `/matches` as redirects — the iOS app builds `watchURL` and
+existing shared links point at the old paths.
+
+## Phase 3 — iOS: merged Matches + Profile
+
+Profile layout as the base, matches in a grid with the phase-1 status chip —
+including local not-yet-uploaded recordings, which only iOS can show.
+"Upload & AI Analyse" chains upload completion into `POST /analyze` so analysis
+starts without a second visit; the CTA becomes "Share" once ready.
+
+### The big-upload fixes that shipped with it
+
+`BackgroundUploader` used to write the entire video out a *second* time as part
+files, and presign every part, before enqueuing anything. Three consequences:
+
+1. a 6 GB match needed 12 GB free;
+2. ~750 sequential presign round trips before the first byte moved;
+3. **presigned URLs expire in an hour** — on a long upload the parts at the back
+   of the queue could be handed already-dead URLs.
+
+Now the part size scales with the file (server-side, in `partSizeFor` — so the
+browser client gets it too: a 6 GB upload goes from 750 parts to 287), and parts
+are sliced, presigned and enqueued a window of 6 at a time, refilled from the
+session delegate as each one lands. Disk stays bounded and every URL is minted
+shortly before it's used.
+
+**This needs a real-device test with a large match.** The Simulator can't
+meaningfully exercise a background `URLSession` across suspension and relaunch,
+which is exactly the path this changed.
+
+## Phase 4 — Remaining UX
+
+**Fullscreen keeps the review tools.** Native `<video>` fullscreen drops you into
+a bare player — no frame-step, no speed, no rally timeline — which is the whole
+reason to be on the watch page. A `.theater` container holding the video *and*
+the controls goes fullscreen instead (`f`, or double-click the video).
+
+**Keyboard shortcuts no longer fire while you type.** `j`/`k`/`l`/`,`/`.` were
+bound on `window` with no guard, so typing a comment containing "k" toggled
+playback *and* swallowed the character.
+
+**The library page renders on the server.** It was a client component fetching on
+mount, so every visit ran HTML → JS → auth → fetch → content. `loadLibrary` /
+`loadMe` in `lib/library.ts` are shared with the API routes so the two can't
+drift. Route went from `○` static to `ƒ` server-rendered.
+
+**Skeletons** instead of "Loading…" on the library, feed and watch pages.
+
+**Login**: friendlier auth errors (shared `lib/authErrors.ts`), autofocus, real
+busy labels instead of "…", `role="alert"` on failures.
+
+**iOS caching**: `AppCache` holds the feed and profile across tab switches with a
+60s TTL (they were `@State`, so SwiftUI discarded them on every switch and each
+visit started from a spinner). `refreshFromCloud` gained the same TTL. Cleared on
+sign-out so the next account can't see the last one's data.
+
+Still client-fetched: the home feed and `/u/[id]`. Same treatment would work;
+they just aren't the pages that felt slow.
+
+## Phase 5 — Media pipeline
+
+One S3-triggered job, two outputs: a faststart-remuxed MP4 for smooth scrubbing,
+and a downscaled analysis proxy that keeps a 2-hour match under the TwelveLabs
+4 GB limit. Status flows into the phase-1 model, so the UI already exists.
+
+Last because it's the only item needing new AWS infra, real running cost and a
+new deploy surface — and the 4 GB stopgap (a clear error message, see
+`app/api/videos/[id]/analyze/route.ts`) means nobody is hard-blocked.
+
+**Open decision.** MediaConvert is managed but re-encodes everything; there's no
+remux-only path, so the master would be recompressed. ffmpeg on Fargate can
+stream-copy the faststart output and transcode the proxy in one pass, at the cost
+of more code — currently the leaning option. Lambda is out for the proxy: a
+2-hour transcode won't finish in 15 minutes.
+
+**Check first:** whether scrubbing is actually broken today. Browsers do handle a
+trailing `moov` atom via range requests. If seeking is acceptable on real
+matches, this phase shrinks to just the analysis proxy.

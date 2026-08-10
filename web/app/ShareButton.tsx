@@ -3,8 +3,12 @@
 import { useState } from "react";
 import { ShareIcon } from "./icons";
 
-/** Mint a revocable share link for a video and copy it to the clipboard. */
-export function ShareButton({ id }: { id: string }) {
+/**
+ * Mint a revocable share link for a video and copy it to the clipboard.
+ * `onShared` fires once a link exists, so a caller showing share status can
+ * update without re-fetching.
+ */
+export function ShareButton({ id, onShared }: { id: string; onShared?: () => void }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -16,6 +20,7 @@ export function ShareButton({ id }: { id: string }) {
           if (res.ok) {
             const { path } = await res.json();
             url = `${window.location.origin}${path}`;
+            onShared?.();
           }
           await navigator.clipboard.writeText(url);
           setCopied(true);

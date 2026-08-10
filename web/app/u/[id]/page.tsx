@@ -50,7 +50,7 @@ export default function PublicProfilePage({ params }: { params: Promise<{ id: st
           </p>
         </div>
         {isSelf ? (
-          <Link href="/profile" className="btn secondary">
+          <Link href="/matches?edit=profile" className="btn secondary">
             Edit profile
           </Link>
         ) : (

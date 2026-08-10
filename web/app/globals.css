@@ -1204,3 +1204,223 @@ video {
   font-size: 14px;
   line-height: 1.5;
 }
+
+/* ---- merged library page (profile + upload + matches) ------------------- */
+
+/* Status chip tones — the Tone vocabulary from lib/matchStatus.ts, so the same
+   four names mean the same four colours here and in the iOS Theme. */
+.badge.tone-neutral {
+  color: var(--muted);
+}
+.badge.tone-progress {
+  color: var(--accent);
+}
+.badge.tone-good {
+  color: var(--sage);
+}
+.badge.tone-danger {
+  color: var(--danger);
+}
+
+/* Indeterminate variant of .progress, for work with no measurable percentage
+   (a TwelveLabs run reports no progress, only pending → ready). */
+.progress.indeterminate > span {
+  width: 35%;
+  animation: progress-slide 1.5s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress.indeterminate > span {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}
+
+.library-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.library-header .who {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* The card's chip row: activity (when something is happening) + share state. */
+.card-chips {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+/* Upload tile — first cell of the grid, so uploading is where the matches are. */
+.upload-tile {
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 180px;
+  padding: 20px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  text-align: center;
+  width: 100%;
+}
+.upload-tile:hover,
+.upload-tile.dragover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(217, 102, 44, 0.06);
+}
+.upload-tile.busy {
+  cursor: default;
+  align-items: stretch;
+  justify-content: center;
+}
+
+/* ---- theater: video + review controls as one fullscreen unit -------------- */
+
+/* Fullscreening the <video> itself gives a bare player — no frame-step, no
+   speed, no rally timeline — which is the whole reason to be on this page. The
+   container goes fullscreen instead, so the review tooling comes along. */
+.theater > .controls {
+  padding: 14px 26px 0;
+}
+.theater.is-fullscreen {
+  background: #000;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.theater.is-fullscreen .watch-stage {
+  flex: 1;
+  min-height: 0;
+}
+.theater.is-fullscreen .watch-stage video {
+  max-height: 100%;
+  height: 100%;
+}
+/* Controls sit on the black, pinned under the video. */
+.theater.is-fullscreen > .controls {
+  flex: 0 0 auto;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  justify-content: center;
+}
+
+/* ---- skeletons ----------------------------------------------------------- */
+
+/* A "Loading…" line tells you nothing and shifts the layout when content
+   arrives. Skeletons hold the shape the content will take. */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface) 0%,
+    var(--surface-2) 40%,
+    var(--surface) 80%
+  );
+  background-size: 300% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+.skeleton-thumb {
+  aspect-ratio: 16 / 9;
+  border-radius: 0;
+}
+.skeleton-line {
+  height: 12px;
+  margin-top: 10px;
+}
+
+/* ---- AI breakdown: the analysing state ----------------------------------- */
+
+/* Deliberately not `.muted`: this is the headline of the waiting state, so it
+   reads as the thing that's happening, not as fine print. */
+.seg-analysing {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 12px;
+}
+
+/* A full-length bar in each lane, with a highlight sweeping left to right so the
+   wait shows the shape of the answer instead of an empty box. */
+.tl-bar-pending {
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: default;
+}
+.tl-bar-pending::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(217, 102, 44, 0.15) 35%,
+    rgba(217, 102, 44, 0.6) 50%,
+    rgba(217, 102, 44, 0.15) 65%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: tl-wave 1.9s ease-in-out infinite;
+}
+/* Second lane trails the first, so the two read as one wave travelling down. */
+.tl-bar-pending-2::after {
+  animation-delay: 0.28s;
+}
+@keyframes tl-wave {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tl-bar-pending::after {
+    animation: tl-pulse 2s ease-in-out infinite;
+    transform: none;
+    background: rgba(217, 102, 44, 0.25);
+  }
+  @keyframes tl-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 0.75; }
+  }
+}

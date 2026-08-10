@@ -143,8 +143,17 @@ resource "aws_iam_user" "app" {
 
 data "aws_iam_policy_document" "app" {
   statement {
-    sid       = "MultipartObjectOps"
-    actions   = ["s3:PutObject", "s3:GetObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"]
+    sid = "MultipartObjectOps"
+    # DeleteObject covers the byte purge after a soft-delete and the analysis-proxy
+    # cleanup. Both call DeleteObject best-effort and swallow failures, so without
+    # this the objects were silently left behind.
+    actions = [
+      "s3:PutObject",
+      "s3:GetObject",
+      "s3:DeleteObject",
+      "s3:AbortMultipartUpload",
+      "s3:ListMultipartUploadParts",
+    ]
     resources = ["${aws_s3_bucket.videos.arn}/*"]
   }
   statement {
