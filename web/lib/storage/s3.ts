@@ -113,7 +113,10 @@ export class S3StorageAdapter implements StorageAdapter {
   async deleteVideoAssets(videoId: string, key: string): Promise<void> {
     const del = (k: string) =>
       this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: k })).catch(() => {});
-    await Promise.all([del(key), del(thumbnailKey(videoId))]);
+    // The analysis proxy is normally cleaned up when the run finishes, but a
+    // match deleted *during* analysis would otherwise leave it orphaned — and
+    // nothing else ever looks at that key again.
+    await Promise.all([del(key), del(thumbnailKey(videoId)), del(analysisProxyKey(videoId))]);
   }
 
   async getThumbnailUploadUrl(videoId: string) {
