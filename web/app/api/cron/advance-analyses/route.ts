@@ -1,7 +1,7 @@
 import { advanceAnalysis, stageOf } from "@/lib/analysisRunner";
 import { config } from "@/lib/config";
 import { metadata } from "@/lib/metadata";
-import { getSupabaseServiceRole } from "@/lib/supabase/service";
+import { getSupabaseServiceRole, serviceRoleConfigured } from "@/lib/supabase/service";
 import { json } from "@/lib/util";
 
 export const runtime = "nodejs";
@@ -40,15 +40,29 @@ export async function GET(req: Request) {
 
   if (!config.authEnabled) return json({ skipped: "local mode" });
 
+  // Checked rather than left to throw: until this sweep existed nothing deployed
+  // read the service-role key — only a local script — so an environment missing
+  // it is a live possibility, and an unhandled throw here surfaces as a 500 with
+  // an empty body, which tells whoever is scheduling us nothing at all.
+  if (!serviceRoleConfigured()) {
+    console.error("[cron] SUPABASE_SERVICE_ROLE_KEY is not set — refusing to run");
+    return json(
+      { error: "SUPABASE_SERVICE_ROLE_KEY is not set in this environment" },
+      { status: 503 },
+    );
+  }
+
   const started = Date.now();
-  const store = metadata(getSupabaseServiceRole(), null, true);
 
   let inFlight;
+  let store;
   try {
+    store = metadata(getSupabaseServiceRole(), null, true);
     inFlight = await store.listInFlightAnalyses(BATCH);
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error("[cron] couldn't list in-flight analyses", err);
-    return json({ error: "list failed" }, { status: 500 });
+    return json({ error: `list failed: ${message}` }, { status: 500 });
   }
 
   const results: Record<string, number> = {};

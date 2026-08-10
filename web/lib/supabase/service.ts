@@ -12,6 +12,15 @@ import { config } from "../config";
  * Note it also has no `auth.uid()`, so security-definer RPCs that gate on edit
  * rights will refuse — see `SupabaseMetadataStore.replaceSegments`.
  */
+/**
+ * Whether the service-role key is available. Worth checking before use: until the
+ * cron sweep existed, nothing deployed read this variable — only a local script —
+ * so it is easy for an environment to be missing it entirely.
+ */
+export function serviceRoleConfigured(): boolean {
+  return Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
 export function getSupabaseServiceRole(): SupabaseClient {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set");

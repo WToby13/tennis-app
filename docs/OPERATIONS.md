@@ -240,6 +240,12 @@ docker push "$REPO:latest"
 `--platform linux/amd64` is required on Apple Silicon, or the task fails to start.
 
 ### 4. Web environment
+
+`SUPABASE_SERVICE_ROLE_KEY` **must be set in Vercel** — the cron sweep needs it to
+see every user's rows. Before the sweep existed, nothing deployed read this
+variable (only the local thumbnail script), so an otherwise-working project can
+easily be missing it. Without it the sweep returns 503 and does nothing.
+
 ```bash
 cd infra
 terraform output TRANSCODE_ECS_CLUSTER TRANSCODE_TASK_DEFINITION \
