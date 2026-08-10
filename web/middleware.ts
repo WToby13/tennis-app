@@ -37,7 +37,10 @@ export async function middleware(request: NextRequest) {
   } = token ? await supabase.auth.getUser(token) : await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const publicPrefixes = ["/landing", "/sign-in", "/sign-up", "/login", "/auth"];
+  // /api/cron has no session by definition — it's invoked by Vercel's scheduler,
+  // not a browser. It authenticates itself with CRON_SECRET inside the route, so
+  // it must reach the route rather than being 401'd here.
+  const publicPrefixes = ["/landing", "/sign-in", "/sign-up", "/login", "/auth", "/api/cron"];
   const isPublic = publicPrefixes.some((p) => path === p || path.startsWith(`${p}/`));
 
   if (!user && !isPublic) {

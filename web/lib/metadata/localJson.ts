@@ -109,6 +109,13 @@ export class LocalJsonMetadataStore implements MetadataStore {
     return all.filter((v) => !v.deletedAt).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
+  async listInFlightAnalyses(limit = 50): Promise<Video[]> {
+    const all = await readAll();
+    return all
+      .filter((v) => !v.deletedAt && v.analysisStatus === "processing")
+      .slice(0, limit);
+  }
+
   update(id: string, patch: Partial<Video>): Promise<Video> {
     return withLock(async () => {
       const all = await readAll();

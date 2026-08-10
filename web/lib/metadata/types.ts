@@ -111,6 +111,12 @@ export interface MetadataStore {
   list(): Promise<LibraryEntry[]>;
   /** A given owner's videos that the caller may see (RLS-filtered), newest first. */
   listByOwner(ownerId: string): Promise<Video[]>;
+  /**
+   * Every match with an analysis still in flight, across all users. Only
+   * meaningful under the service role — the cron sweep uses it so a run doesn't
+   * depend on its owner having a page open.
+   */
+  listInFlightAnalyses(limit?: number): Promise<Video[]>;
   update(id: string, patch: Partial<Video>): Promise<Video>;
   /** Rename a match. Allowed for the owner or any participant (editors). */
   setTitle(id: string, title: string): Promise<Video>;

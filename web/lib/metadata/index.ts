@@ -11,10 +11,15 @@ let localStore: MetadataStore | null = null;
  * - Supabase (auth) mode: pass the request-scoped client so RLS applies.
  * - Local dev mode: JSON file, no client needed.
  */
-export function metadata(supabase?: SupabaseClient, userId?: string | null): MetadataStore {
+export function metadata(
+  supabase?: SupabaseClient,
+  userId?: string | null,
+  /** Set only for the service-role client — see SupabaseMetadataStore. */
+  serviceRole = false,
+): MetadataStore {
   if (config.authEnabled) {
     if (!supabase) throw new Error("metadata() requires a Supabase client when auth is enabled");
-    return new SupabaseMetadataStore(supabase, userId ?? null);
+    return new SupabaseMetadataStore(supabase, userId ?? null, serviceRole);
   }
   if (!localStore) localStore = new LocalJsonMetadataStore();
   return localStore;
