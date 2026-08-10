@@ -272,8 +272,9 @@ Developer account.
 5. Delete a match; confirm the master and thumbnail leave the bucket.
 
 ### Before real users
-- [x] Server-side poller so analyses don't depend on an open tab (§1) — daily on
-      Hobby; add an external 5-minute scheduler or move to Pro for a real cadence
+- [x] Server-side poller so analyses don't depend on an open tab (§1) — pg_cron
+      every 5 min, verified returning 200 in production; Vercel's daily run is a
+      backstop
 - [ ] Settle the TwelveLabs indexing question from an invoice (§3)
 - [ ] One-off sweep for objects orphaned by the old missing `s3:DeleteObject`
 - [ ] A hard-delete path for erasure requests (§4)
