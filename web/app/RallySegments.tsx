@@ -257,11 +257,11 @@ export function RallySegments({
   const button = canRun ? (
     status === "processing" ? (
       <button className="btn" disabled>
-        Analyzing rallies…
+        Analysing rallies…
       </button>
     ) : status === "ready" ? (
       <button className="btn secondary btn-sm" onClick={openSetup}>
-        Re-analyze
+        Re-analyse
       </button>
     ) : status === "failed" ? (
       <button className="btn" onClick={openSetup}>
@@ -287,14 +287,36 @@ export function RallySegments({
         <p className="muted seg-hint">Break this match into rallies with AI.</p>
       )}
       {status === "processing" && (
-        <p className="muted seg-hint">Analyzing rallies… this can take a few minutes.</p>
+        <p className="seg-analysing">Analysing rallies… this can take a few minutes.</p>
+      )}
+
+      {/* While a run is in flight, show the shape of the answer: the same two
+          lanes the result will fill, each with a full-length bar sweeping a
+          highlight left to right, the rows staggered so it reads as one wave. */}
+      {status === "processing" && (
+        <div className="timeline" aria-hidden="true">
+          <div className="tl-row">
+            <div className="tl-row-label">Service games</div>
+            <div className="tl-lane">
+              <div className="tl-bar tl-bar-pending" />
+            </div>
+          </div>
+          <div className="tl-row">
+            <div className="tl-row-label">Rallies</div>
+            <div className="tl-lane">
+              <div className="tl-bar tl-bar-pending tl-bar-pending-2" />
+            </div>
+          </div>
+        </div>
       )}
       {status === "ready" && segments.length === 0 && (
-        <p className="muted seg-hint">No rallies were detected in this match. Try Re-analyze.</p>
+        <p className="muted seg-hint">No rallies were detected in this match. Try Re-analyse.</p>
       )}
       {status === "failed" && error && <p className="muted seg-hint">{error}</p>}
 
-      {segments.length > 0 && (
+      {/* On a re-analyze the old segments are still loaded; the pending lanes
+          above stand in for them until the new result lands. */}
+      {segments.length > 0 && status !== "processing" && (
         <div className="timeline">
           {/* Players + serve summary */}
           <div className="players-legend">
@@ -416,7 +438,7 @@ export function RallySegments({
                 />
               </label>
               <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-                Leave blank to analyse from the start. Used when you run/re-analyze.
+                Leave blank to analyse from the start. Used when you run/re-analyse.
               </p>
             </div>
 
@@ -464,7 +486,7 @@ export function RallySegments({
                     Save names
                   </button>
                   <button className="btn secondary" onClick={run} disabled={busy}>
-                    Re-analyze
+                    Re-analyse
                   </button>
                 </>
               ) : (

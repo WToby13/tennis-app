@@ -1367,3 +1367,60 @@ video {
   height: 12px;
   margin-top: 10px;
 }
+
+/* ---- AI breakdown: the analysing state ----------------------------------- */
+
+/* Deliberately not `.muted`: this is the headline of the waiting state, so it
+   reads as the thing that's happening, not as fine print. */
+.seg-analysing {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 0 12px;
+}
+
+/* A full-length bar in each lane, with a highlight sweeping left to right so the
+   wait shows the shape of the answer instead of an empty box. */
+.tl-bar-pending {
+  left: 0;
+  right: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  cursor: default;
+}
+.tl-bar-pending::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(217, 102, 44, 0.15) 35%,
+    rgba(217, 102, 44, 0.6) 50%,
+    rgba(217, 102, 44, 0.15) 65%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: tl-wave 1.9s ease-in-out infinite;
+}
+/* Second lane trails the first, so the two read as one wave travelling down. */
+.tl-bar-pending-2::after {
+  animation-delay: 0.28s;
+}
+@keyframes tl-wave {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tl-bar-pending::after {
+    animation: tl-pulse 2s ease-in-out infinite;
+    transform: none;
+    background: rgba(217, 102, 44, 0.25);
+  }
+  @keyframes tl-pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 0.75; }
+  }
+}
