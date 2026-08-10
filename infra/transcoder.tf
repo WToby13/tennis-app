@@ -160,6 +160,14 @@ resource "aws_ecs_task_definition" "transcoder" {
   execution_role_arn       = aws_iam_role.transcoder_execution.arn
   task_role_arn            = aws_iam_role.transcoder_task.arn
 
+  # ARM64 (Graviton): ~20% cheaper than x86 for the same work, and it's what an
+  # Apple Silicon Mac builds natively — no QEMU emulation to get the image out.
+  # ffmpeg and x264 are well supported on aarch64.
+  runtime_platform {
+    operating_system_family = "LINUX"
+    cpu_architecture        = "ARM64"
+  }
+
   # The master is downloaded to local disk before encoding, so this has to fit
   # the largest match plus its proxy. A 2-hour recording at the iPhone's ~15 Mbps
   # is ~13 GB, and Fargate's default is only 20 GiB.
