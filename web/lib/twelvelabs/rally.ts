@@ -54,7 +54,7 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
         name: "near_player_role",
         type: "string",
         description:
-          "What the large near player at the bottom of the screen is doing at the START of this point. serving = he stands on the white line, bounces the ball, throws it up and hits it above his head. receiving = he stands lower down, waits, and only swings after the ball has come over the net to him. Decide this by watching the first two seconds of THIS point. Never carry the answer over from the previous point — over a whole match this answer changes many times.",
+          "What the large near player at the bottom of the screen is doing at the START of this point. serving = he stands on the white line, bounces the ball, throws it up and hits it above his head; he is holding a yellow ball, and there are usually one or two spare yellow balls on the ground near him or in his pocket. receiving = he stands lower down and is slightly crouched, leaning forward with his knees bent and the racket held out in front of him with both hands, waiting; he holds NO ball, and there are NO yellow balls on the ground close to him — the balls are all at the far player's end. Decide this by watching the first two seconds of THIS point. Never carry the answer over from the previous point — over a whole match this answer changes many times.",
         enum: ["serving", "receiving", "unclear"],
       },
       {

@@ -353,20 +353,26 @@ export function smoothTennis(
   // of the video. Any one alone is damning, so they're OR'd, and each is gated on
   // enough points for the claim to hold.
   //
-  //  - Constant role: the server alternates every game and a game is >= 4 points,
-  //    so 12 points span at least two games and the role MUST flip. Seen at 1.000
-  //    across 95 points.
-  //  - Constant identity: ends change every two games, so by 24 points the near
-  //    player must have swapped. Needs more points than role does, because a
-  //    handful of games can legitimately share an end.
+  //  - Constant role / constant identity: over a long enough match both MUST
+  //    move. How long is "long enough" is subtler than it looks, and an earlier
+  //    version of this got it wrong. Ends change after ODD games, so the near
+  //    player is the server for two games running: game 1 (server near), swap
+  //    ends, game 2 (the new near player serves), then two games receiving. Role
+  //    and identity are therefore each legitimately constant across TWO whole
+  //    games. With splitLongGames capping a game at 15 points, two games is up to
+  //    30, so only past 32 points is constancy impossible rather than merely
+  //    unusual. A real 5-minute window of 14 points came back all-serving with a
+  //    clean identity flip at a 45s changeover — physically correct, and a
+  //    12-point threshold would have thrown it away.
   //  - No timing structure: a real changeover is 60-90s against a 15-25s
   //    inter-point gap, so the longest gap should dwarf the median. When the
   //    longest is barely twice the median, the timings were invented.
   //  - Recycled prose: seen at 12 distinct strings across 95 points, four of which
   //    covered 87 in a flat 22/22/22/21 rotation. Threshold is deliberately far
   //    below anything a genuine run produces (a clean run scores 1.0).
-  const constantRole = pts.length >= 12 && roleUniformity >= 0.98;
-  const constantIdentity = pts.length >= 24 && identityUniformity >= 0.98;
+  const LONG_ENOUGH_TO_JUDGE_FIELDS = 32;
+  const constantRole = pts.length >= LONG_ENOUGH_TO_JUDGE_FIELDS && roleUniformity >= 0.98;
+  const constantIdentity = pts.length >= LONG_ENOUGH_TO_JUDGE_FIELDS && identityUniformity >= 0.98;
   const noTimingStructure = pts.length >= 12 && gapSpread < 2.5;
   const recycledProse = descriptions.length >= 20 && descriptionDiversity < 0.25;
   const degenerate = constantRole || constantIdentity || noTimingStructure || recycledProse;

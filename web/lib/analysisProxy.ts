@@ -22,12 +22,16 @@
 const MIB = 1024 * 1024;
 
 /**
- * The size we aim the proxy at.
+ * The size budget a proxy has to stay inside.
  *
  * TwelveLabs' own docs disagree with themselves — the Pegasus model page says
  * 2 GB, the upload-methods page says 4 GB for public URLs, and the analyze
- * endpoint doesn't say. We target well under the *lower* figure so it doesn't
+ * endpoint doesn't say. We stay well under the *lower* figure so it doesn't
  * matter which one the API actually enforces.
+ *
+ * Nothing computes against this any more: VIDEO_BITRATE is fixed, and the
+ * worst case it can produce (2 hours, the API's own duration ceiling) is
+ * ~1.53 GB. It's kept as the bound that choice is justified against.
  */
 export const PROXY_TARGET_BYTES = 1_600 * MIB; // ~1.68 GB
 
@@ -48,15 +52,33 @@ export function needsAnalysisProxy(sizeBytes: number): boolean {
 }
 
 /**
- * Video bitrate (bits/sec) for a proxy of `durationS`, sized to land near
- * PROXY_TARGET_BYTES. Longer match → lower bitrate, same resolution.
+ * The bitrate the comparison above was actually run at, and what every proxy now
+ * gets regardless of duration.
  *
- * A 2-hour match lands around 1.8 Mbps, close to the 1.7 Mbps that tested clean.
+ * This used to be derived from PROXY_TARGET_BYTES / duration, which made it a
+ * function of match length: a 33-minute match came out at 6.9 Mbps and a 2-hour
+ * one at 1.8 Mbps. That was solving a problem that doesn't exist — TwelveLabs
+ * caps input at 2 hours, and 2 hours at this bitrate is ~1.62 GB (video+audio),
+ * already inside PROXY_TARGET_BYTES. So one fixed bitrate satisfies the size
+ * limit for every input the API will accept. Note the 2-hour case clears it by
+ * only ~4%: raising this constant means re-checking that sum.
+ *
+ * Fixing it also means every match is analysed under identical conditions, which
+ * matters more than the bytes: when a breakdown comes back wrong, encode quality
+ * is one fewer variable to rule out.
  */
-export function proxyVideoBitrate(durationS: number, sourceBitrate?: number): number {
-  if (!Number.isFinite(durationS) || durationS <= 0) return MIN_VIDEO_BITRATE;
-  const budget = (PROXY_TARGET_BYTES * 8) / durationS - AUDIO_BITRATE;
-  const capped = sourceBitrate && sourceBitrate > 0 ? Math.min(budget, sourceBitrate) : budget;
+const VIDEO_BITRATE = 1_700_000;
+
+/**
+ * Video bitrate (bits/sec) for a proxy, capped at the source's own bitrate so a
+ * lightly-encoded match is never re-encoded *upward*.
+ *
+ * `durationS` no longer affects the answer; it stays in the signature because
+ * callers pass it and a future size-aware rule would need it again.
+ */
+export function proxyVideoBitrate(_durationS: number, sourceBitrate?: number): number {
+  const capped =
+    sourceBitrate && sourceBitrate > 0 ? Math.min(VIDEO_BITRATE, sourceBitrate) : VIDEO_BITRATE;
   return Math.max(MIN_VIDEO_BITRATE, Math.round(capped));
 }
 
