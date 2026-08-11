@@ -49,6 +49,9 @@ export interface SmoothReport {
   /** Largest gap between points, over the median gap. Below ~2 there is no
    *  changeover structure in the timings at all. */
   gapSpread: number;
+  /** Distinct `what_you_see` strings over total points. 1.0 means every point was
+   *  described afresh; a low value means a handful of sentences were recycled. */
+  descriptionDiversity: number;
   /**
    * The raw output carries no usable structure, so the fit below it is
    * meaningless however confident it looks. Seen for real: a 32-minute match came
@@ -338,19 +341,35 @@ export function smoothTennis(
   const medGap = sortedGaps.length ? sortedGaps[Math.floor(sortedGaps.length / 2)] : 0;
   const gapSpread = medGap > 0 ? Math.max(...gapList) / medGap : 0;
 
-  // Two independent ways the raw output betrays a template rather than a reading
-  // of the video. Either alone is damning, so they're OR'd, and both are gated on
-  // having enough points to judge (a single short game can legitimately be
-  // uniform).
+  // How much the prose varied. A model reading the video describes each point
+  // differently; a model that has stopped reading cycles a handful of sentences.
+  const descriptions = pts.map((p) =>
+    String((p.seg.metadata as Record<string, unknown>)?.what_you_see ?? ""),
+  );
+  const distinct = new Set(descriptions.filter((d) => d !== "")).size;
+  const descriptionDiversity = descriptions.length ? distinct / descriptions.length : 1;
+
+  // Four independent ways the raw output betrays a template rather than a reading
+  // of the video. Any one alone is damning, so they're OR'd, and each is gated on
+  // enough points for the claim to hold.
   //
-  //  - No field variation: over 12+ points spanning multiple games the server
-  //    alternates and the players change ends, so role and identity MUST move.
+  //  - Constant role: the server alternates every game and a game is >= 4 points,
+  //    so 12 points span at least two games and the role MUST flip. Seen at 1.000
+  //    across 95 points.
+  //  - Constant identity: ends change every two games, so by 24 points the near
+  //    player must have swapped. Needs more points than role does, because a
+  //    handful of games can legitimately share an end.
   //  - No timing structure: a real changeover is 60-90s against a 15-25s
   //    inter-point gap, so the longest gap should dwarf the median. When the
   //    longest is barely twice the median, the timings were invented.
-  const noFieldVariation = identityUniformity >= 0.98 && roleUniformity >= 0.98;
-  const noTimingStructure = gapSpread < 2.5;
-  const degenerate = pts.length >= 12 && (noFieldVariation || noTimingStructure);
+  //  - Recycled prose: seen at 12 distinct strings across 95 points, four of which
+  //    covered 87 in a flat 22/22/22/21 rotation. Threshold is deliberately far
+  //    below anything a genuine run produces (a clean run scores 1.0).
+  const constantRole = pts.length >= 12 && roleUniformity >= 0.98;
+  const constantIdentity = pts.length >= 24 && identityUniformity >= 0.98;
+  const noTimingStructure = pts.length >= 12 && gapSpread < 2.5;
+  const recycledProse = descriptions.length >= 20 && descriptionDiversity < 0.25;
+  const degenerate = constantRole || constantIdentity || noTimingStructure || recycledProse;
 
   return {
     segments: out,
@@ -363,6 +382,7 @@ export function smoothTennis(
       identityUniformity: Math.round(identityUniformity * 1000) / 1000,
       roleUniformity: Math.round(roleUniformity * 1000) / 1000,
       gapSpread: Math.round(gapSpread * 100) / 100,
+      descriptionDiversity: Math.round(descriptionDiversity * 1000) / 1000,
       degenerate,
     },
   };
