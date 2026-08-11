@@ -237,7 +237,8 @@ struct EditSheet: View {
                     case .pending, .failed:
                         Button {
                             save()
-                            library.upload(current)
+                            let recording = current
+                            Task { await library.upload(recording) }
                             onDone()
                         } label: {
                             Label(current.status == .failed ? "Retry upload" : "Upload now",

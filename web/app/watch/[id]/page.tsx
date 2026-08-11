@@ -157,6 +157,44 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     }
   }, [id, router]);
 
+  /**
+   * Naming the two players in the AI breakdown panel is a statement that they
+   * played, so tag them on the match as well — linked to the account when the
+   * name is the owner's, a guest otherwise. Anyone already tagged is kept as they
+   * are, so an existing link or a pending invite survives.
+   */
+  const tagPlayers = useCallback(
+    async (names: string[]) => {
+      const merged = [...participants];
+      for (const raw of names) {
+        const name = raw.trim();
+        if (!name) continue;
+        if (merged.some((p) => p.displayName.trim().toLowerCase() === name.toLowerCase())) continue;
+        const isAuthor = author?.displayName.trim().toLowerCase() === name.toLowerCase();
+        merged.push({
+          id: "",
+          userId: isAuthor ? author!.id : null,
+          displayName: name,
+          email: null,
+        });
+      }
+      if (merged.length === participants.length) return;
+      const res = await fetch(`/api/videos/${id}/participants`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          participants: merged.map((p) => ({
+            userId: p.userId,
+            displayName: p.displayName,
+            email: p.email,
+          })),
+        }),
+      });
+      if (res.ok) setParticipants((await res.json()).participants ?? merged);
+    },
+    [id, participants, author],
+  );
+
   // Post this match to my followers (or stop). Available to owner/participants.
   const toggleShareToFollowers = useCallback(async () => {
     setSharingBusy(true);
@@ -458,8 +496,15 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             initialSegments={segments}
             initialError={analysisError}
             initialPlayers={analysisPlayers}
-            participantNames={participants.map((p) => p.displayName)}
+            // You first: only the owner can run a breakdown, and they're usually
+            // one of the two players — but they'd never tagged themselves, so the
+            // panel offered every name except their own.
+            participantNames={[
+              ...(isOwner && author ? [author.displayName] : []),
+              ...participants.map((p) => p.displayName),
+            ]}
             onSeek={seekTo}
+            onPlayersNamed={tagPlayers}
           />
         )}
 

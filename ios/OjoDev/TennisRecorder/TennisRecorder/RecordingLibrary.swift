@@ -131,15 +131,30 @@ final class RecordingLibrary: ObservableObject {
     /// Kick off (or retry) a background upload. Progress and completion arrive
     /// via `RecordingStore` updates, so this returns immediately.
     ///
-    /// With `thenAnalyse`, the AI rally breakdown starts as soon as the upload is
-    /// confirmed — the whole point of the "Upload & AI Analyse" action is that you
-    /// don't have to come back and ask for it separately.
-    func upload(_ recording: Recording, thenAnalyse: Bool = false) {
+    /// With `analyse`, the AI rally breakdown starts as soon as the upload is
+    /// confirmed, using the answers collected before it began — the whole point
+    /// of "Upload & Analyse" is that you don't come back and ask for it again.
+    /// Async because naming players in the shelf also tags them on the match, and
+    /// that has to land *before* the upload starts — the player list rides along
+    /// on `initiate` rather than costing a second round trip.
+    func upload(_ recording: Recording, analyse: AnalysisRequest? = nil) async {
         guard recordings.contains(where: { $0.id == recording.id }) else { return }
+        var current = recordings.first { $0.id == recording.id } ?? recording
+        if let names = analyse?.playerNames, !names.isEmpty {
+            let merged = await AnalysisParticipants.merged(
+                names: names,
+                existing: current.participants ?? [],
+                me: Supa.currentUserId().map { (id: $0, name: AppCache.shared.profile?.displayName ?? "") }
+            )
+            if merged != (current.participants ?? []) {
+                setParticipants(current, merged)
+                current.participants = merged
+            }
+        }
         BackgroundUploader.shared.start(
-            recording: recording,
-            fileURL: fileURL(for: recording),
-            analyseWhenDone: thenAnalyse
+            recording: current,
+            fileURL: fileURL(for: current),
+            analyse: analyse
         )
     }
 

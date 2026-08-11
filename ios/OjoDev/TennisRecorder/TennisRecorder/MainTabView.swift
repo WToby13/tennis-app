@@ -17,6 +17,9 @@ struct MainTabView: View {
     @State private var tab: MainTab = .home
     @State private var showCamera = false
     @State private var libraryPath = NavigationPath()
+    /// Set by fullscreen surfaces (the immersive Watch screen) that want the
+    /// whole screen — see `ChromeState`.
+    @ObservedObject private var chrome = ChromeState.shared
 
     var body: some View {
         ZStack {
@@ -24,7 +27,9 @@ struct MainTabView: View {
 
             selectedTab
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    OjoTabBar(tab: $tab, onRecord: { showCamera = true })
+                    if !chrome.tabBarHidden {
+                        OjoTabBar(tab: $tab, onRecord: { showCamera = true })
+                    }
                 }
         }
         .fullScreenCover(isPresented: $showCamera) {

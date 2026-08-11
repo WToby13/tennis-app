@@ -1,5 +1,6 @@
 import SwiftUI
 import Supabase
+import UIKit
 
 /// The "You" tab — your profile and your matches on one screen.
 ///
@@ -122,9 +123,11 @@ struct LibraryCard: View {
     @ObservedObject var library: RecordingLibrary
 
     @State private var confirmingDelete = false
+    @State private var analyseOpen = false
+    @State private var shareCopied = false
 
     private var status: MatchStatus? { library.status(for: recording) }
-    private var action: MatchAction { MatchAction.of(recording) }
+    private var actions: [MatchAction] { MatchAction.stack(for: recording) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -161,7 +164,9 @@ struct LibraryCard: View {
                 Text(message).font(.caption2).foregroundStyle(Theme.danger).lineLimit(2)
             }
 
-            actionButton
+            VStack(spacing: 6) {
+                ForEach(actions, id: \.self) { actionButton($0) }
+            }
         }
         .padding(10)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius))
@@ -177,29 +182,53 @@ struct LibraryCard: View {
         } message: {
             Text("This removes it from this phone and from the cloud.")
         }
+        .sheet(isPresented: $analyseOpen) {
+            AnalyseSheet(
+                confirmLabel: "Upload",
+                suggestions: (recording.participants ?? []).map(\.displayName)
+            ) { request in
+                let recording = recording
+                Task { await library.upload(recording, analyse: request) }
+            }
+        }
     }
 
-    @ViewBuilder private var actionButton: some View {
+    @ViewBuilder private func actionButton(_ action: MatchAction) -> some View {
         switch action {
-        case .share:
+        case .watch:
             NavigationLink(value: WatchTarget.recording(recording)) {
-                actionLabel(action, filled: false)
+                actionLabel(action)
+            }
+            .buttonStyle(.plain)
+        case .share:
+            Button { share() } label: {
+                actionLabel(action, titleOverride: shareCopied ? "Link copied" : nil,
+                            imageOverride: shareCopied ? "checkmark" : nil)
             }
             .buttonStyle(.plain)
         case .uploading:
-            actionLabel(action, filled: false).opacity(0.6)
-        case .uploadAndAnalyse, .retryUpload:
+            actionLabel(action).opacity(0.6)
+        case .upload, .retryUpload:
             Button {
-                library.upload(recording, thenAnalyse: true)
+                let recording = recording
+                Task { await library.upload(recording) }
             } label: {
-                actionLabel(action, filled: true)
+                actionLabel(action)
+            }
+            .buttonStyle(.plain)
+        case .uploadAndAnalyse:
+            Button { analyseOpen = true } label: {
+                actionLabel(action)
             }
             .buttonStyle(.plain)
         }
     }
 
-    private func actionLabel(_ action: MatchAction, filled: Bool) -> some View {
-        Label(action.title, systemImage: action.systemImage)
+    private func actionLabel(_ action: MatchAction,
+                             titleOverride: String? = nil,
+                             imageOverride: String? = nil) -> some View {
+        let filled = action.isPrimary
+        return Label(titleOverride ?? action.title, systemImage: imageOverride ?? action.systemImage)
             .font(.caption.weight(.semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
@@ -212,5 +241,18 @@ struct LibraryCard: View {
                     .stroke(filled ? Color.clear : Theme.border, lineWidth: 1)
             )
             .foregroundStyle(filled ? Theme.text : Theme.muted)
+    }
+
+    /// Mint a share link and put it on the clipboard — the same link the Watch
+    /// screen's share button produces.
+    private func share() {
+        guard let videoId = recording.remoteVideoId, !shareCopied else { return }
+        Task {
+            guard let link = try? await UploadAPI().createShareLink(videoId: videoId) else { return }
+            UIPasteboard.general.string = Config.apiBaseURL.absoluteString + link.path
+            shareCopied = true
+            try? await Task.sleep(for: .seconds(1.5))
+            shareCopied = false
+        }
     }
 }

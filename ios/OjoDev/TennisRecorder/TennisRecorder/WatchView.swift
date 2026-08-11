@@ -12,19 +12,30 @@ enum WatchTarget: Hashable {
 /// save, share, and for your own matches manage visibility / delete). Plays a
 /// local file when present, otherwise a signed cloud URL, and loads the cloud
 /// detail for metadata + social state.
+///
+/// Turn the phone (or tap fullscreen) and it becomes a review surface instead of
+/// a page: the video takes the whole screen under a transparent bar, the tab bar
+/// goes away, and the only thing below the fold is the rally timeline.
 struct WatchView: View {
     let target: WatchTarget
     @ObservedObject var library: RecordingLibrary
 
     @Environment(\.dismiss) private var dismiss
+    /// Compact height means a landscape phone — the cue to go immersive.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     @State private var url: URL?
     @State private var detail: VideoDetailResponse?
     @State private var loadError: String?
     @State private var editing = false
+    @State private var analyseOpen = false
+    @State private var fullscreen = false
     /// Owned here (not by `ReviewPlayer`) so the AI breakdown can seek the same
     /// player when a rally is tapped. Created once the playback URL resolves.
     @State private var playerModel: PlayerModel?
+    /// The match's AI breakdown, shared by the portrait panel and the landscape
+    /// timeline. Built once the cloud detail lands.
+    @State private var analysis: AnalysisModel?
 
     // Social state (seeded from `detail` once loaded, then driven optimistically).
     @State private var didInitSocial = false
@@ -35,6 +46,8 @@ struct WatchView: View {
     @State private var sharedToFollowers = false
     @State private var isPublic = false
     @State private var shareCopied = false
+
+    @ObservedObject private var chrome = ChromeState.shared
 
     private let api = UploadAPI()
 
@@ -75,48 +88,67 @@ struct WatchView: View {
         return (detail?.participants ?? []).map(\.displayName).filter { !$0.isEmpty }
     }
 
+    /// Fullscreen review mode: the phone is on its side, or you asked for it.
+    /// Only once there's something to play — an error message shouldn't take over
+    /// the screen with no way to read the rest of the page.
+    private var immersive: Bool {
+        (verticalSizeClass == .compact || fullscreen) && playerModel != nil
+    }
+
+    /// A recording on this phone that still needs to go up.
+    private var pendingUpload: Recording? {
+        guard let rec = localRecording, rec.status == .pending || rec.status == .failed else { return nil }
+        return rec
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                stage
-                header
-                if let rec = localRecording, rec.status == .uploading {
-                    uploadProgress(rec)
+        GeometryReader { geo in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // One stage view in both modes, resized rather than rebuilt —
+                    // swapping it out on rotation would tear down the player.
+                    stage.frame(height: stageHeight(geo))
+                    if immersive {
+                        immersiveTimeline
+                    } else {
+                        page
+                    }
                 }
-                if let vid = videoId, let d = detail {
-                    socialBar(vid: vid, d: d)
-                    RallyBreakdown(
-                        videoId: vid,
-                        canAnalyze: d.canAnalyze ?? false,
-                        initialStatus: d.analysisStatus,
-                        initialError: d.analysisError,
-                        initialSegments: d.segments ?? [],
-                        initialPlayers: d.analysisPlayers,
-                        onSeek: { playerModel?.play(from: $0) }
-                    )
-                    manageControls(vid: vid, d: d)
-                    Divider().overlay(Theme.border).padding(.horizontal, 16)
-                    CommentSection(videoId: vid)
-                }
+                .padding(.bottom, immersive ? 24 : 32)
             }
-            .padding(.bottom, 32)
         }
         .background(Theme.bg)
-        .navigationTitle(title)
+        .navigationTitle(immersive ? "" : title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(immersive ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
-            if localRecording != nil {
+            if localRecording != nil && !immersive {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { editing = true } label: { Image(systemName: "slider.horizontal.3") }
                 }
             }
         }
+        // The tab bar is drawn by MainTabView, so ask it to stand down.
+        .onAppear { chrome.tabBarHidden = immersive }
+        .onChange(of: immersive) { _, on in chrome.tabBarHidden = on }
+        .onDisappear { chrome.tabBarHidden = false }
         .task { await load() }
         .sheet(isPresented: $editing) {
             if let rec = localRecording {
                 EditSheet(recording: rec, library: library, onDone: { editing = false })
             }
         }
+        .sheet(isPresented: $analyseOpen) {
+            AnalyseSheet(confirmLabel: "Upload", suggestions: playerNames) { request in
+                guard let rec = pendingUpload else { return }
+                Task { await library.upload(rec, analyse: request) }
+            }
+        }
+    }
+
+    /// Full height in immersive mode; a 16:9 stage otherwise.
+    private func stageHeight(_ geo: GeometryProxy) -> CGFloat {
+        immersive ? geo.size.height : geo.size.width * 9 / 16
     }
 
     // MARK: Stage
@@ -125,7 +157,13 @@ struct WatchView: View {
         ZStack {
             Color.black
             if let playerModel {
-                ReviewPlayer(model: playerModel)
+                ReviewPlayer(
+                    model: playerModel,
+                    isFullscreen: fullscreen,
+                    // In landscape the screen is already the video, so a toggle
+                    // there would be a button that does nothing.
+                    onToggleFullscreen: verticalSizeClass == .compact ? nil : { fullscreen.toggle() }
+                )
             } else if let loadError {
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle").font(.title2)
@@ -138,7 +176,55 @@ struct WatchView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+    }
+
+    // MARK: Immersive
+
+    /// The one thing worth scrolling to in fullscreen: the shape of the match.
+    @ViewBuilder private var immersiveTimeline: some View {
+        if let analysis, analysis.hasResult {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(title).font(.headline).foregroundStyle(Theme.text)
+                RallyTimeline(
+                    segments: analysis.segments,
+                    games: analysis.games,
+                    nameOf: analysis.nameOf,
+                    durationS: durationS,
+                    player: playerModel,
+                    onSeek: { playerModel?.play(from: $0) }
+                )
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+    }
+
+    // MARK: Page (portrait)
+
+    @ViewBuilder private var page: some View {
+        header
+        if let rec = pendingUpload {
+            uploadActions(rec)
+        }
+        if let rec = localRecording, rec.status == .uploading {
+            uploadProgress(rec)
+        }
+        if let vid = videoId, let d = detail {
+            socialBar(vid: vid, d: d)
+            if let analysis {
+                RallyBreakdown(
+                    model: analysis,
+                    durationS: durationS,
+                    player: playerModel,
+                    onSeek: { playerModel?.play(from: $0) },
+                    onPlayersChosen: { tagPlayers(vid, names: $0) },
+                    suggestions: playerNames
+                )
+            }
+            manageControls(vid: vid, d: d)
+            Divider().overlay(Theme.border).padding(.horizontal, 16)
+            CommentSection(videoId: vid)
+        }
     }
 
     // MARK: Header
@@ -169,6 +255,38 @@ struct WatchView: View {
                     .font(.subheadline).foregroundStyle(Theme.muted)
             }
         }
+        .padding(.horizontal, 16)
+    }
+
+    /// The two ways to get a match off this phone, right under the footage you
+    /// just watched back — plain upload, or upload with the AI breakdown queued
+    /// behind it (which needs the shelf's answers first).
+    private func uploadActions(_ rec: Recording) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                Task { await library.upload(rec) }
+            } label: {
+                Label(rec.status == .failed ? "Retry upload" : "Upload", systemImage: "arrow.up.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.radiusSmall).stroke(Theme.border, lineWidth: 1.5))
+                    .foregroundStyle(Theme.text)
+            }
+            Button {
+                analyseOpen = true
+            } label: {
+                Label("Upload & Analyse", systemImage: "sparkles")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
+                    .foregroundStyle(Theme.text)
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .buttonStyle(.plain)
         .padding(.horizontal, 16)
     }
 
@@ -263,6 +381,7 @@ struct WatchView: View {
             do {
                 let d = try await api.getVideo(videoId: vid)
                 detail = d
+                if analysis == nil { analysis = AnalysisModel(videoId: vid, detail: d) }
                 initSocial(d)
                 if let pb = d.playbackUrl {
                     setURL(api.absolutePartURL(pb))
@@ -336,6 +455,28 @@ struct WatchView: View {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 shareCopied = false
             }
+        }
+    }
+
+    /// Naming the two players for the breakdown says they played, so tag them on
+    /// the match as well — you shouldn't have to enter the same names twice.
+    private func tagPlayers(_ vid: String, names: [String]) {
+        Task {
+            let existing = (detail?.participants ?? []).map {
+                Participant(userId: $0.userId, displayName: $0.displayName, email: $0.email)
+            }
+            let merged = await AnalysisParticipants.merged(
+                names: names,
+                existing: existing,
+                me: Supa.currentUserId().map { (id: $0, name: AppCache.shared.profile?.displayName ?? "") }
+            )
+            guard merged != existing else { return }
+            if let rec = localRecording {
+                library.setParticipants(rec, merged) // saves locally and pushes
+            } else {
+                try? await api.setParticipants(videoId: vid, participants: merged)
+            }
+            if let refreshed = try? await api.getVideo(videoId: vid) { detail = refreshed }
         }
     }
 

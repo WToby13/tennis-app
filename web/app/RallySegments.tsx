@@ -99,6 +99,7 @@ export function RallySegments({
   initialPlayers,
   participantNames,
   onSeek,
+  onPlayersNamed,
 }: {
   videoId: string;
   canRun: boolean;
@@ -107,8 +108,11 @@ export function RallySegments({
   initialSegments: Segment[];
   initialError: string | null;
   initialPlayers: Players | null;
+  /** Prefill / datalist options: you, plus anyone already tagged on the match. */
   participantNames: string[];
   onSeek: (seconds: number) => void;
+  /** Names the owner entered here, to tag on the match as players. */
+  onPlayersNamed?: (names: string[]) => void;
 }) {
   const [status, setStatus] = useState<Status>(initialStatus);
   const [segments, setSegments] = useState<Segment[]>(initialSegments);
@@ -124,6 +128,19 @@ export function RallySegments({
   const [p1Name, setP1Name] = useState("");
   const [p2Name, setP2Name] = useState("");
   const active = useRef(true);
+
+  /** Names offered as prefills and datalist options, de-duplicated. */
+  const suggestions = useMemo(() => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of participantNames) {
+      const name = raw.trim();
+      if (!name || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      out.push(name);
+    }
+    return out;
+  }, [participantNames]);
 
   const nameOf = useCallback(
     (slot: Slot) => {
@@ -162,11 +179,26 @@ export function RallySegments({
     };
   }, [status, videoId]);
 
+  /**
+   * Fill empty slots from the suggestions — you first (you're on court far more
+   * often than not), then whoever else is tagged. Without this the panel opened
+   * blank every time and the names had to be typed out again on a re-analyse.
+   */
   const openSetup = useCallback(() => {
-    setP1Name(players.player_1 ?? "");
-    setP2Name(players.player_2 ?? "");
+    const taken: string[] = [];
+    const fill = (current: string | null): string => {
+      if (current && current.trim()) {
+        taken.push(current.trim().toLowerCase());
+        return current;
+      }
+      const next = suggestions.find((n) => !taken.includes(n.toLowerCase()));
+      if (next) taken.push(next.toLowerCase());
+      return next ?? "";
+    };
+    setP1Name(fill(players.player_1));
+    setP2Name(fill(players.player_2));
     setSetupOpen(true);
-  }, [players]);
+  }, [players, suggestions]);
 
   const draftPlayers = (): Players => ({
     player_1: p1Name.trim() || null,
@@ -188,6 +220,9 @@ export function RallySegments({
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setPlayers(nextPlayers);
+        // Naming the two players here says they played, so tag them on the match
+        // rather than making the same names get typed in again under Edit.
+        onPlayersNamed?.([nextPlayers.player_1, nextPlayers.player_2].filter((n): n is string => !!n));
         setStatus(data.analysisStatus ?? "processing");
         setSetupOpen(false);
       } else {
@@ -212,6 +247,7 @@ export function RallySegments({
       });
       if (res.ok) {
         setPlayers(nextPlayers);
+        onPlayersNamed?.([nextPlayers.player_1, nextPlayers.player_2].filter((n): n is string => !!n));
         setSetupOpen(false);
       }
     } finally {

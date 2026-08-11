@@ -8,8 +8,12 @@ private struct UploadJob: Codable {
     let durationS: Double
     let size: Int
     var parts: [Part]
-    /// Start the AI breakdown as soon as the upload completes ("Upload & AI
-    /// Analyse"). Optional so jobs written before this existed still decode.
+    /// Start the AI breakdown as soon as the upload completes ("Upload &
+    /// Analyse"), with the start time and player names collected before the
+    /// upload began. Optional so jobs written before this existed still decode.
+    var analyse: AnalysisRequest?
+    /// The pre-shelf form of the above: analyse with no answers. Only ever read,
+    /// so a job enqueued by an older build still runs its breakdown.
     var analyseWhenDone: Bool?
 
     struct Part: Codable {
@@ -101,12 +105,12 @@ final class BackgroundUploader: NSObject {
 
     // MARK: - Start an upload
 
-    func start(recording: Recording, fileURL: URL, analyseWhenDone: Bool = false) {
+    func start(recording: Recording, fileURL: URL, analyse: AnalysisRequest? = nil) {
         RecordingStore.update(id: recording.id) { $0.status = .uploading; $0.progress = 0; $0.uploadError = nil }
         Task.detached { [self] in
             do {
                 try await prepareAndEnqueue(recording: recording, fileURL: fileURL,
-                                            analyseWhenDone: analyseWhenDone)
+                                            analyse: analyse)
             } catch {
                 RecordingStore.update(id: recording.id) { $0.status = .failed; $0.uploadError = "Couldn't start upload: \(error.localizedDescription)" }
             }
@@ -114,7 +118,7 @@ final class BackgroundUploader: NSObject {
     }
 
     private func prepareAndEnqueue(recording: Recording, fileURL: URL,
-                                   analyseWhenDone: Bool) async throws {
+                                   analyse: AnalysisRequest?) async throws {
         let attrs = try FileManager.default.attributesOfItem(atPath: fileURL.path)
         let size = (attrs[.size] as? Int) ?? 0
 
@@ -143,7 +147,7 @@ final class BackgroundUploader: NSObject {
         // no job to record its ETag against.
         let job = UploadJob(recordingId: recording.id, videoId: start.videoId,
                             durationS: recording.durationS, size: size, parts: parts,
-                            analyseWhenDone: analyseWhenDone)
+                            analyse: analyse, analyseWhenDone: nil)
         work.sync { saveJob(job) }
 
         topUp(recording.id, sourceFile: fileURL, partSize: partSize)
@@ -294,11 +298,16 @@ final class BackgroundUploader: NSObject {
                     $0.uploadError = nil
                 }
                 work.async { self.removeJob(job.recordingId) }
-                // "Upload & AI Analyse": the breakdown starts the moment the
-                // upload is confirmed, so it's already running by the time the
-                // match appears. Best-effort — a failure here is reported by the
-                // analysis status itself, not as an upload failure.
-                if job.analyseWhenDone == true {
+                // "Upload & Analyse": the breakdown starts the moment the upload
+                // is confirmed — with the start time and player names from the
+                // shelf — so it's already running by the time the match appears.
+                // Best-effort: a failure here is reported by the analysis status
+                // itself, not as an upload failure.
+                if let analyse = job.analyse {
+                    _ = try? await api.startAnalysis(videoId: job.videoId,
+                                                     startTimeSec: analyse.startTimeSec,
+                                                     players: analyse.players)
+                } else if job.analyseWhenDone == true {
                     _ = try? await api.startAnalysis(videoId: job.videoId)
                 }
                 // Confirm the cloud copy (video + thumbnail), then free local storage.

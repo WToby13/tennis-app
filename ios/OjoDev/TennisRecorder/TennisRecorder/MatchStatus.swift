@@ -81,40 +81,60 @@ enum MatchChips {
     }
 }
 
-/// The single primary action a match card offers, per the state it's in.
-enum MatchAction: Equatable {
-    /// Not in the cloud yet — upload it and start the breakdown in one tap.
-    case uploadAndAnalyse
+/// The actions a match offers, per the state it's in.
+///
+/// Every state gets two, stacked: getting the match up is one decision (just
+/// upload, or upload and have the AI break it down — which needs answers first,
+/// so it opens a shelf), and once it's up, watching it and sharing it are
+/// separate things you'd want, not one button standing in for both.
+enum MatchAction: Hashable {
+    /// Not in the cloud yet — send the bytes, nothing more.
+    case upload
     /// Same, after a failure.
     case retryUpload
+    /// Upload, then run the AI breakdown with the answers from the shelf.
+    case uploadAndAnalyse
     /// In flight; the card shows progress instead.
     case uploading
-    /// It's up — the useful next step is getting it in front of someone.
+    case watch
     case share
 
-    static func of(_ recording: Recording) -> MatchAction {
+    /// The stack for a match, primary CTA last — the two buttons sit above each
+    /// other and the eye lands on the bottom one.
+    static func stack(for recording: Recording) -> [MatchAction] {
         switch recording.status {
-        case .pending: return .uploadAndAnalyse
-        case .failed: return .retryUpload
-        case .uploading: return .uploading
-        case .uploaded: return .share
+        case .pending: return [.upload, .uploadAndAnalyse]
+        case .failed: return [.retryUpload, .uploadAndAnalyse]
+        case .uploading: return [.uploading]
+        case .uploaded: return [.watch, .share]
         }
     }
 
     var title: String {
         switch self {
-        case .uploadAndAnalyse: return "Upload & AI Analyse"
+        case .upload: return "Upload"
         case .retryUpload: return "Retry upload"
+        case .uploadAndAnalyse: return "Upload & Analyse"
         case .uploading: return "Uploading…"
+        case .watch: return "Watch"
         case .share: return "Share"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .uploadAndAnalyse, .retryUpload: return "arrow.up.circle.fill"
+        case .upload, .retryUpload, .uploadAndAnalyse: return "arrow.up.circle.fill"
         case .uploading: return "arrow.up.circle"
+        case .watch: return "play.circle.fill"
         case .share: return "square.and.arrow.up"
+        }
+    }
+
+    /// Drawn filled (vs. an outline) — the one action the state is really for.
+    var isPrimary: Bool {
+        switch self {
+        case .uploadAndAnalyse, .watch: return true
+        case .upload, .retryUpload, .uploading, .share: return false
         }
     }
 }

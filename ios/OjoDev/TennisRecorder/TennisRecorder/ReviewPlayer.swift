@@ -120,6 +120,10 @@ private struct PlayerLayerView: UIViewRepresentable {
 /// AI breakdown in particular — can seek the same player.
 struct ReviewPlayer: View {
     @ObservedObject var model: PlayerModel
+    /// Whether the presenting screen is already in fullscreen review — landscape
+    /// gets there on its own, so the button then only offers the way out.
+    var isFullscreen = false
+    var onToggleFullscreen: (() -> Void)?
 
     private static let speeds: [Float] = [0.25, 0.5, 1, 1.5, 2]
 
@@ -169,6 +173,13 @@ struct ReviewPlayer: View {
                 Spacer()
 
                 speedMenu
+                if let onToggleFullscreen {
+                    transportButton(isFullscreen
+                                    ? "arrow.down.right.and.arrow.up.left"
+                                    : "arrow.up.left.and.arrow.down.right",
+                                    action: onToggleFullscreen)
+                        .accessibilityLabel(isFullscreen ? "Exit fullscreen" : "Fullscreen")
+                }
             }
         }
         .padding(14)

@@ -1,37 +1,24 @@
+import Combine
 import SwiftUI
 
-/// One service game: a run of consecutive rallies sharing a `game` number, as
-/// stamped by the structural smoother. Mirrors `buildServiceGames` on the web.
-private struct ServiceGame: Identifiable {
-    let id = UUID()
-    let game: Int
-    let server: String?
-    let startS: Double
-    let points: Int
-}
-
-/// The AI rally breakdown for a cloud match — the iOS counterpart of the web
-/// `RallySegments` component. Shows the match split into service games and
-/// rallies; tapping either jumps the player to that moment.
+/// The AI rally breakdown's state for one match, owned by the Watch screen so the
+/// portrait breakdown and the landscape timeline are the same run — start it in
+/// one and the other is already showing it.
 ///
-/// State is seeded from the video-detail fetch, so this only calls the analyze
-/// route to start a run or to poll one that's in flight. Polling matters: there's
-/// no background worker server-side, so the owner's GET is what advances the
-/// TwelveLabs task and writes the segments back.
-struct RallyBreakdown: View {
+/// Seeded from the video-detail fetch, so this only calls the analyze route to
+/// start a run or to poll one in flight. Polling still matters even with the
+/// server-side sweep: it's what makes a finished run appear while you're looking
+/// at it.
+@MainActor
+final class AnalysisModel: ObservableObject {
+    @Published var status: String
+    @Published var segments: [AnalysisSegment]
+    @Published var players: AnalysisPlayers?
+    @Published var errorText: String?
+    @Published var busy = false
+
     let videoId: String
     let canAnalyze: Bool
-    let onSeek: (Double) -> Void
-
-    @State private var status: String
-    @State private var errorText: String?
-    @State private var segments: [AnalysisSegment]
-    @State private var players: AnalysisPlayers?
-    @State private var busy = false
-    @State private var setupOpen = false
-    @State private var trimText = ""
-    @State private var name1 = ""
-    @State private var name2 = ""
 
     private let api = UploadAPI()
 
@@ -39,48 +26,25 @@ struct RallyBreakdown: View {
     /// slow cadence is plenty and keeps the request count down.
     private static let pollInterval: Duration = .seconds(4)
 
-    init(videoId: String,
-         canAnalyze: Bool,
-         initialStatus: String?,
-         initialError: String?,
-         initialSegments: [AnalysisSegment],
-         initialPlayers: AnalysisPlayers?,
-         onSeek: @escaping (Double) -> Void) {
+    init(videoId: String, detail: VideoDetailResponse) {
         self.videoId = videoId
-        self.canAnalyze = canAnalyze
-        self.onSeek = onSeek
-        _status = State(initialValue: initialStatus ?? "none")
-        _errorText = State(initialValue: initialError)
-        _segments = State(initialValue: initialSegments)
-        _players = State(initialValue: initialPlayers)
-        _name1 = State(initialValue: initialPlayers?.player1 ?? "")
-        _name2 = State(initialValue: initialPlayers?.player2 ?? "")
+        canAnalyze = detail.canAnalyze ?? false
+        status = detail.analysisStatus ?? "none"
+        segments = detail.segments ?? []
+        players = detail.analysisPlayers
+        errorText = detail.analysisError
     }
 
-    // MARK: Derived
+    var games: [ServiceGame] { ServiceGame.build(from: segments) }
 
-    /// Group rallies into service games: consecutive points sharing a `game`
-    /// number become one entry, labelled with that game's server.
-    private var games: [ServiceGame] {
-        var out: [ServiceGame] = []
-        for s in segments {
-            let g = s.metadata?.game.map { Int($0) }
-            let start = s.startS ?? 0
-            if let last = out.last, let g, last.game == g {
-                out[out.count - 1] = ServiceGame(
-                    game: last.game, server: last.server, startS: last.startS, points: last.points + 1
-                )
-            } else {
-                out.append(ServiceGame(
-                    game: g ?? out.count + 1, server: s.metadata?.server, startS: start, points: 1
-                ))
-            }
-        }
-        return out
-    }
+    var hasResult: Bool { !segments.isEmpty }
+
+    /// Someone who can't run a breakdown and has no result to look at gets
+    /// nothing — no explainer, no dead button.
+    var isHidden: Bool { !canAnalyze && segments.isEmpty && status != "processing" }
 
     /// Human label for a model player id, falling back to the generic name.
-    private func displayPlayer(_ id: String?) -> String {
+    func nameOf(_ id: String?) -> String {
         switch id {
         case "player_1": return players?.player1?.nonEmpty ?? "Player 1"
         case "player_2": return players?.player2?.nonEmpty ?? "Player 2"
@@ -88,43 +52,101 @@ struct RallyBreakdown: View {
         }
     }
 
-    // MARK: Body
-
-    /// Someone who can't run a breakdown and has no result to look at gets nothing —
-    /// no explainer, no dead button.
-    private var isHidden: Bool {
-        !canAnalyze && segments.isEmpty && status != "processing"
+    func run(_ request: AnalysisRequest) {
+        guard !busy else { return }
+        busy = true
+        errorText = nil
+        Task {
+            defer { busy = false }
+            do {
+                let response = try await api.startAnalysis(
+                    videoId: videoId,
+                    startTimeSec: request.startTimeSec,
+                    players: request.players
+                )
+                players = request.players
+                // Clear stale rallies so a re-run doesn't show the previous
+                // result underneath the spinner.
+                segments = []
+                status = response.analysisStatus ?? "processing"
+            } catch {
+                status = "failed"
+                errorText = error.localizedDescription
+            }
+        }
     }
+
+    /// Poll until the run leaves "processing". Transient failures are ignored —
+    /// a dropped poll shouldn't strand the UI when the next one would recover.
+    func pollUntilSettled() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(for: Self.pollInterval)
+            if Task.isCancelled { return }
+            guard let response = try? await api.getAnalysis(videoId: videoId) else { continue }
+            if let segs = response.segments { segments = segs }
+            errorText = response.analysisError
+            if let s = response.analysisStatus, s != "processing" {
+                status = s
+                return
+            }
+        }
+    }
+}
+
+/// The AI rally breakdown for a cloud match — the iOS counterpart of the web
+/// `RallySegments` component. Shows the match as a timeline of service games and
+/// rallies, plus the rally list; tapping either jumps the player to that moment.
+struct RallyBreakdown: View {
+    @ObservedObject var model: AnalysisModel
+    let durationS: Double
+    /// Tracked by the timeline's playhead.
+    var player: PlayerModel?
+    let onSeek: (Double) -> Void
+    /// Names entered in the shelf, so the caller can tag them on the match.
+    let onPlayersChosen: ([String]) -> Void
+    /// Names offered as one-tap fills in the shelf (whoever's already tagged).
+    let suggestions: [String]
+
+    @State private var setupOpen = false
 
     var body: some View {
         Group {
-            if !isHidden { content }
+            if !model.isHidden { content }
         }
         // Restarts whenever the status changes; only the processing state polls.
-        .task(id: status) {
-            guard status == "processing" else { return }
-            await pollUntilSettled()
+        .task(id: model.status) {
+            guard model.status == "processing" else { return }
+            await model.pollUntilSettled()
         }
-        .sheet(isPresented: $setupOpen) { setupSheet }
+        .sheet(isPresented: $setupOpen) {
+            AnalyseSheet(
+                confirmLabel: "Run",
+                suggestions: suggestions,
+                initialPlayers: model.players
+            ) { request in
+                onPlayersChosen(request.playerNames)
+                model.run(request)
+            }
+        }
     }
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
 
-            switch status {
+            switch model.status {
             case "processing":
                 processingRow
             case "failed":
-                if let errorText { errorRow(errorText) }
+                if let errorText = model.errorText { errorRow(errorText) }
                 runButton(label: "Try again")
             case "ready":
-                if segments.isEmpty {
+                if model.segments.isEmpty {
                     Text("No rallies were detected in this match.")
                         .font(.footnote).foregroundStyle(Theme.muted)
                     runButton(label: "Re-analyse")
                 } else {
-                    gamesRow
+                    timeline
                     ralliesList
                     runButton(label: "Re-analyse")
                 }
@@ -149,6 +171,17 @@ struct RallyBreakdown: View {
         }
     }
 
+    private var timeline: some View {
+        RallyTimeline(
+            segments: model.segments,
+            games: model.games,
+            nameOf: model.nameOf,
+            durationS: durationS,
+            player: player,
+            onSeek: onSeek
+        )
+    }
+
     private var processingRow: some View {
         HStack(spacing: 10) {
             ProgressView().tint(Theme.accent)
@@ -164,39 +197,12 @@ struct RallyBreakdown: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// Service games as a horizontal strip — the at-a-glance shape of the match.
-    private var gamesRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("SERVICE GAMES")
-                .font(.caption2.weight(.semibold)).foregroundStyle(Theme.muted)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(games) { g in
-                        Button { onSeek(g.startS) } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Game \(g.game)")
-                                    .font(.caption.weight(.bold)).foregroundStyle(Theme.text)
-                                Text(displayPlayer(g.server))
-                                    .font(.caption2).foregroundStyle(Theme.accent)
-                                Text("\(g.points) \(g.points == 1 ? "point" : "points")")
-                                    .font(.caption2).foregroundStyle(Theme.muted)
-                            }
-                            .padding(.horizontal, 12).padding(.vertical, 8)
-                            .background(Theme.surface2, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-        }
-    }
-
     private var ralliesList: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("RALLIES")
                 .font(.caption2.weight(.semibold)).foregroundStyle(Theme.muted)
             VStack(spacing: 0) {
-                ForEach(Array(segments.enumerated()), id: \.element.id) { i, s in
+                ForEach(Array(model.segments.enumerated()), id: \.element.id) { i, s in
                     Button { onSeek(s.startS ?? 0) } label: {
                         HStack(spacing: 12) {
                             Text("\(i + 1)")
@@ -217,7 +223,7 @@ struct RallyBreakdown: View {
                         .padding(.vertical, 9)
                     }
                     .buttonStyle(.plain)
-                    if i < segments.count - 1 {
+                    if i < model.segments.count - 1 {
                         Divider().overlay(Theme.border)
                     }
                 }
@@ -230,7 +236,7 @@ struct RallyBreakdown: View {
     /// One-line summary of a rally: who served, how long, how many shots.
     private func rallyDetail(_ s: AnalysisSegment) -> String {
         var bits: [String] = []
-        if let server = s.metadata?.server { bits.append("\(displayPlayer(server)) serving") }
+        if let server = s.metadata?.server { bits.append("\(model.nameOf(server)) serving") }
         if let start = s.startS, let end = s.endS, end > start {
             bits.append("\(Int((end - start).rounded()))s")
         }
@@ -240,98 +246,18 @@ struct RallyBreakdown: View {
 
     private func runButton(label: String) -> some View {
         Group {
-            if canAnalyze {
+            if model.canAnalyze {
                 Button { setupOpen = true } label: {
                     HStack(spacing: 8) {
-                        if busy { ProgressView().tint(Theme.text) }
-                        Text(busy ? "Starting…" : label).font(.subheadline.weight(.semibold))
+                        if model.busy { ProgressView().tint(Theme.text) }
+                        Text(model.busy ? "Starting…" : label).font(.subheadline.weight(.semibold))
                     }
                     .foregroundStyle(Theme.text)
                     .padding(.horizontal, 16).padding(.vertical, 10)
                     .background(Theme.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(busy)
-            }
-        }
-    }
-
-    // MARK: Setup sheet
-
-    private var setupSheet: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Leave blank to start from the beginning", text: $trimText)
-                        .keyboardType(.numbersAndPunctuation)
-                } header: {
-                    Text("Skip warm-up (seconds)")
-                } footer: {
-                    Text("Analysis starts from this point, so knock-up rallies don't get counted as games.")
-                }
-                Section {
-                    TextField("Player 1 — starts near the camera", text: $name1)
-                    TextField("Player 2 — starts far from the camera", text: $name2)
-                } header: {
-                    Text("Player names")
-                } footer: {
-                    Text("Optional. Used to label who served each game.")
-                }
-            }
-            .navigationTitle("Run AI breakdown")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { setupOpen = false }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Run") {
-                        setupOpen = false
-                        start()
-                    }
-                }
-            }
-        }
-    }
-
-    // MARK: Actions
-
-    private func start() {
-        guard !busy else { return }
-        busy = true
-        errorText = nil
-        let trim = Double(trimText.trimmingCharacters(in: .whitespaces))
-        let chosen = AnalysisPlayers(player1: name1.nonEmpty, player2: name2.nonEmpty)
-        Task {
-            defer { busy = false }
-            do {
-                let r = try await api.startAnalysis(
-                    videoId: videoId, startTimeSec: trim, players: chosen
-                )
-                players = chosen
-                // Clear stale rallies so a re-run doesn't show the previous result
-                // underneath the spinner.
-                segments = []
-                status = r.analysisStatus ?? "processing"
-            } catch {
-                status = "failed"
-                errorText = error.localizedDescription
-            }
-        }
-    }
-
-    /// Poll until the run leaves "processing". Transient failures are ignored —
-    /// a dropped poll shouldn't strand the UI when the next one would recover.
-    private func pollUntilSettled() async {
-        while !Task.isCancelled {
-            try? await Task.sleep(for: Self.pollInterval)
-            if Task.isCancelled { return }
-            guard let r = try? await api.getAnalysis(videoId: videoId) else { continue }
-            if let segs = r.segments { segments = segs }
-            errorText = r.analysisError
-            if let s = r.analysisStatus, s != "processing" {
-                status = s
-                return
+                .disabled(model.busy)
             }
         }
     }

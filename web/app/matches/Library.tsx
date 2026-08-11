@@ -8,6 +8,7 @@ import { EditProfile, type AccountFields } from "../EditProfile";
 import { MatchCard } from "../MatchCard";
 import { UploadTile } from "../UploadTile";
 import type { MatchVideo } from "@/lib/matchFormat";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 export interface LibraryProfile {
   id: string;
@@ -50,6 +51,11 @@ export function Library({
     await fetch(`/api/videos/${id}/library`, { method: "DELETE" }).catch(() => {});
   }, []);
 
+  const signOut = useCallback(async () => {
+    await getSupabaseBrowser().auth.signOut();
+    window.location.href = "/landing";
+  }, []);
+
   const closeEditor = useCallback(() => {
     setEditing(false);
     // Drop ?edit=profile so a refresh doesn't reopen the modal.
@@ -85,6 +91,10 @@ export function Library({
                 Edit profile
               </button>
             )}
+            {/* Signing out was only reachable from inside the profile modal. */}
+            <button className="btn secondary btn-sm" onClick={signOut}>
+              Sign out
+            </button>
           </div>
         )}
       </div>

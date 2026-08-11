@@ -492,9 +492,9 @@ extension UploadAPI {
         return try await send("/api/videos/\(videoId)/analyze", method: "POST", body: body)
     }
 
-    /// Poll the breakdown. There's no background worker — the owner's poll is what
-    /// advances the TwelveLabs task and writes the segments back — so this must keep
-    /// being called while the status is "processing".
+    /// Poll the breakdown. A scheduled server-side sweep advances runs on its own
+    /// now, but the owner's poll advances them too — and it's what makes a finished
+    /// run appear while you're looking at it — so keep calling while "processing".
     func getAnalysis(videoId: String) async throws -> AnalysisResponse {
         try await send("/api/videos/\(videoId)/analyze", method: "GET")
     }
