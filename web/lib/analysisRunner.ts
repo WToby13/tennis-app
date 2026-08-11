@@ -61,7 +61,19 @@ export async function discardProxy(store: MetadataStore, video: Video): Promise<
   }
 }
 
-/** Smooth the raw per-point segments, store them, and flip the row to ready. */
+/**
+ * Smooth the raw per-point segments, store them, and flip the row to ready —
+ * unless the raw output shows the model templated its answers, in which case the
+ * run is reported as failed.
+ *
+ * That last part is not defensive coding for a hypothetical: a real 32-minute
+ * match came back with one identity, one role and four distinct `what_you_see`
+ * strings across 96 points, and no gap over twice the median. The smoother
+ * dutifully fitted a structure to it and produced a confident-looking breakdown
+ * of a match it had learned nothing about. Showing that is worse than saying the
+ * run failed, because there's no way for a viewer to tell it apart from a good
+ * one.
+ */
 export async function finalizeReady(
   store: MetadataStore,
   id: string,
@@ -69,6 +81,17 @@ export async function finalizeReady(
 ): Promise<Video> {
   const { segments, report } = raw.length ? smoothTennis(raw) : { segments: raw, report: null };
   if (report) console.info("[analyze] smoother report", JSON.stringify(report));
+
+  if (report?.degenerate) {
+    console.warn("[analyze] degenerate output — refusing to present it", id, JSON.stringify(report));
+    // Leave any previous good result in place rather than replacing it with this.
+    return store.update(id, {
+      analysisStatus: "failed",
+      analysisError:
+        "The AI returned the same answer for every point, so the breakdown wouldn't be meaningful. This usually clears on a re-run.",
+    });
+  }
+
   await store.replaceSegments(id, RALLY_KIND, segments);
   return store.update(id, {
     analysisStatus: "ready",

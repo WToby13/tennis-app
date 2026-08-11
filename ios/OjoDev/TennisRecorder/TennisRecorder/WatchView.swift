@@ -28,14 +28,14 @@ struct WatchView: View {
     @State private var detail: VideoDetailResponse?
     @State private var loadError: String?
     @State private var editing = false
-    @State private var analyseOpen = false
+    @State private var setupOpen = false
     @State private var fullscreen = false
     /// Owned here (not by `ReviewPlayer`) so the AI breakdown can seek the same
     /// player when a rally is tapped. Created once the playback URL resolves.
     @State private var playerModel: PlayerModel?
-    /// The match's AI breakdown, shared by the portrait panel and the landscape
-    /// timeline. Built once the cloud detail lands.
-    @State private var analysis: AnalysisModel?
+    /// The match's AI breakdown, shared by the portrait panel and the fullscreen
+    /// timeline. Held for the whole screen and filled in once the detail lands.
+    @StateObject private var analysis = AnalysisModel()
 
     // Social state (seeded from `detail` once loaded, then driven optimistically).
     @State private var didInitSocial = false
@@ -102,25 +102,21 @@ struct WatchView: View {
     }
 
     var body: some View {
-        GeometryReader { geo in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    // One stage view in both modes, resized rather than rebuilt —
-                    // swapping it out on rotation would tear down the player.
-                    stage.frame(height: stageHeight(geo))
-                    if immersive {
-                        immersiveTimeline
-                    } else {
-                        page
-                    }
-                }
-                .padding(.bottom, immersive ? 24 : 32)
+        Group {
+            if immersive, let playerModel {
+                FullscreenPlayer(model: playerModel, analysis: analysis, onExit: exitImmersive)
+            } else {
+                page
             }
         }
         .background(Theme.bg)
         .navigationTitle(immersive ? "" : title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(immersive ? .hidden : .automatic, for: .navigationBar)
+        // Fullscreen means fullscreen: no bar, no status bar, no home indicator —
+        // the back chevron the player draws is the only chrome left.
+        .toolbar(immersive ? .hidden : .visible, for: .navigationBar)
+        .statusBar(hidden: immersive)
+        .persistentSystemOverlays(immersive ? .hidden : .automatic)
         .toolbar {
             if localRecording != nil && !immersive {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -131,24 +127,32 @@ struct WatchView: View {
         // The tab bar is drawn by MainTabView, so ask it to stand down.
         .onAppear { chrome.tabBarHidden = immersive }
         .onChange(of: immersive) { _, on in chrome.tabBarHidden = on }
-        .onDisappear { chrome.tabBarHidden = false }
+        .onDisappear {
+            chrome.tabBarHidden = false
+            playerModel?.pause()
+        }
         .task { await load() }
         .sheet(isPresented: $editing) {
             if let rec = localRecording {
                 EditSheet(recording: rec, library: library, onDone: { editing = false })
             }
         }
-        .sheet(isPresented: $analyseOpen) {
-            AnalyseSheet(confirmLabel: "Upload", suggestions: playerNames) { request in
-                guard let rec = pendingUpload else { return }
-                Task { await library.upload(rec, analyse: request) }
+        .sheet(isPresented: $setupOpen) {
+            MatchSetupSheet(
+                purpose: .beforeUpload,
+                existing: localRecording?.participants ?? []
+            ) { setup in
+                if let rec = pendingUpload { library.upload(rec, setup: setup) }
+            } onPrimary: { setup in
+                if let rec = pendingUpload { library.upload(rec, setup: setup, analyse: true) }
             }
         }
     }
 
-    /// Full height in immersive mode; a 16:9 stage otherwise.
-    private func stageHeight(_ geo: GeometryProxy) -> CGFloat {
-        immersive ? geo.size.height : geo.size.width * 9 / 16
+    /// The back chevron: leave fullscreen if that's where we are by choice,
+    /// otherwise leave the match.
+    private func exitImmersive() {
+        if fullscreen { fullscreen = false } else { dismiss() }
     }
 
     // MARK: Stage
@@ -159,10 +163,9 @@ struct WatchView: View {
             if let playerModel {
                 ReviewPlayer(
                     model: playerModel,
-                    isFullscreen: fullscreen,
                     // In landscape the screen is already the video, so a toggle
                     // there would be a button that does nothing.
-                    onToggleFullscreen: verticalSizeClass == .compact ? nil : { fullscreen.toggle() }
+                    onEnterFullscreen: verticalSizeClass == .compact ? nil : { fullscreen = true }
                 )
             } else if let loadError {
                 VStack(spacing: 8) {
@@ -176,54 +179,36 @@ struct WatchView: View {
             }
         }
         .frame(maxWidth: .infinity)
-    }
-
-    // MARK: Immersive
-
-    /// The one thing worth scrolling to in fullscreen: the shape of the match.
-    @ViewBuilder private var immersiveTimeline: some View {
-        if let analysis, analysis.hasResult {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(title).font(.headline).foregroundStyle(Theme.text)
-                RallyTimeline(
-                    segments: analysis.segments,
-                    games: analysis.games,
-                    nameOf: analysis.nameOf,
-                    durationS: durationS,
-                    player: playerModel,
-                    onSeek: { playerModel?.play(from: $0) }
-                )
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-        }
+        .aspectRatio(16.0 / 9.0, contentMode: .fit)
     }
 
     // MARK: Page (portrait)
 
-    @ViewBuilder private var page: some View {
-        header
-        if let rec = pendingUpload {
-            uploadActions(rec)
-        }
-        if let rec = localRecording, rec.status == .uploading {
-            uploadProgress(rec)
-        }
-        if let vid = videoId, let d = detail {
-            socialBar(vid: vid, d: d)
-            if let analysis {
-                RallyBreakdown(
-                    model: analysis,
-                    durationS: durationS,
-                    player: playerModel,
-                    onSeek: { playerModel?.play(from: $0) },
-                    onPlayersChosen: { tagPlayers(vid, names: $0) },
-                    suggestions: playerNames
-                )
+    private var page: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                stage
+                header
+                if let rec = pendingUpload {
+                    uploadActions(rec)
+                }
+                if let rec = localRecording, rec.status == .uploading {
+                    uploadProgress(rec)
+                }
+                if let vid = videoId, let d = detail {
+                    socialBar(vid: vid, d: d)
+                    RallyBreakdown(
+                        model: analysis,
+                        onSeek: { playerModel?.play(from: $0) },
+                        onSetup: { setup, run in applySetup(vid, setup: setup, run: run) },
+                        participants: currentParticipants
+                    )
+                    manageControls(vid: vid, d: d)
+                    Divider().overlay(Theme.border).padding(.horizontal, 16)
+                    CommentSection(videoId: vid)
+                }
             }
-            manageControls(vid: vid, d: d)
-            Divider().overlay(Theme.border).padding(.horizontal, 16)
-            CommentSection(videoId: vid)
+            .padding(.bottom, 32)
         }
     }
 
@@ -259,28 +244,26 @@ struct WatchView: View {
     }
 
     /// The two ways to get a match off this phone, right under the footage you
-    /// just watched back — plain upload, or upload with the AI breakdown queued
-    /// behind it (which needs the shelf's answers first).
+    /// just watched back. Both open the shelf — who played is worth recording
+    /// either way — and its own buttons decide whether the breakdown runs.
     private func uploadActions(_ rec: Recording) -> some View {
-        HStack(spacing: 10) {
-            Button {
-                Task { await library.upload(rec) }
-            } label: {
-                Label(rec.status == .failed ? "Retry upload" : "Upload", systemImage: "arrow.up.circle.fill")
+        VStack(spacing: 8) {
+            Button { setupOpen = true } label: {
+                Label("AI Breakdown", systemImage: "sparkles")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .overlay(RoundedRectangle(cornerRadius: Theme.radiusSmall).stroke(Theme.border, lineWidth: 1.5))
+                    .padding(.vertical, 12)
+                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
                     .foregroundStyle(Theme.text)
             }
-            Button {
-                analyseOpen = true
-            } label: {
-                Label("Upload & Analyse", systemImage: "sparkles")
+            Button { setupOpen = true } label: {
+                Label(rec.status == .failed ? "Retry upload" : "Upload",
+                      systemImage: "arrow.up.circle.fill")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
+                    .padding(.vertical, 12)
+                    .overlay(RoundedRectangle(cornerRadius: Theme.radiusSmall)
+                        .stroke(Theme.border, lineWidth: 1.5))
                     .foregroundStyle(Theme.text)
             }
         }
@@ -292,8 +275,9 @@ struct WatchView: View {
 
     private func uploadProgress(_ rec: Recording) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Uploading…").font(.caption).foregroundStyle(Theme.muted)
-            ProgressView(value: rec.progress).tint(Theme.accent)
+            Text("Uploading… \(Int(rec.progress * 100))%")
+                .font(.caption).foregroundStyle(Theme.muted)
+            ProgressBar(value: rec.progress)
         }
         .padding(.horizontal, 16)
     }
@@ -370,7 +354,9 @@ struct WatchView: View {
     private func setURL(_ newURL: URL) {
         guard url == nil else { return }
         url = newURL
-        playerModel = PlayerModel(url: newURL)
+        // Seed the timeline from the duration we already know, so the scrubber is
+        // usable before the asset finishes loading.
+        playerModel = PlayerModel(url: newURL, knownDuration: durationS)
     }
 
     private func load() async {
@@ -381,7 +367,7 @@ struct WatchView: View {
             do {
                 let d = try await api.getVideo(videoId: vid)
                 detail = d
-                if analysis == nil { analysis = AnalysisModel(videoId: vid, detail: d) }
+                analysis.seed(videoId: vid, detail: d)
                 initSocial(d)
                 if let pb = d.playbackUrl {
                     setURL(api.absolutePartURL(pb))
@@ -458,18 +444,27 @@ struct WatchView: View {
         }
     }
 
-    /// Naming the two players for the breakdown says they played, so tag them on
-    /// the match as well — you shouldn't have to enter the same names twice.
-    private func tagPlayers(_ vid: String, names: [String]) {
+    /// The match's players as the shelf needs them — from the local copy when we
+    /// have one (it's the fresher of the two), otherwise the cloud detail.
+    private var currentParticipants: [Participant] {
+        if let local = localRecording?.participants, !local.isEmpty { return local }
+        return (detail?.participants ?? []).map {
+            Participant(userId: $0.userId, displayName: $0.displayName, email: $0.email)
+        }
+    }
+
+    /// Apply the shelf's answers to a match that's already in the cloud: the two
+    /// named players are tagged on it either way, then the breakdown runs (or the
+    /// names are just saved).
+    private func applySetup(_ vid: String, setup: MatchSetup, run: Bool) {
+        if run {
+            analysis.run(setup.analysisRequest)
+        } else {
+            analysis.savePlayers(setup.analysisPlayers)
+        }
         Task {
-            let existing = (detail?.participants ?? []).map {
-                Participant(userId: $0.userId, displayName: $0.displayName, email: $0.email)
-            }
-            let merged = await AnalysisParticipants.merged(
-                names: names,
-                existing: existing,
-                me: Supa.currentUserId().map { (id: $0, name: AppCache.shared.profile?.displayName ?? "") }
-            )
+            let existing = currentParticipants
+            let merged = setup.participants(mergedWith: existing)
             guard merged != existing else { return }
             if let rec = localRecording {
                 library.setParticipants(rec, merged) // saves locally and pushes

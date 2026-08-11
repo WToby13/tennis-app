@@ -40,6 +40,33 @@ export interface SmoothReport {
   identityFit: string;
   serverAgreementWithRaw: number;
   gameLengths: number[];
+  /**
+   * Share of points taking the most common value for each raw field. 1.0 means
+   * the model gave the identical answer every single time.
+   */
+  identityUniformity: number;
+  roleUniformity: number;
+  /** Largest gap between points, over the median gap. Below ~2 there is no
+   *  changeover structure in the timings at all. */
+  gapSpread: number;
+  /**
+   * The raw output carries no usable structure, so the fit below it is
+   * meaningless however confident it looks. Seen for real: a 32-minute match came
+   * back with one identity, one role and four distinct `what_you_see` strings
+   * across 96 points, and no gap over twice the median — the model had emitted a
+   * template rather than watching the video. Presenting that as a breakdown is
+   * worse than admitting the run failed.
+   */
+  degenerate: boolean;
+}
+
+/** Share of the most common non-null value in `values`. 1 = perfectly uniform. */
+function uniformity(values: (string | null)[]): number {
+  const known = values.filter((v): v is string => v != null && v !== UNK);
+  if (!known.length) return 1;
+  const counts = new Map<string, number>();
+  for (const v of known) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return Math.max(...counts.values()) / known.length;
 }
 
 /** Most common of P1/P2 in `values`, first-seen on ties; `fallback` if none. */
@@ -66,6 +93,59 @@ function fillUnclear(seq: (string | null)[]): (string | null)[] {
     else nxt = out[i];
   }
   return out;
+}
+
+/**
+ * Split any game that has run implausibly long.
+ *
+ * A service game is 4 points at minimum and typically 4–7, occasionally 8–12,
+ * and hardly ever past ~15 even through repeated deuces. So a detected "game"
+ * well past that is not a marathon hold — it's two or more games whose boundary
+ * the gap detector missed, and leaving it merged throws the server alternation
+ * out of phase for the whole remainder of the match.
+ *
+ * Each over-long run is cut at its largest internal gap (the most likely missed
+ * changeover), provided both halves keep at least `minGame` points, and the
+ * halves are then reconsidered in turn.
+ */
+function splitLongGames(
+  games: [number, number][],
+  pts: Point[],
+  minGame: number,
+  maxGame: number,
+): [number, number][] {
+  const out: [number, number][] = [];
+  const queue = [...games];
+
+  while (queue.length) {
+    const [a, b] = queue.shift()!;
+    if (b - a <= maxGame) {
+      out.push([a, b]);
+      continue;
+    }
+
+    // Best cut = biggest gap, among positions that leave both sides viable.
+    let bestAt = -1;
+    let bestGap = -1;
+    for (let i = a + minGame; i <= b - minGame; i++) {
+      const prev = pts[i - 1].end;
+      const next = pts[i].start;
+      if (prev == null || next == null) continue;
+      const gap = next - prev;
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestAt = i;
+      }
+    }
+
+    if (bestAt < 0) {
+      out.push([a, b]); // nothing safe to cut on — leave it and let the report flag it
+      continue;
+    }
+    queue.unshift([a, bestAt], [bestAt, b]); // re-examine both halves
+  }
+
+  return out.sort((x, y) => x[0] - y[0]);
 }
 
 /**
@@ -131,9 +211,13 @@ function detectGames(pts: Point[], minGame: number, gapK: number): [number, numb
  */
 export function smoothTennis(
   segments: Seg[],
-  opts?: { minGame?: number; hitsPerSec?: number; gapK?: number },
+  opts?: { minGame?: number; maxGame?: number; hitsPerSec?: number; gapK?: number },
 ): { segments: Seg[]; report: SmoothReport } {
   const minGame = opts?.minGame ?? 4;
+  // Service games run 4-7 points typically, 8-12 sometimes, and hardly ever past
+  // this even through repeated deuces — beyond it, a missed boundary is far more
+  // likely than a real hold. See splitLongGames.
+  const maxGame = opts?.maxGame ?? 15;
   const hitsPerSec = opts?.hitsPerSec ?? 0.5;
   const gapK = opts?.gapK ?? 2.0;
 
@@ -158,7 +242,7 @@ export function smoothTennis(
     return p.role === "serving" ? p.near : other(p.near);
   });
 
-  const games = detectGames(pts, minGame, gapK);
+  const games = splitLongGames(detectGames(pts, minGame, gapK), pts, minGame, maxGame);
   const G = games.length;
 
   // Fit strict server alternation across games (2 candidate phases).
@@ -238,6 +322,36 @@ export function smoothTennis(
       known.length
     : 0;
 
+  // How much the model actually varied its answers, and whether the timings hold
+  // any changeover structure. Both are computed from the RAW fields — a fit can
+  // look decisive while resting on input that says the same thing every time.
+  const identityUniformity = uniformity(pts.map((p) => p.near));
+  const roleUniformity = uniformity(pts.map((p) => p.role));
+
+  const gapList: number[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i].end;
+    const b = pts[i + 1].start;
+    if (a != null && b != null) gapList.push(b - a);
+  }
+  const sortedGaps = [...gapList].sort((x, y) => x - y);
+  const medGap = sortedGaps.length ? sortedGaps[Math.floor(sortedGaps.length / 2)] : 0;
+  const gapSpread = medGap > 0 ? Math.max(...gapList) / medGap : 0;
+
+  // Two independent ways the raw output betrays a template rather than a reading
+  // of the video. Either alone is damning, so they're OR'd, and both are gated on
+  // having enough points to judge (a single short game can legitimately be
+  // uniform).
+  //
+  //  - No field variation: over 12+ points spanning multiple games the server
+  //    alternates and the players change ends, so role and identity MUST move.
+  //  - No timing structure: a real changeover is 60-90s against a 15-25s
+  //    inter-point gap, so the longest gap should dwarf the median. When the
+  //    longest is barely twice the median, the timings were invented.
+  const noFieldVariation = identityUniformity >= 0.98 && roleUniformity >= 0.98;
+  const noTimingStructure = gapSpread < 2.5;
+  const degenerate = pts.length >= 12 && (noFieldVariation || noTimingStructure);
+
   return {
     segments: out,
     report: {
@@ -246,6 +360,10 @@ export function smoothTennis(
       identityFit: bestId.label,
       serverAgreementWithRaw: Math.round(srvAgree * 1000) / 1000,
       gameLengths: games.map(([a, b]) => b - a),
+      identityUniformity: Math.round(identityUniformity * 1000) / 1000,
+      roleUniformity: Math.round(roleUniformity * 1000) / 1000,
+      gapSpread: Math.round(gapSpread * 100) / 100,
+      degenerate,
     },
   };
 }

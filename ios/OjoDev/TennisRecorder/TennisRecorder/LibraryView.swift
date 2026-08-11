@@ -123,7 +123,7 @@ struct LibraryCard: View {
     @ObservedObject var library: RecordingLibrary
 
     @State private var confirmingDelete = false
-    @State private var analyseOpen = false
+    @State private var setupOpen = false
     @State private var shareCopied = false
 
     private var status: MatchStatus? { library.status(for: recording) }
@@ -131,43 +131,52 @@ struct LibraryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Everything above the buttons is one tap target for the match.
             NavigationLink(value: WatchTarget.recording(recording)) {
-                RecordingThumbnail(
-                    recording: recording,
-                    localURL: library.fileURL(for: recording),
-                    hasLocal: library.hasLocalFile(recording)
-                )
-                .aspectRatio(16.0 / 9.0, contentMode: .fill)
-                .frame(maxWidth: .infinity)
-                .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 8) {
+                    RecordingThumbnail(
+                        recording: recording,
+                        localURL: library.fileURL(for: recording),
+                        hasLocal: library.hasLocalFile(recording)
+                    )
+                    .aspectRatio(16.0 / 9.0, contentMode: .fill)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    Text(recording.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+
+                    Text(recording.createdAt.formatted(date: .abbreviated, time: .omitted))
+                        .font(.caption2).foregroundStyle(Theme.muted)
+
+                    // Chips: what's happening (if anything), then who can see it.
+                    HStack(spacing: 6) {
+                        if let chip = MatchChips.activity(recording, status) { StatusChip(chip: chip) }
+                        if let chip = MatchChips.share(recording, status) { StatusChip(chip: chip) }
+                    }
+
+                    if recording.status == .uploading {
+                        ProgressBar(value: recording.progress)
+                    } else if recording.status == .failed, let message = recording.uploadError {
+                        Text(message)
+                            .font(.caption2).foregroundStyle(Theme.danger)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            Text(recording.title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-
-            Text(recording.createdAt.formatted(date: .abbreviated, time: .omitted))
-                .font(.caption2).foregroundStyle(Theme.muted)
-
-            // Chips: what's happening (if anything), then who can see it.
-            HStack(spacing: 6) {
-                if let chip = MatchChips.activity(recording, status) { StatusChip(chip: chip) }
-                if let chip = MatchChips.share(recording, status) { StatusChip(chip: chip) }
-            }
-
-            if recording.status == .uploading {
-                ProgressView(value: recording.progress).tint(Theme.accent)
-            } else if recording.status == .failed, let message = recording.uploadError {
-                Text(message).font(.caption2).foregroundStyle(Theme.danger).lineLimit(2)
-            }
 
             VStack(spacing: 6) {
                 ForEach(actions, id: \.self) { actionButton($0) }
             }
         }
+        .frame(maxWidth: .infinity)
         .padding(10)
         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius))
         .overlay(RoundedRectangle(cornerRadius: Theme.radius).stroke(Theme.border, lineWidth: 1))
@@ -182,13 +191,14 @@ struct LibraryCard: View {
         } message: {
             Text("This removes it from this phone and from the cloud.")
         }
-        .sheet(isPresented: $analyseOpen) {
-            AnalyseSheet(
-                confirmLabel: "Upload",
-                suggestions: (recording.participants ?? []).map(\.displayName)
-            ) { request in
-                let recording = recording
-                Task { await library.upload(recording, analyse: request) }
+        .sheet(isPresented: $setupOpen) {
+            MatchSetupSheet(
+                purpose: .beforeUpload,
+                existing: recording.participants ?? []
+            ) { setup in
+                library.upload(recording, setup: setup)
+            } onPrimary: { setup in
+                library.upload(recording, setup: setup, analyse: true)
             }
         }
     }
@@ -208,16 +218,10 @@ struct LibraryCard: View {
             .buttonStyle(.plain)
         case .uploading:
             actionLabel(action).opacity(0.6)
-        case .upload, .retryUpload:
-            Button {
-                let recording = recording
-                Task { await library.upload(recording) }
-            } label: {
-                actionLabel(action)
-            }
-            .buttonStyle(.plain)
-        case .uploadAndAnalyse:
-            Button { analyseOpen = true } label: {
+        case .upload, .retryUpload, .aiBreakdown:
+            // Both routes open the shelf; its own two buttons decide whether the
+            // breakdown runs. Either way we want to know who played.
+            Button { setupOpen = true } label: {
                 actionLabel(action)
             }
             .buttonStyle(.plain)

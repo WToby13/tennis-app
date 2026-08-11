@@ -463,6 +463,18 @@ extension UploadAPI {
         _ = try await perform(try await makeRequest("/api/videos/\(videoId)", method: "PATCH", body: body))
     }
 
+    /// Rename the two analysis players without re-running the breakdown — the
+    /// labels are stored on the video, not baked into the segments.
+    func setAnalysisPlayers(videoId: String, players: AnalysisPlayers) async throws {
+        let body = try JSONSerialization.data(withJSONObject: [
+            "players": [
+                "player_1": players.player1 ?? "",
+                "player_2": players.player2 ?? "",
+            ],
+        ])
+        _ = try await perform(try await makeRequest("/api/videos/\(videoId)", method: "PATCH", body: body))
+    }
+
     /// Update a match's visibility (owner only). Accepts "private" | "public".
     func setVisibility(videoId: String, visibility: String) async throws {
         let body = try JSONSerialization.data(withJSONObject: ["visibility": visibility])

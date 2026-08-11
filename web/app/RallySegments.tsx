@@ -314,7 +314,12 @@ export function RallySegments({
     <section className="segments">
       <div className="segments-head">
         <h3>
-          Rallies{segments.length > 0 && <span className="seg-count">{segments.length}</span>}
+          AI breakdown
+          {segments.length > 0 && (
+            <span className="seg-count">
+              {segments.length} {segments.length === 1 ? "rally" : "rallies"}
+            </span>
+          )}
         </h3>
         {button}
       </div>

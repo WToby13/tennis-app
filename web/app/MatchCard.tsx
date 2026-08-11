@@ -41,6 +41,9 @@ export function MatchCard({
   const [status, setStatus] = useState<MatchStatus>(video.matchStatus);
   const [error, setError] = useState<string | null>(video.analysisError);
   const [busy, setBusy] = useState(false);
+  /** Which half of a run we're in — the two take very different lengths of time,
+   *  so saying which one is happening beats a bare "processing". */
+  const [stage, setStage] = useState<"compressing" | "analysing" | "done">("analysing");
   const [, forceTick] = useState(0);
   /** Set only when *we* started the run, so elapsed time is never a guess. */
   const startedAt = useRef<number | null>(null);
@@ -59,6 +62,7 @@ export function MatchCard({
         const data = await res.json();
         setStatus((s) => ({ ...s, analysis: data.analysisStatus }));
         setError(data.analysisError ?? null);
+        if (data.stage) setStage(data.stage);
         if (data.analysisStatus !== "processing") startedAt.current = null;
       } catch {
         // Transient — the next tick retries.
@@ -84,6 +88,7 @@ export function MatchCard({
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         startedAt.current = Date.now();
+        setStage(data.stage === "compressing" ? "compressing" : "analysing");
         setStatus((s) => ({ ...s, analysis: "processing" }));
       } else {
         setStatus((s) => ({ ...s, analysis: "failed" }));
@@ -152,7 +157,9 @@ export function MatchCard({
               <span />
             </div>
             <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-              Reading the rallies{elapsed ? ` · ${elapsed}` : ""} — usually a few minutes.
+              {stage === "compressing" ? "Compressing for analysis" : "Analysing rallies"}…
+              {" this can take a few minutes."}
+              {elapsed ? ` · ${elapsed}` : ""}
             </div>
           </div>
         )}

@@ -237,8 +237,7 @@ struct EditSheet: View {
                     case .pending, .failed:
                         Button {
                             save()
-                            let recording = current
-                            Task { await library.upload(recording) }
+                            library.upload(current)
                             onDone()
                         } label: {
                             Label(current.status == .failed ? "Retry upload" : "Upload now",
@@ -365,6 +364,30 @@ struct EditSheet: View {
     private func save() {
         library.rename(recording, to: name)
         library.setParticipants(recording, players)
+    }
+}
+
+// MARK: - Progress bar
+
+/// Upload progress as a plain track.
+///
+/// Not `ProgressView(value:)`: the linear style carries an ideal width of its own,
+/// which is wider than a match card's column — enough to push the card past its
+/// grid cell and out over its neighbour. A `GeometryReader` claims the width it's
+/// given and asks for nothing, so the card can't be stretched by its own progress.
+struct ProgressBar: View {
+    let value: Double
+    var height: CGFloat = 4
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Theme.surface2)
+                Capsule().fill(Theme.accent)
+                    .frame(width: geo.size.width * min(max(value, 0), 1))
+            }
+        }
+        .frame(height: height)
     }
 }
 

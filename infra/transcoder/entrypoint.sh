@@ -47,8 +47,29 @@ aws s3 cp "s3://${S3_BUCKET}/${SOURCE_KEY}" "$SRC" --only-show-errors \
   || fail "Couldn't read the match from storage."
 
 echo "[2/4] encoding proxy"
-ffmpeg -nostdin -y -i "$SRC" "$@" "$OUT" </dev/null \
-  || fail "Couldn't compress this match for analysis."
+# -nostats + -progress: ffmpeg's normal status line ends in a carriage return with
+# no newline, so the log driver never receives a complete line and CloudWatch
+# stays empty for the whole encode — a working task and a wedged one look
+# identical. -progress emits newline-delimited key=value blocks instead; we thin
+# them to one heartbeat per ~30s so the log stays readable and cheap.
+ffmpeg -nostdin -nostats -y -i "$SRC" "$@" -progress pipe:1 "$OUT" </dev/null 2>/tmp/ffmpeg.err \
+  | awk -F= '
+      /^out_time_ms=/ { t = $2 / 1000000 }
+      /^frame=/       { f = $2 }
+      /^speed=/       { s = $2 }
+      /^progress=/ {
+        if ($2 == "end" || t - last >= 30) {
+          printf "  encoding: %dm%02ds done, frame %s, %s\n", t/60, int(t)%60, f, s
+          fflush()
+          last = t
+        }
+      }' \
+  || true
+# The pipeline masks ffmpeg's exit code, so judge success by the output instead.
+if [ ! -s "$OUT" ]; then
+  tail -20 /tmp/ffmpeg.err >&2 || true
+  fail "Couldn't compress this match for analysis."
+fi
 
 rm -f "$SRC" # the master is no longer needed; free the disk before uploading
 

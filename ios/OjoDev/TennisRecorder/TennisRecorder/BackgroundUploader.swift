@@ -1,5 +1,12 @@
 import Foundation
 
+/// The AI breakdown's inputs, carried through an upload so "Upload & AI
+/// Breakdown" runs with the answers the shelf collected before the bytes moved.
+struct AnalysisRequest: Codable, Equatable {
+    var startTimeSec: Double?
+    var players: AnalysisPlayers?
+}
+
 /// Persisted plan for one in-flight multipart upload, so it survives the app
 /// being suspended, relaunched, or terminated by the system.
 private struct UploadJob: Codable {

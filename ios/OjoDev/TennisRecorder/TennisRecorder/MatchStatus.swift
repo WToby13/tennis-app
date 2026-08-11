@@ -88,23 +88,23 @@ enum MatchChips {
 /// so it opens a shelf), and once it's up, watching it and sharing it are
 /// separate things you'd want, not one button standing in for both.
 enum MatchAction: Hashable {
-    /// Not in the cloud yet — send the bytes, nothing more.
+    /// Send the bytes, nothing more. Still opens the shelf — who played is worth
+    /// recording whether or not the AI ever looks at the match.
     case upload
     /// Same, after a failure.
     case retryUpload
-    /// Upload, then run the AI breakdown with the answers from the shelf.
-    case uploadAndAnalyse
+    /// Upload and run the AI breakdown with the shelf's answers.
+    case aiBreakdown
     /// In flight; the card shows progress instead.
     case uploading
     case watch
     case share
 
-    /// The stack for a match, primary CTA last — the two buttons sit above each
-    /// other and the eye lands on the bottom one.
+    /// The stack for a match, primary CTA first — it sits at the top of the pair.
     static func stack(for recording: Recording) -> [MatchAction] {
         switch recording.status {
-        case .pending: return [.upload, .uploadAndAnalyse]
-        case .failed: return [.retryUpload, .uploadAndAnalyse]
+        case .pending: return [.aiBreakdown, .upload]
+        case .failed: return [.aiBreakdown, .retryUpload]
         case .uploading: return [.uploading]
         case .uploaded: return [.watch, .share]
         }
@@ -114,7 +114,7 @@ enum MatchAction: Hashable {
         switch self {
         case .upload: return "Upload"
         case .retryUpload: return "Retry upload"
-        case .uploadAndAnalyse: return "Upload & Analyse"
+        case .aiBreakdown: return "AI Breakdown"
         case .uploading: return "Uploading…"
         case .watch: return "Watch"
         case .share: return "Share"
@@ -123,7 +123,8 @@ enum MatchAction: Hashable {
 
     var systemImage: String {
         switch self {
-        case .upload, .retryUpload, .uploadAndAnalyse: return "arrow.up.circle.fill"
+        case .upload, .retryUpload: return "arrow.up.circle.fill"
+        case .aiBreakdown: return "sparkles"
         case .uploading: return "arrow.up.circle"
         case .watch: return "play.circle.fill"
         case .share: return "square.and.arrow.up"
@@ -133,7 +134,7 @@ enum MatchAction: Hashable {
     /// Drawn filled (vs. an outline) — the one action the state is really for.
     var isPrimary: Bool {
         switch self {
-        case .uploadAndAnalyse, .watch: return true
+        case .aiBreakdown, .watch: return true
         case .upload, .retryUpload, .uploading, .share: return false
         }
     }

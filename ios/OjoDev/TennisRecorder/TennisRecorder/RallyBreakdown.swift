@@ -1,9 +1,44 @@
 import Combine
 import SwiftUI
 
+/// One service game: a run of consecutive rallies sharing a `game` number, as
+/// stamped by the structural smoother. Mirrors `buildServiceGames` on the web.
+struct ServiceGame: Identifiable {
+    let id = UUID()
+    let game: Int
+    let server: String?
+    let startS: Double
+    var endS: Double
+    var points: Int
+    var shots: Int
+
+    /// Group rallies into service games: consecutive points sharing a `game`
+    /// number become one entry, labelled with that game's server.
+    static func build(from segments: [AnalysisSegment]) -> [ServiceGame] {
+        var out: [ServiceGame] = []
+        for segment in segments {
+            let start = segment.startS ?? 0
+            let end = segment.endS ?? start
+            let shots = Int(segment.metadata?.shots ?? 0)
+            let number = segment.metadata?.game.map { Int($0) }
+            if var last = out.last, let number, last.game == number {
+                last.endS = max(last.endS, end)
+                last.points += 1
+                last.shots += shots
+                out[out.count - 1] = last
+            } else {
+                out.append(ServiceGame(game: number ?? out.count + 1,
+                                       server: segment.metadata?.server,
+                                       startS: start, endS: end, points: 1, shots: shots))
+            }
+        }
+        return out
+    }
+}
+
 /// The AI rally breakdown's state for one match, owned by the Watch screen so the
-/// portrait breakdown and the landscape timeline are the same run — start it in
-/// one and the other is already showing it.
+/// portrait panel and the fullscreen timeline are the same run — start it in one
+/// and the other is already showing it.
 ///
 /// Seeded from the video-detail fetch, so this only calls the analyze route to
 /// start a run or to poll one in flight. Polling still matters even with the
@@ -11,14 +46,14 @@ import SwiftUI
 /// at it.
 @MainActor
 final class AnalysisModel: ObservableObject {
-    @Published var status: String
-    @Published var segments: [AnalysisSegment]
+    @Published var status = "none"
+    @Published var segments: [AnalysisSegment] = []
     @Published var players: AnalysisPlayers?
     @Published var errorText: String?
     @Published var busy = false
 
-    let videoId: String
-    let canAnalyze: Bool
+    private(set) var videoId: String?
+    private(set) var canAnalyze = false
 
     private let api = UploadAPI()
 
@@ -26,7 +61,12 @@ final class AnalysisModel: ObservableObject {
     /// slow cadence is plenty and keeps the request count down.
     private static let pollInterval: Duration = .seconds(4)
 
-    init(videoId: String, detail: VideoDetailResponse) {
+    /// Created empty and filled in when the video detail lands, so the Watch
+    /// screen can hold one for the whole session — both the portrait panel and
+    /// the fullscreen timeline observe this same object, and a run that finishes
+    /// while you're in either one shows up in both.
+    func seed(videoId: String, detail: VideoDetailResponse) {
+        guard self.videoId == nil else { return }
         self.videoId = videoId
         canAnalyze = detail.canAnalyze ?? false
         status = detail.analysisStatus ?? "none"
@@ -38,6 +78,11 @@ final class AnalysisModel: ObservableObject {
     var games: [ServiceGame] { ServiceGame.build(from: segments) }
 
     var hasResult: Bool { !segments.isEmpty }
+
+    /// Every shot the model counted across the match.
+    var totalShots: Int {
+        segments.reduce(0) { $0 + Int($1.metadata?.shots ?? 0) }
+    }
 
     /// Someone who can't run a breakdown and has no result to look at gets
     /// nothing — no explainer, no dead button.
@@ -53,7 +98,7 @@ final class AnalysisModel: ObservableObject {
     }
 
     func run(_ request: AnalysisRequest) {
-        guard !busy else { return }
+        guard !busy, let videoId else { return }
         busy = true
         errorText = nil
         Task {
@@ -76,36 +121,41 @@ final class AnalysisModel: ObservableObject {
         }
     }
 
+    /// Rename the players without re-running the analysis.
+    func savePlayers(_ newPlayers: AnalysisPlayers) {
+        guard let videoId else { return }
+        players = newPlayers
+        Task { try? await api.setAnalysisPlayers(videoId: videoId, players: newPlayers) }
+    }
+
     /// Poll until the run leaves "processing". Transient failures are ignored —
     /// a dropped poll shouldn't strand the UI when the next one would recover.
     func pollUntilSettled() async {
+        guard let videoId else { return }
         while !Task.isCancelled {
             try? await Task.sleep(for: Self.pollInterval)
             if Task.isCancelled { return }
             guard let response = try? await api.getAnalysis(videoId: videoId) else { continue }
             if let segs = response.segments { segments = segs }
             errorText = response.analysisError
-            if let s = response.analysisStatus, s != "processing" {
-                status = s
+            if let settled = response.analysisStatus, settled != "processing" {
+                status = settled
                 return
             }
         }
     }
 }
 
-/// The AI rally breakdown for a cloud match — the iOS counterpart of the web
-/// `RallySegments` component. Shows the match as a timeline of service games and
-/// rallies, plus the rally list; tapping either jumps the player to that moment.
+/// The AI rally breakdown as it reads down the page: the match's service games as
+/// a strip you can skim, then every rally in order. Tapping either jumps the
+/// player to that moment.
 struct RallyBreakdown: View {
     @ObservedObject var model: AnalysisModel
-    let durationS: Double
-    /// Tracked by the timeline's playhead.
-    var player: PlayerModel?
     let onSeek: (Double) -> Void
-    /// Names entered in the shelf, so the caller can tag them on the match.
-    let onPlayersChosen: ([String]) -> Void
-    /// Names offered as one-tap fills in the shelf (whoever's already tagged).
-    let suggestions: [String]
+    /// The shelf's answers, so the caller can tag the named players on the match.
+    let onSetup: (MatchSetup, _ run: Bool) -> Void
+    /// Anyone already tagged, offered in the shelf's dropdowns.
+    let participants: [Participant]
 
     @State private var setupOpen = false
 
@@ -119,13 +169,14 @@ struct RallyBreakdown: View {
             await model.pollUntilSettled()
         }
         .sheet(isPresented: $setupOpen) {
-            AnalyseSheet(
-                confirmLabel: "Run",
-                suggestions: suggestions,
+            MatchSetupSheet(
+                purpose: .cloudMatch,
+                existing: participants,
                 initialPlayers: model.players
-            ) { request in
-                onPlayersChosen(request.playerNames)
-                model.run(request)
+            ) { setup in
+                onSetup(setup, false)
+            } onPrimary: { setup in
+                onSetup(setup, true)
             }
         }
     }
@@ -146,7 +197,8 @@ struct RallyBreakdown: View {
                         .font(.footnote).foregroundStyle(Theme.muted)
                     runButton(label: "Re-analyse")
                 } else {
-                    timeline
+                    summary
+                    gamesRow
                     ralliesList
                     runButton(label: "Re-analyse")
                 }
@@ -171,15 +223,14 @@ struct RallyBreakdown: View {
         }
     }
 
-    private var timeline: some View {
-        RallyTimeline(
-            segments: model.segments,
-            games: model.games,
-            nameOf: model.nameOf,
-            durationS: durationS,
-            player: player,
-            onSeek: onSeek
-        )
+    /// The match in one line — how much tennis was actually played.
+    private var summary: some View {
+        let games = model.games.count
+        let rallies = model.segments.count
+        let shots = model.totalShots
+        return Text("\(games) \(games == 1 ? "game" : "games") · \(rallies) \(rallies == 1 ? "rally" : "rallies") · \(shots) shots")
+            .font(.footnote.weight(.medium))
+            .foregroundStyle(Theme.muted)
     }
 
     private var processingRow: some View {
@@ -197,23 +248,50 @@ struct RallyBreakdown: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// Service games as a horizontal strip — the at-a-glance shape of the match.
+    private var gamesRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("SERVICE GAMES")
+                .font(.caption2.weight(.semibold)).foregroundStyle(Theme.muted)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(model.games) { game in
+                        Button { onSeek(game.startS) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Game \(game.game)")
+                                    .font(.caption.weight(.bold)).foregroundStyle(Theme.text)
+                                Text(model.nameOf(game.server))
+                                    .font(.caption2).foregroundStyle(Theme.accent)
+                                Text("\(game.points) \(game.points == 1 ? "point" : "points") · \(game.shots) shots")
+                                    .font(.caption2).foregroundStyle(Theme.muted)
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Theme.surface2, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
     private var ralliesList: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("RALLIES")
                 .font(.caption2.weight(.semibold)).foregroundStyle(Theme.muted)
             VStack(spacing: 0) {
-                ForEach(Array(model.segments.enumerated()), id: \.element.id) { i, s in
-                    Button { onSeek(s.startS ?? 0) } label: {
+                ForEach(Array(model.segments.enumerated()), id: \.element.id) { index, segment in
+                    Button { onSeek(segment.startS ?? 0) } label: {
                         HStack(spacing: 12) {
-                            Text("\(i + 1)")
+                            Text("\(index + 1)")
                                 .font(.caption.monospacedDigit().weight(.bold))
                                 .foregroundStyle(Theme.muted)
                                 .frame(width: 24, alignment: .trailing)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(timeLabel(s.startS ?? 0))
+                                Text(PlayerModel.timeLabel(segment.startS ?? 0))
                                     .font(.subheadline.monospacedDigit().weight(.semibold))
                                     .foregroundStyle(Theme.text)
-                                Text(rallyDetail(s))
+                                Text(rallyDetail(segment))
                                     .font(.caption).foregroundStyle(Theme.muted)
                             }
                             Spacer()
@@ -223,7 +301,7 @@ struct RallyBreakdown: View {
                         .padding(.vertical, 9)
                     }
                     .buttonStyle(.plain)
-                    if i < model.segments.count - 1 {
+                    if index < model.segments.count - 1 {
                         Divider().overlay(Theme.border)
                     }
                 }
@@ -234,13 +312,13 @@ struct RallyBreakdown: View {
     }
 
     /// One-line summary of a rally: who served, how long, how many shots.
-    private func rallyDetail(_ s: AnalysisSegment) -> String {
+    private func rallyDetail(_ segment: AnalysisSegment) -> String {
         var bits: [String] = []
-        if let server = s.metadata?.server { bits.append("\(model.nameOf(server)) serving") }
-        if let start = s.startS, let end = s.endS, end > start {
+        if let server = segment.metadata?.server { bits.append("\(model.nameOf(server)) serving") }
+        if let start = segment.startS, let end = segment.endS, end > start {
             bits.append("\(Int((end - start).rounded()))s")
         }
-        if let shots = s.metadata?.shots { bits.append("\(Int(shots)) shots") }
+        if let shots = segment.metadata?.shots { bits.append("\(Int(shots)) shots") }
         return bits.isEmpty ? "Rally" : bits.joined(separator: " · ")
     }
 
@@ -261,18 +339,12 @@ struct RallyBreakdown: View {
             }
         }
     }
-
-    private func timeLabel(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        let s = Int(seconds)
-        return String(format: "%d:%02d", s / 60, s % 60)
-    }
 }
 
 extension String {
     /// The string, or nil when it's blank — for optional API fields.
     var nonEmpty: String? {
-        let t = trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? nil : t
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
