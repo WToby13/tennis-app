@@ -15,7 +15,13 @@ export const RALLY_KIND = "rally";
 const PRESET = {
   model_name: "pegasus1.5",
   analysis_mode: "time_based_metadata",
-  temperature: 0.2,
+  // Raised from 0.2 after a 32-minute match came back templated: one identity,
+  // one role and four distinct `what_you_see` strings across all 96 points. At a
+  // low temperature the model's cheapest continuation is to repeat the previous
+  // point's answer, and repetition is self-reinforcing once it starts. 0.5 keeps
+  // the enums stable (they're heavily constrained by the field descriptions)
+  // while making a verbatim repeat of the last segment no longer the default.
+  temperature: 0.5,
   max_tokens: 98304,
   min_segment_duration: 2,
   max_segment_duration: 30,
