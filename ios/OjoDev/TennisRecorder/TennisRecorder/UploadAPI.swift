@@ -263,7 +263,7 @@ struct UploadAPI {
     /// unauthenticated request that the server would reject.
     private func makeRequest(_ path: String, method: String, body: Data?) async throws -> URLRequest {
         guard let token = await Supa.accessToken() else { throw UploadError.notSignedIn }
-        var req = URLRequest(url: baseURL.appendingPathComponent(path))
+        var req = URLRequest(url: endpoint(path))
         req.httpMethod = method
         req.httpBody = body
         if body != nil { req.setValue("application/json", forHTTPHeaderField: "Content-Type") }
@@ -379,6 +379,16 @@ struct UploadAPI {
     /// Delete a video (and its assets) from the cloud. Owner-only, enforced server-side.
     func deleteVideo(videoId: String) async throws {
         _ = try await perform(try await makeRequest("/api/videos/\(videoId)", method: "DELETE", body: nil))
+    }
+
+    /// Resolve an API path against the base URL.
+    ///
+    /// NOT `appendingPathComponent`: that treats the whole string as one path
+    /// segment and percent-encodes the `?`, so `/api/users?q=ada` went out as
+    /// `/api/users%3Fq=ada` and every player search came back empty. Resolving it
+    /// as a relative URL keeps the query a query.
+    func endpoint(_ path: String) -> URL {
+        URL(string: path, relativeTo: baseURL)?.absoluteURL ?? baseURL.appendingPathComponent(path)
     }
 
     /// Resolve a relative part URL (local backend) against the API base; S3 returns absolute URLs.

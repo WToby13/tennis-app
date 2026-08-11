@@ -1,6 +1,9 @@
 import Combine
 import SwiftUI
 
+/// Which way the player's rally-skip buttons move.
+enum RallyDirection { case previous, next }
+
 /// One service game: a run of consecutive rallies sharing a `game` number, as
 /// stamped by the structural smoother. Mirrors `buildServiceGames` on the web.
 struct ServiceGame: Identifiable {
@@ -87,6 +90,23 @@ final class AnalysisModel: ObservableObject {
     /// Someone who can't run a breakdown and has no result to look at gets
     /// nothing — no explainer, no dead button.
     var isHidden: Bool { !canAnalyze && segments.isEmpty && status != "processing" }
+
+    /// Where each rally starts, in order — what the player's skip buttons move
+    /// between.
+    var rallyStarts: [Double] {
+        segments.compactMap(\.startS).sorted()
+    }
+
+    /// The next rally after `time`, or nil at the last one.
+    func nextRallyStart(after time: Double) -> Double? {
+        rallyStarts.first { $0 > time + 0.25 }
+    }
+
+    /// Track-skip behaviour: once you're a couple of seconds into a rally, back
+    /// takes you to the top of it; press again and you go to the one before.
+    func previousRallyStart(before time: Double) -> Double? {
+        rallyStarts.last { $0 < time - 2 } ?? rallyStarts.first
+    }
 
     /// Human label for a model player id, falling back to the generic name.
     func nameOf(_ id: String?) -> String {

@@ -208,6 +208,9 @@ struct ScrubBar: View {
 /// in particular — can seek the same player.
 struct ReviewPlayer: View {
     @ObservedObject var model: PlayerModel
+    /// Rally skip, present only once there's a breakdown to skip through.
+    var onPreviousRally: (() -> Void)?
+    var onNextRally: (() -> Void)?
     var onEnterFullscreen: (() -> Void)?
 
     private static let speeds: [Float] = [0.25, 0.5, 1, 1.5, 2]
@@ -230,9 +233,15 @@ struct ReviewPlayer: View {
                     .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.7))
             }
 
-            HStack(spacing: 18) {
+            // Frame-stepping lives in fullscreen only. In a 16:9 strip on a phone
+            // there isn't room for seven controls, and moving between rallies is
+            // the thing you reach for far more often than a single frame.
+            HStack(spacing: 16) {
+                if let onPreviousRally {
+                    TransportButton(icon: "backward.end.fill", action: onPreviousRally)
+                        .accessibilityLabel("Previous rally")
+                }
                 TransportButton(icon: "gobackward.10") { model.skip(-10) }
-                TransportButton(icon: "backward.frame.fill") { model.stepFrames(-1) }
                 Button(action: { model.togglePlay() }) {
                     Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 26, weight: .bold))
@@ -240,8 +249,11 @@ struct ReviewPlayer: View {
                         .frame(width: 52, height: 52)
                         .background(Theme.accent, in: Circle())
                 }
-                TransportButton(icon: "forward.frame.fill") { model.stepFrames(1) }
                 TransportButton(icon: "goforward.10") { model.skip(10) }
+                if let onNextRally {
+                    TransportButton(icon: "forward.end.fill", action: onNextRally)
+                        .accessibilityLabel("Next rally")
+                }
 
                 Spacer()
 

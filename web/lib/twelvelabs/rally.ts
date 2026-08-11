@@ -76,12 +76,15 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
 
 /**
  * Assemble the full create-task body for a rally analysis of `videoUrl`.
- * `startTimeSec` skips warm-up at the start (analysis window begins there);
- * returned segment timestamps stay absolute to the original video.
+ *
+ * `startTimeSec` / `endTimeSec` bound the analysis window — used both to skip
+ * warm-up at the start and to split a long match into short windows (see
+ * ./windows.ts, which also handles putting the returned timestamps back on the
+ * match's clock).
  */
 export function buildRallyRequest(
   videoUrl: string,
-  opts?: { startTimeSec?: number; context?: RallyContext },
+  opts?: { startTimeSec?: number; endTimeSec?: number; context?: RallyContext },
 ): CreateAnalysisTaskBody {
   const body: CreateAnalysisTaskBody = {
     video: { type: "url", url: videoUrl },
@@ -98,5 +101,8 @@ export function buildRallyRequest(
     },
   };
   if (opts?.startTimeSec && opts.startTimeSec > 0) body.start_time = Math.floor(opts.startTimeSec);
+  if (opts?.endTimeSec && opts.endTimeSec > (opts.startTimeSec ?? 0)) {
+    body.end_time = Math.ceil(opts.endTimeSec);
+  }
   return body;
 }

@@ -27,7 +27,6 @@ struct WatchView: View {
     @State private var url: URL?
     @State private var detail: VideoDetailResponse?
     @State private var loadError: String?
-    @State private var editing = false
     @State private var setupOpen = false
     @State private var fullscreen = false
     /// Owned here (not by `ReviewPlayer`) so the AI breakdown can seek the same
@@ -45,7 +44,8 @@ struct WatchView: View {
     @State private var saved = false
     @State private var sharedToFollowers = false
     @State private var isPublic = false
-    @State private var shareCopied = false
+    @State private var sharePayload: SharePayload?
+    @State private var preparingShare = false
 
     @ObservedObject private var chrome = ChromeState.shared
 
@@ -118,9 +118,10 @@ struct WatchView: View {
         .statusBar(hidden: immersive)
         .persistentSystemOverlays(immersive ? .hidden : .automatic)
         .toolbar {
-            if localRecording != nil && !immersive {
+            if canManage && !immersive {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { editing = true } label: { Image(systemName: "slider.horizontal.3") }
+                    Button { setupOpen = true } label: { Image(systemName: "slider.horizontal.3") }
+                        .accessibilityLabel("Match settings")
                 }
             }
         }
@@ -132,20 +133,68 @@ struct WatchView: View {
             playerModel?.pause()
         }
         .task { await load() }
-        .sheet(isPresented: $editing) {
-            if let rec = localRecording {
-                EditSheet(recording: rec, library: library, onDone: { editing = false })
-            }
+        .sheet(isPresented: $setupOpen) { setupSheet }
+        .sheet(item: $sharePayload) { payload in
+            ShareSheet(url: payload.url)
         }
-        .sheet(isPresented: $setupOpen) {
-            MatchSetupSheet(
-                purpose: .beforeUpload,
-                existing: localRecording?.participants ?? []
-            ) { setup in
-                if let rec = pendingUpload { library.upload(rec, setup: setup) }
-            } onPrimary: { setup in
-                if let rec = pendingUpload { library.upload(rec, setup: setup, analyse: true) }
+    }
+
+    /// One sheet for everything about the match: its name, when play starts, who
+    /// played, and what to do with it. Which pair of actions it offers depends on
+    /// whether the bytes have gone up yet.
+    private var setupSheet: some View {
+        MatchSetupSheet(
+            purpose: pendingUpload != nil ? .beforeUpload : .cloudMatch,
+            existing: currentParticipants,
+            subject: subject,
+            initialPlayers: analysis.players,
+            shareURL: { await shareTarget() },
+            onDelete: canDelete ? { deleteMatch() } : nil,
+            onSecondary: { setup in
+                apply(setup, run: false)
+            },
+            onPrimary: { setup in
+                apply(setup, run: true)
             }
+        )
+    }
+
+    /// The match as the shelf shows it — name plus the file's facts.
+    private var subject: MatchSubject {
+        MatchSubject(
+            title: localRecording?.title ?? detail?.video.title ?? "",
+            createdAt: date,
+            durationS: durationS,
+            sizeBytes: localRecording?.sizeBytes ?? detail?.video.sizeBytes ?? 0
+        )
+    }
+
+    /// Anyone who can edit the match gets the settings shelf; a recording sitting
+    /// on this phone is always yours.
+    private var canManage: Bool {
+        localRecording != nil || detail?.canEdit == true
+    }
+
+    private var canDelete: Bool {
+        localRecording != nil || detail?.isOwner == true
+    }
+
+    /// Route the shelf's answers to the right place: a match still on this phone
+    /// gets uploaded, one already in the cloud gets its breakdown re-run.
+    private func apply(_ setup: MatchSetup, run: Bool) {
+        if let title = setup.title, let rec = localRecording, title != rec.title {
+            library.rename(rec, to: title)
+            if let vid = videoId {
+                Task { try? await api.setTitle(videoId: vid, title: title) }
+            }
+        } else if let title = setup.title, let vid = videoId, title != detail?.video.title {
+            Task { try? await api.setTitle(videoId: vid, title: title) }
+        }
+
+        if let rec = pendingUpload {
+            library.upload(rec, setup: setup, analyse: run)
+        } else if let vid = videoId {
+            applySetup(vid, setup: setup, run: run)
         }
     }
 
@@ -153,6 +202,17 @@ struct WatchView: View {
     /// otherwise leave the match.
     private func exitImmersive() {
         if fullscreen { fullscreen = false } else { dismiss() }
+    }
+
+    private var hasRallies: Bool { !analysis.segments.isEmpty }
+
+    /// Jump to the next/previous rally from wherever playback is now.
+    private func seekRally(_ direction: RallyDirection) {
+        guard let playerModel else { return }
+        let target = direction == .next
+            ? analysis.nextRallyStart(after: playerModel.currentTime)
+            : analysis.previousRallyStart(before: playerModel.currentTime)
+        if let target { playerModel.play(from: target) }
     }
 
     // MARK: Stage
@@ -163,6 +223,8 @@ struct WatchView: View {
             if let playerModel {
                 ReviewPlayer(
                     model: playerModel,
+                    onPreviousRally: hasRallies ? { seekRally(.previous) } : nil,
+                    onNextRally: hasRallies ? { seekRally(.next) } : nil,
                     // In landscape the screen is already the video, so a toggle
                     // there would be a button that does nothing.
                     onEnterFullscreen: verticalSizeClass == .compact ? nil : { fullscreen = true }
@@ -293,10 +355,10 @@ struct WatchView: View {
                 }
                 .foregroundStyle(liked ? Theme.danger : Theme.text)
             }
-            Button { share(vid) } label: {
-                Image(systemName: shareCopied ? "checkmark" : "square.and.arrow.up")
-                    .foregroundStyle(shareCopied ? Theme.sage : Theme.text)
+            Button { presentShare() } label: {
+                Image(systemName: "square.and.arrow.up").foregroundStyle(Theme.text)
             }
+            .disabled(preparingShare)
             if d.inLibrary == false {
                 Button { save(vid) } label: {
                     Image(systemName: saved ? "bookmark.fill" : "bookmark")
@@ -340,9 +402,8 @@ struct WatchView: View {
                     }
                     .pickerStyle(.segmented)
                 }
-                Button(role: .destructive) { deleteMatch(vid) } label: {
-                    Label("Delete match", systemImage: "trash")
-                }
+                // Delete lives in the settings shelf now — one place for the
+                // irreversible thing, behind a confirmation.
             }
         }
         .padding(.horizontal, 16)
@@ -433,13 +494,26 @@ struct WatchView: View {
         Task { try? await api.setVisibility(videoId: vid, visibility: pub ? "public" : "private") }
     }
 
-    private func share(_ vid: String) {
+    /// What to hand the system share sheet: a revocable share link once the match
+    /// is in the cloud, otherwise the video file itself, so a recording that
+    /// hasn't been uploaded can still be AirDropped or saved.
+    private func shareTarget() async -> URL? {
+        if let vid = videoId, let link = try? await api.createShareLink(videoId: vid) {
+            return URL(string: Config.apiBaseURL.absoluteString + link.path)
+        }
+        if let rec = localRecording, library.hasLocalFile(rec) {
+            return library.fileURL(for: rec)
+        }
+        return nil
+    }
+
+    private func presentShare() {
+        guard !preparingShare else { return }
+        preparingShare = true
         Task {
-            if let link = try? await api.createShareLink(videoId: vid) {
-                UIPasteboard.general.string = Config.apiBaseURL.absoluteString + link.path
-                shareCopied = true
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                shareCopied = false
+            defer { preparingShare = false }
+            if let url = await shareTarget() {
+                sharePayload = SharePayload(url: url)
             }
         }
     }
@@ -475,10 +549,10 @@ struct WatchView: View {
         }
     }
 
-    private func deleteMatch(_ vid: String) {
+    private func deleteMatch() {
         if let rec = localRecording {
             library.delete(rec)          // removes local + cloud
-        } else {
+        } else if let vid = videoId {
             Task { try? await api.deleteVideo(videoId: vid) }
         }
         dismiss()

@@ -5,18 +5,16 @@ import {
   finalizeReady,
   friendlyAnalyzeError,
   stageOf,
+  startWindows,
 } from "@/lib/analysisRunner";
 import { config } from "@/lib/config";
 import { storeForRequest } from "@/lib/request";
 import { startProxyTranscode, transcodeEnabled } from "@/lib/transcode";
 import { storage } from "@/lib/storage";
 import type { MetadataStore, Video, VideoSegment } from "@/lib/metadata/types";
-import {
-  TwelveLabsApiError,
-  TwelveLabsNotConfiguredError,
-  createAnalysisTask,
-} from "@/lib/twelvelabs/client";
-import { RALLY_KIND, buildRallyRequest } from "@/lib/twelvelabs/rally";
+import { TwelveLabsApiError, TwelveLabsNotConfiguredError } from "@/lib/twelvelabs/client";
+import { RALLY_KIND } from "@/lib/twelvelabs/rally";
+import { planWindows } from "@/lib/twelvelabs/windows";
 import { type AnalysisTask, normalizeSegments } from "@/lib/twelvelabs/types";
 import { badRequest, json, notFound, sanitizePlayers } from "@/lib/util";
 
@@ -126,7 +124,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // to fit by construction.
   if (!video.hasAnalysisProxy && video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
     const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}, max ${gb(MAX_ANALYSIS_BYTES)}). Automatic compression is coming soon.`;
-    await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null });
+    await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null, analysisWindows: null });
     return json({ analysisStatus: "failed", error: msg }, { status: 400 });
   }
 
@@ -136,7 +134,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!video.hasAnalysisProxy && needsAnalysisProxy(video.sizeBytes)) {
     if (!transcodeEnabled()) {
       const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}). Automatic compression isn't set up yet.`;
-      await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null });
+      await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null, analysisWindows: null });
       return json({ analysisStatus: "failed", error: msg }, { status: 503 });
     }
     try {
@@ -144,6 +142,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await store.update(id, {
         analysisStatus: "processing",
         analysisTaskId: null,
+        analysisWindows: null,
         analysisError: null,
         ...playersPatch,
       });
@@ -175,14 +174,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const url = video.hasAnalysisProxy
       ? await storage().getAnalysisProxyUrl(video.id)
       : await storage().getPlaybackUrl(video.id, video.key);
-    const task = await createAnalysisTask(buildRallyRequest(url, { startTimeSec }));
-    await store.update(id, {
-      analysisStatus: "processing",
-      analysisTaskId: task.task_id,
-      analysisError: null,
-      ...playersPatch,
-    });
-    return json({ analysisStatus: "processing" });
+    // Long matches go out as several short windows, run concurrently; short ones
+    // come back as a single window and take the plain single-task path.
+    const windows = planWindows(video.durationS, startTimeSec);
+    if (players) await store.update(id, playersPatch);
+    await startWindows(store, video, url, windows);
+    return json({ analysisStatus: "processing", windows: windows.length });
   } catch (err) {
     if (err instanceof TwelveLabsNotConfiguredError) {
       return json({ error: "AI analysis isn't configured." }, { status: 503 });

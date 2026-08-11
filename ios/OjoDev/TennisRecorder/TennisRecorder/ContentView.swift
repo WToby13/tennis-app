@@ -3,9 +3,9 @@ import SwiftUI
 import UIKit
 
 // Shared building blocks used across the app: the shutter + recording overlays
-// (CameraScreen), the match row / thumbnail / player / edit shelf (MatchesView),
-// and the camera preview bridge. The top-level containers (tab bar, camera,
-// library) live in their own files.
+// (CameraScreen), the match thumbnail and progress bar (LibraryView), the
+// confirm dialog and share sheet, and the camera preview bridge. The top-level
+// containers (tab bar, camera, library, watch) live in their own files.
 
 // MARK: - Shutter button
 
@@ -131,242 +131,6 @@ struct RecordingThumbnail: View {
     }
 }
 
-// MARK: - In-app player loader (resolves local file or cloud playback URL)
-
-/// Presents the in-app player for a recording. Local matches play straight from the
-/// file; cloud-only matches resolve a signed playback URL from the web first.
-struct PlayerLoader: View {
-    let recording: Recording
-    @ObservedObject var library: RecordingLibrary
-    @Environment(\.dismiss) private var dismiss
-    @State private var url: URL?
-    @State private var errorText: String?
-
-    var body: some View {
-        if let url {
-            PlayerView(url: url, title: recording.title)
-        } else {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                if let errorText {
-                    Text(errorText)
-                        .foregroundStyle(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                        .padding(32)
-                } else {
-                    ProgressView().tint(.white)
-                }
-            }
-            .overlay(alignment: .topLeading) {
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 30))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.white)
-                        .padding(16)
-                }
-            }
-            .task { await resolve() }
-        }
-    }
-
-    private func resolve() async {
-        if library.hasLocalFile(recording) {
-            url = library.fileURL(for: recording)
-            return
-        }
-        guard let videoId = recording.remoteVideoId else {
-            errorText = "This match isn't available to play."
-            return
-        }
-        let api = UploadAPI()
-        do {
-            let detail = try await api.getVideo(videoId: videoId)
-            if let playback = detail.playbackUrl {
-                url = api.absolutePartURL(playback)
-            } else {
-                errorText = "This match isn't ready to play yet."
-            }
-        } catch {
-            errorText = "Couldn't load this match.\nCheck your connection and try again."
-        }
-    }
-}
-
-// MARK: - Edit shelf (name / details / share)
-
-struct EditSheet: View {
-    let recording: Recording
-    @ObservedObject var library: RecordingLibrary
-    let onDone: () -> Void
-    @State private var name: String
-    @State private var playing = false
-    @State private var players: [Participant]
-    @State private var query = ""
-    @State private var searchResults: [UserResult] = []
-    @State private var searchTask: Task<Void, Never>?
-    @State private var guestName = ""
-    @State private var guestEmail = ""
-    private let api = UploadAPI()
-
-    init(recording: Recording, library: RecordingLibrary, onDone: @escaping () -> Void) {
-        self.recording = recording
-        self.library = library
-        self.onDone = onDone
-        _name = State(initialValue: recording.title == "Untitled match" ? "" : recording.title)
-        _players = State(initialValue: recording.participants ?? [])
-    }
-
-    /// Latest state for this recording (status/progress can change while open).
-    private var current: Recording {
-        library.displayed.first { $0.id == recording.id } ?? recording
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                // All the "good" actions together at the top: play, then upload/share.
-                Section {
-                    Button {
-                        playing = true
-                    } label: {
-                        Label("Play", systemImage: "play.circle.fill")
-                    }
-
-                    switch current.status {
-                    case .pending, .failed:
-                        Button {
-                            save()
-                            library.upload(current)
-                            onDone()
-                        } label: {
-                            Label(current.status == .failed ? "Retry upload" : "Upload now",
-                                  systemImage: "arrow.up.circle.fill")
-                        }
-                    case .uploading:
-                        HStack {
-                            ProgressView(value: current.progress)
-                            Text("\(Int(current.progress * 100))%").font(.caption).foregroundStyle(.secondary)
-                        }
-                    case .uploaded:
-                        if let videoId = current.remoteVideoId {
-                            Link(destination: Config.watchURL(videoId: videoId)) {
-                                Label("View on web", systemImage: "play.circle")
-                            }
-                            ShareLink(item: Config.watchURL(videoId: videoId)) {
-                                Label("Share link", systemImage: "square.and.arrow.up")
-                            }
-                        }
-                    }
-                }
-
-                Section("Name") {
-                    TextField("Untitled match", text: $name)
-                        .submitLabel(.done)
-                }
-
-                Section("Players") {
-                    ForEach(Array(players.enumerated()), id: \.offset) { idx, p in
-                        HStack {
-                            Text(p.displayName)
-                            if p.userId == nil {
-                                Text(p.email == nil ? "guest" : "invited")
-                                    .font(.caption2).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button(role: .destructive) {
-                                players.remove(at: idx)
-                            } label: {
-                                Image(systemName: "minus.circle.fill").foregroundStyle(.red)
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
-
-                    TextField("Search Ojo players", text: $query)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .onChange(of: query) { _, q in
-                            searchTask?.cancel()
-                            searchTask = Task {
-                                let results = (try? await api.searchUsers(q)) ?? []
-                                if !Task.isCancelled {
-                                    await MainActor.run { searchResults = results }
-                                }
-                            }
-                        }
-
-                    ForEach(searchResults) { u in
-                        Button {
-                            if !players.contains(where: { $0.userId == u.id }) {
-                                players.append(Participant(userId: u.id, displayName: u.displayName, email: nil))
-                            }
-                            query = ""
-                            searchResults = []
-                        } label: {
-                            Label(u.displayName, systemImage: "plus.circle")
-                        }
-                    }
-                }
-
-                Section("Add someone not on Ojo") {
-                    TextField("Name", text: $guestName)
-                    TextField("Email (optional — to invite)", text: $guestEmail)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Add guest") {
-                        let n = guestName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !n.isEmpty else { return }
-                        let email = guestEmail.trimmingCharacters(in: .whitespacesAndNewlines)
-                        players.append(Participant(userId: nil, displayName: n, email: email.isEmpty ? nil : email))
-                        guestName = ""
-                        guestEmail = ""
-                    }
-                    .disabled(guestName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-
-                Section("Details") {
-                    LabeledContent("Recorded", value: current.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    LabeledContent("Duration", value: durationString(current.durationS))
-                    LabeledContent("Size", value: sizeString(current.sizeBytes))
-                    LabeledContent("Status", value: statusText(current.status))
-                    if current.status == .failed, let error = current.uploadError {
-                        LabeledContent("Error") { Text(error).foregroundStyle(.red) }
-                    }
-                }
-
-                Section {
-                    Button(role: .destructive) {
-                        library.delete(recording)
-                        onDone()
-                    } label: {
-                        Label("Delete recording", systemImage: "trash")
-                    }
-                }
-            }
-            .navigationTitle("Recording")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { save(); onDone() }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
-        .fullScreenCover(isPresented: $playing) {
-            PlayerLoader(recording: current, library: library)
-        }
-        // Persist the name if the sheet is swiped away.
-        .onDisappear { save() }
-    }
-
-    private func save() {
-        library.rename(recording, to: name)
-        library.setParticipants(recording, players)
-    }
-}
-
 // MARK: - Progress bar
 
 /// Upload progress as a plain track.
@@ -389,6 +153,89 @@ struct ProgressBar: View {
         }
         .frame(height: height)
     }
+}
+
+// MARK: - Confirm dialog
+
+/// A destructive confirmation in the app's own clothes rather than a system alert —
+/// deleting a match is the one irreversible thing in here, so it's worth the
+/// moment it takes to read.
+struct OjoConfirm: View {
+    let title: String
+    let message: String
+    var confirmTitle = "Yes"
+    var cancelTitle = "No"
+    let onConfirm: () -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onCancel)
+
+            VStack(spacing: 14) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(Theme.text)
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.muted)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 10) {
+                    Button(action: onCancel) {
+                        Text(cancelTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .overlay(RoundedRectangle(cornerRadius: Theme.radiusSmall)
+                                .stroke(Theme.border, lineWidth: 1.5))
+                            .foregroundStyle(Theme.text)
+                    }
+                    Button(action: onConfirm) {
+                        Text(confirmTitle)
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(Theme.danger, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
+                            .foregroundStyle(Theme.text)
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+            }
+            .padding(20)
+            .frame(maxWidth: 320)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius).stroke(Theme.border, lineWidth: 1))
+            .shadow(color: .black.opacity(0.4), radius: 20)
+            .padding(24)
+        }
+    }
+}
+
+// MARK: - iOS share sheet
+
+/// What the system share sheet is being handed. Wrapped in an `Identifiable` box
+/// so it can drive `.sheet(item:)` — the URL is resolved asynchronously (a share
+/// link has to be minted first), so there's nothing to present until it arrives.
+struct SharePayload: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+/// The system share sheet, so a match leaves the app the same way anything else
+/// does — Messages, AirDrop, copy, whatever the person actually uses.
+struct ShareSheet: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: [url], applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Status badge + formatting helpers
@@ -423,19 +270,23 @@ func statusText(_ status: Recording.Status) -> String {
     }
 }
 
+/// h:mm:ss for anything over an hour, m:ss below — a two-hour match read as
+/// "127:14" before, which is a number nobody parses as a duration.
 func durationString(_ seconds: Double) -> String {
-    let s = Int(seconds)
-    return String(format: "%d:%02d", s / 60, s % 60)
+    guard seconds.isFinite, seconds > 0 else { return "0:00" }
+    let total = Int(seconds)
+    let hours = total / 3600
+    let minutes = (total % 3600) / 60
+    let secs = total % 60
+    return hours > 0
+        ? String(format: "%d:%02d:%02d", hours, minutes, secs)
+        : String(format: "%d:%02d", minutes, secs)
 }
 
 func sizeString(_ bytes: Int) -> String {
     let mb = Double(bytes) / 1_000_000
     if mb >= 1000 { return String(format: "%.1f GB", mb / 1000) }
     return mb >= 1 ? String(format: "%.0f MB", mb) : "<1 MB"
-}
-
-func subtitle(_ r: Recording) -> String {
-    "\(r.createdAt.formatted(date: .abbreviated, time: .shortened)) · \(durationString(r.durationS)) · \(sizeString(r.sizeBytes))"
 }
 
 /// Parse an ISO-8601 timestamp from the web API (with or without fractional

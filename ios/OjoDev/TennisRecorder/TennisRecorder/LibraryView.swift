@@ -124,7 +124,8 @@ struct LibraryCard: View {
 
     @State private var confirmingDelete = false
     @State private var setupOpen = false
-    @State private var shareCopied = false
+    @State private var sharePayload: SharePayload?
+    @State private var preparingShare = false
 
     private var status: MatchStatus? { library.status(for: recording) }
     private var actions: [MatchAction] { MatchAction.stack(for: recording) }
@@ -191,16 +192,45 @@ struct LibraryCard: View {
         } message: {
             Text("This removes it from this phone and from the cloud.")
         }
+        .sheet(item: $sharePayload) { payload in
+            ShareSheet(url: payload.url)
+        }
         .sheet(isPresented: $setupOpen) {
             MatchSetupSheet(
                 purpose: .beforeUpload,
-                existing: recording.participants ?? []
-            ) { setup in
-                library.upload(recording, setup: setup)
-            } onPrimary: { setup in
-                library.upload(recording, setup: setup, analyse: true)
-            }
+                existing: recording.participants ?? [],
+                subject: MatchSubject(
+                    title: recording.title,
+                    createdAt: recording.createdAt,
+                    durationS: recording.durationS,
+                    sizeBytes: recording.sizeBytes
+                ),
+                shareURL: { await shareTarget() },
+                onDelete: { library.delete(recording) },
+                onSecondary: { setup in
+                    rename(setup)
+                    library.upload(recording, setup: setup)
+                },
+                onPrimary: { setup in
+                    rename(setup)
+                    library.upload(recording, setup: setup, analyse: true)
+                }
+            )
         }
+    }
+
+    private func rename(_ setup: MatchSetup) {
+        guard let title = setup.title, title != recording.title else { return }
+        library.rename(recording, to: title)
+    }
+
+    /// A link once it's in the cloud, the file itself before then.
+    private func shareTarget() async -> URL? {
+        if let videoId = recording.remoteVideoId,
+           let link = try? await UploadAPI().createShareLink(videoId: videoId) {
+            return URL(string: Config.apiBaseURL.absoluteString + link.path)
+        }
+        return library.hasLocalFile(recording) ? library.fileURL(for: recording) : nil
     }
 
     @ViewBuilder private func actionButton(_ action: MatchAction) -> some View {
@@ -211,11 +241,11 @@ struct LibraryCard: View {
             }
             .buttonStyle(.plain)
         case .share:
-            Button { share() } label: {
-                actionLabel(action, titleOverride: shareCopied ? "Link copied" : nil,
-                            imageOverride: shareCopied ? "checkmark" : nil)
+            Button { presentShare() } label: {
+                actionLabel(action)
             }
             .buttonStyle(.plain)
+            .disabled(preparingShare)
         case .uploading:
             actionLabel(action).opacity(0.6)
         case .upload, .retryUpload, .aiBreakdown:
@@ -247,16 +277,15 @@ struct LibraryCard: View {
             .foregroundStyle(filled ? Theme.text : Theme.muted)
     }
 
-    /// Mint a share link and put it on the clipboard — the same link the Watch
-    /// screen's share button produces.
-    private func share() {
-        guard let videoId = recording.remoteVideoId, !shareCopied else { return }
+    /// Hand the match to the system share sheet, the same as everywhere else.
+    private func presentShare() {
+        guard !preparingShare else { return }
+        preparingShare = true
         Task {
-            guard let link = try? await UploadAPI().createShareLink(videoId: videoId) else { return }
-            UIPasteboard.general.string = Config.apiBaseURL.absoluteString + link.path
-            shareCopied = true
-            try? await Task.sleep(for: .seconds(1.5))
-            shareCopied = false
+            defer { preparingShare = false }
+            if let url = await shareTarget() {
+                sharePayload = SharePayload(url: url)
+            }
         }
     }
 }

@@ -30,6 +30,7 @@ interface Row {
   deleted_at: string | null;
   analysis_status: Video["analysisStatus"] | null;
   analysis_task_id: string | null;
+  analysis_windows: Video["analysisWindows"];
   analysis_error: string | null;
   analyzed_at: string | null;
   analysis_players: AnalysisPlayers | null;
@@ -54,6 +55,7 @@ function toVideo(r: Row): Video {
     deletedAt: r.deleted_at,
     analysisStatus: r.analysis_status ?? "none",
     analysisTaskId: r.analysis_task_id,
+    analysisWindows: r.analysis_windows ?? null,
     analysisError: r.analysis_error,
     analyzedAt: r.analyzed_at,
     analysisPlayers: r.analysis_players ?? null,
@@ -78,6 +80,7 @@ function toRow(patch: Partial<Video>): Partial<Row> {
   if (patch.deletedAt !== undefined) row.deleted_at = patch.deletedAt;
   if (patch.analysisStatus !== undefined) row.analysis_status = patch.analysisStatus;
   if (patch.analysisTaskId !== undefined) row.analysis_task_id = patch.analysisTaskId;
+  if (patch.analysisWindows !== undefined) row.analysis_windows = patch.analysisWindows;
   if (patch.analysisError !== undefined) row.analysis_error = patch.analysisError;
   if (patch.analyzedAt !== undefined) row.analyzed_at = patch.analyzedAt;
   if (patch.analysisPlayers !== undefined) row.analysis_players = patch.analysisPlayers;

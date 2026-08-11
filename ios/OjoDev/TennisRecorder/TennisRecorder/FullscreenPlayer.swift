@@ -92,9 +92,16 @@ struct FullscreenPlayer: View {
     }
 
     /// Transport in the middle of the screen, where your thumbs already are when
-    /// the phone is held in two hands.
+    /// the phone is held in two hands. Landscape is where there's room for the
+    /// full set, so frame-stepping appears here and nowhere else.
     private var transport: some View {
-        HStack(spacing: 30) {
+        HStack(spacing: 26) {
+            if hasRallies {
+                TransportButton(icon: "backward.end.fill", size: 24) {
+                    touch { seekRally(.previous) }
+                }
+                .accessibilityLabel("Previous rally")
+            }
             TransportButton(icon: "gobackward.10", size: 26) { touch { model.skip(-10) } }
             TransportButton(icon: "backward.frame.fill", size: 24) { touch { model.stepFrames(-1) } }
             Button { touch { model.togglePlay() } } label: {
@@ -108,7 +115,22 @@ struct FullscreenPlayer: View {
             .buttonStyle(.plain)
             TransportButton(icon: "forward.frame.fill", size: 24) { touch { model.stepFrames(1) } }
             TransportButton(icon: "goforward.10", size: 26) { touch { model.skip(10) } }
+            if hasRallies {
+                TransportButton(icon: "forward.end.fill", size: 24) {
+                    touch { seekRally(.next) }
+                }
+                .accessibilityLabel("Next rally")
+            }
         }
+    }
+
+    private var hasRallies: Bool { !analysis.segments.isEmpty }
+
+    private func seekRally(_ direction: RallyDirection) {
+        let target = direction == .next
+            ? analysis.nextRallyStart(after: model.currentTime)
+            : analysis.previousRallyStart(before: model.currentTime)
+        if let target { model.play(from: target) }
     }
 
     /// Chapters, timeline and rallies share one width and one time scale, stacked

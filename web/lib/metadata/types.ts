@@ -1,3 +1,5 @@
+import type { AnalysisWindow } from "../twelvelabs/windows";
+
 export type VideoStatus = "uploading" | "processing" | "ready" | "failed";
 
 /** State of the (optional) AI analysis pass over a match. */
@@ -40,8 +42,17 @@ export interface Video {
   deletedAt: string | null;
   /** AI analysis (rally segmentation) state; 'none' until the owner runs it. */
   analysisStatus: AnalysisStatus;
-  /** TwelveLabs task id while an analysis is in flight (for polling). */
+  /**
+   * TwelveLabs task id while an analysis is in flight (for polling). Set only
+   * for a single-call run; a windowed run tracks its tasks in `analysisWindows`.
+   */
   analysisTaskId: string | null;
+  /**
+   * Per-window tasks for a long match analysed in slices, null for a
+   * single-call run. The breakdown finalizes once every window is ready.
+   * See lib/twelvelabs/windows.ts.
+   */
+  analysisWindows: AnalysisWindow[] | null;
   /** Last analysis error, if the run failed. */
   analysisError: string | null;
   /** When the last successful analysis completed. */

@@ -46,6 +46,7 @@ export async function POST(req: Request) {
     deletedAt: null,
     analysisStatus: "none",
     analysisTaskId: null,
+    analysisWindows: null,
     analysisError: null,
     analyzedAt: null,
     analysisPlayers: null,

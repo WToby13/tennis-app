@@ -9,6 +9,7 @@ import {
 import { RALLY_KIND, buildRallyRequest } from "./twelvelabs/rally";
 import { smoothTennis } from "./twelvelabs/smooth";
 import { normalizeSegments } from "./twelvelabs/types";
+import { type AnalysisWindow, mergeWindowSegments, planWindows } from "./twelvelabs/windows";
 
 /**
  * Moving one in-flight analysis forward by a step.
@@ -29,7 +30,8 @@ export type AnalysisStage = "compressing" | "analysing" | "done";
 
 export function stageOf(video: Video): AnalysisStage {
   if (video.analysisStatus !== "processing") return "done";
-  return video.hasAnalysisProxy || video.analysisTaskId ? "analysing" : "compressing";
+  const started = video.analysisTaskId || video.analysisWindows?.length;
+  return video.hasAnalysisProxy || started ? "analysing" : "compressing";
 }
 
 /** Turn a TwelveLabs error code (or raw message) into something worth showing a user. */
@@ -100,6 +102,121 @@ export async function finalizeReady(
   });
 }
 
+/** Fail a run, clean up its proxy, and return the updated row. */
+async function failRun(store: MetadataStore, video: Video, message: string): Promise<Video> {
+  const failed = await store.update(video.id, {
+    analysisStatus: "failed",
+    analysisError: message,
+  });
+  await discardProxy(store, failed);
+  return failed;
+}
+
+/**
+ * How many TwelveLabs calls a single match may have in flight at once.
+ *
+ * Windows are independent, so the temptation is to fire all of them — but a
+ * 2-hour match plans 27 windows, and 27 simultaneous creates (then 27 polls
+ * every 5 seconds, from both the owner's tab and the cron) is a good way to
+ * meet a rate limit. Five keeps a long match comfortably parallel while staying
+ * a polite client.
+ */
+const WINDOW_CONCURRENCY = 5;
+
+/** Run `fn` over `items` a few at a time, preserving order. */
+async function inBatches<T, R>(items: T[], fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += WINDOW_CONCURRENCY) {
+    out.push(...(await Promise.all(items.slice(i, i + WINDOW_CONCURRENCY).map(fn))));
+  }
+  return out;
+}
+
+/**
+ * Start every window of a match and record their task ids.
+ *
+ * All-or-nothing: if any window fails to start, the ones that did are abandoned
+ * (they're read-only work on TwelveLabs' side and cost nothing to leave) and the
+ * run is failed, rather than leaving a match that can never finalize because one
+ * of its windows doesn't exist.
+ */
+export async function startWindows(
+  store: MetadataStore,
+  video: Video,
+  url: string,
+  windows: AnalysisWindow[],
+): Promise<Video> {
+  const started = await inBatches(windows, async (w) => {
+    const task = await createAnalysisTask(
+      buildRallyRequest(url, { startTimeSec: w.startS, endTimeSec: w.endS }),
+    );
+    return { ...w, taskId: task.task_id };
+  });
+  // A single window is the ordinary case for a short match; keep it on the
+  // simple column so nothing downstream has to care.
+  if (started.length === 1) {
+    return store.update(video.id, {
+      analysisStatus: "processing",
+      analysisTaskId: started[0].taskId,
+      analysisWindows: null,
+      analysisError: null,
+    });
+  }
+  return store.update(video.id, {
+    analysisStatus: "processing",
+    analysisTaskId: null,
+    analysisWindows: started,
+    analysisError: null,
+  });
+}
+
+/**
+ * Poll every window of a windowed run. Finalizes only once all of them are
+ * ready, so a breakdown is never built from a partial match.
+ */
+async function advanceWindowed(
+  store: MetadataStore,
+  video: Video,
+  windows: AnalysisWindow[],
+): Promise<Video> {
+  // Poll a few at a time and stop at the first window that isn't ready: nothing
+  // can be finalized until all of them are, so checking the rest is wasted calls
+  // against a rate limit. Windows finish at roughly the same time, so the common
+  // case is either "the first batch isn't done" or a full sweep at the end.
+  const done: { window: AnalysisWindow; task: Awaited<ReturnType<typeof getAnalysisTask>> }[] = [];
+  for (let i = 0; i < windows.length; i += WINDOW_CONCURRENCY) {
+    const batch = await Promise.all(
+      windows.slice(i, i + WINDOW_CONCURRENCY).map(async (w) => ({
+        window: w,
+        task: await getAnalysisTask(w.taskId as string),
+      })),
+    );
+    const failed = batch.find((t) => t.task.status === "failed");
+    if (failed) {
+      const err = failed.task.error;
+      const message = (typeof err === "string" ? err : err?.message) ?? "Analysis failed";
+      return failRun(store, video, message);
+    }
+    const ready = batch.filter((t) => t.task.status === "ready");
+    done.push(...ready);
+    if (ready.length < batch.length) break; // not all done — try again next tick
+  }
+
+  if (done.length < windows.length) {
+    console.info(`[analyze] ${video.id}: ${done.length}/${windows.length} windows ready`);
+    return video;
+  }
+
+  const merged = mergeWindowSegments(
+    done.map(({ window, task }) => ({ window, segments: normalizeSegments(task, RALLY_KIND) })),
+  );
+  console.info(`[analyze] ${video.id}: merged ${windows.length} windows → ${merged.length} rallies`);
+  const ready = await finalizeReady(store, video.id, merged);
+  await store.update(video.id, { analysisWindows: null });
+  await discardProxy(store, ready);
+  return ready;
+}
+
 /**
  * Advance one match by whatever step it's due, and return the updated row.
  *
@@ -117,22 +234,26 @@ export async function advanceAnalysis(
 ): Promise<Video> {
   if (video.analysisStatus !== "processing") return video;
 
+  const windows = video.analysisWindows?.filter((w) => w.taskId) ?? [];
+  if (windows.length) {
+    try {
+      return await advanceWindowed(store, video, windows);
+    } catch (err) {
+      // A transient poll error must not wedge the row.
+      console.error("[analyze] windowed poll error", video.id, err);
+      return video;
+    }
+  }
+
   // Waiting on the transcoder.
   if (!video.analysisTaskId) {
     if (!video.hasAnalysisProxy || !config.twelvelabs.enabled) return video;
     try {
       const url = await storage().getAnalysisProxyUrl(video.id);
-      const task = await createAnalysisTask(buildRallyRequest(url));
-      return await store.update(video.id, { analysisTaskId: task.task_id });
+      return await startWindows(store, video, url, planWindows(video.durationS));
     } catch (err) {
       const code = err instanceof TwelveLabsApiError ? err.code : undefined;
-      const message = friendlyAnalyzeError(code, err instanceof Error ? err.message : "");
-      const failed = await store.update(video.id, {
-        analysisStatus: "failed",
-        analysisError: message,
-      });
-      await discardProxy(store, failed);
-      return failed;
+      return failRun(store, video, friendlyAnalyzeError(code, err instanceof Error ? err.message : ""));
     }
   }
 

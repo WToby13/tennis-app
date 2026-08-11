@@ -211,7 +211,14 @@ work that's:
 
 ```
 supabase/migrations/0011_analysis_proxy.sql
+supabase/migrations/0013_analysis_windows.sql
 ```
+
+**0013 must be applied before the deploy that ships windowed analysis**, not
+after: the new code writes `videos.analysis_windows` when it starts a long
+match, and without the column every such run fails on its first write. The
+migration is additive and safe to run against the current code, which ignores
+the column.
 
 ### 2. Infrastructure
 ```bash
