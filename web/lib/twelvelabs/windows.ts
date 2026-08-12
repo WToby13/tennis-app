@@ -45,6 +45,22 @@ export const WINDOW_MIN_SPLIT_S = 480;
 export interface AnalysisWindow {
   startS: number;
   endS: number;
+  /**
+   * Run to the end of the video instead of sending an explicit end_time.
+   *
+   * Set on the last window, because the duration we plan against and the
+   * duration TwelveLabs validates against are not the same number. We know the
+   * SOURCE's duration from the upload; the API measures the PROXY it's given,
+   * and re-encoding shifts it — a 1903.722s match produced a 1903.567s proxy,
+   * and asking for end_time=1904 was rejected outright:
+   *
+   *   "end_time must not exceed the video duration (1903.567 seconds)"
+   *
+   * No margin fixes that reliably, since the drift depends on the encode. The
+   * last window simply doesn't say where to stop, and `endS` stays for the
+   * merge and for display.
+   */
+  toEnd?: boolean;
   taskId?: string;
 }
 
@@ -58,20 +74,26 @@ export function planWindows(durationS: number | null, startAtS = 0): AnalysisWin
   if (!durationS || !Number.isFinite(durationS) || durationS <= start) {
     return [{ startS: start, endS: 0 }]; // unknown duration → one open-ended window
   }
-  const total = durationS - start;
-  if (total <= WINDOW_MIN_SPLIT_S) return [{ startS: start, endS: Math.ceil(durationS) }];
+  const end = Math.floor(durationS);
+  const total = end - start;
+  if (total <= WINDOW_MIN_SPLIT_S) return [{ startS: start, endS: end, toEnd: true }];
 
   const windows: AnalysisWindow[] = [];
   const step = WINDOW_S - WINDOW_OVERLAP_S;
-  for (let s = start; s < durationS; s += step) {
-    const endS = Math.min(Math.ceil(s + WINDOW_S), Math.ceil(durationS));
+  for (let s = start; s < end; s += step) {
+    const endS = Math.min(Math.floor(s + WINDOW_S), end);
     windows.push({ startS: Math.floor(s), endS });
-    if (endS >= durationS) break;
+    if (endS >= end) break;
   }
   // A final sliver shorter than the overlap carries no rally the previous window
   // doesn't already have.
-  const last = windows[windows.length - 1];
-  if (windows.length > 1 && last.endS - last.startS <= WINDOW_OVERLAP_S) windows.pop();
+  if (windows.length > 1) {
+    const last = windows[windows.length - 1];
+    if (last.endS - last.startS <= WINDOW_OVERLAP_S) windows.pop();
+  }
+  // Whichever window now ends the match runs to the end of the file rather than
+  // to a computed timestamp. See `toEnd`.
+  windows[windows.length - 1].toEnd = true;
   return windows;
 }
 
@@ -88,9 +110,17 @@ export function planWindows(durationS: number | null, startAtS = 0): AnalysisWin
  */
 function looksRelative(segments: Omit<VideoSegment, "id">[], w: AnalysisWindow): boolean {
   if (w.startS <= 0 || segments.length === 0) return false;
-  const maxEnd = Math.max(...segments.map((s) => s.endS ?? 0));
   const length = w.endS > w.startS ? w.endS - w.startS : WINDOW_S;
-  return maxEnd <= length * 1.05;
+  const maxEnd = Math.max(...segments.map((s) => s.endS ?? 0));
+  const minStart = Math.min(...segments.map((s) => s.startS ?? 0));
+  // Both must hold. "Fits inside the window's length" alone is not enough: an
+  // ABSOLUTE segment early in window [270,570] ends around 290, which also fits
+  // inside 300 and would be shifted a second time. Absolute output additionally
+  // can't start before the window does, and that's what separates the two.
+  // Where the tests still can't distinguish them — only possible for a segment
+  // lying entirely within [startS, length], so at most the first window after
+  // the origin — we fall through to absolute, which is the documented behaviour.
+  return maxEnd <= length * 1.05 && minStart < w.startS;
 }
 
 /** True when two segments are near-certainly the same rally seen from two windows. */

@@ -148,7 +148,11 @@ export async function startWindows(
 ): Promise<Video> {
   const started = await inBatches(windows, async (w) => {
     const task = await createAnalysisTask(
-      buildRallyRequest(url, { startTimeSec: w.startS, endTimeSec: w.endS }),
+      // `toEnd` windows send no end_time at all — see AnalysisWindow.toEnd.
+      buildRallyRequest(url, {
+        startTimeSec: w.startS,
+        endTimeSec: w.toEnd ? undefined : w.endS,
+      }),
     );
     return { ...w, taskId: task.task_id };
   });
