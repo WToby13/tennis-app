@@ -28,6 +28,17 @@ variable "abort_incomplete_multipart_days" {
   default     = 7
 }
 
+variable "analysis_proxy_retention_days" {
+  description = <<-EOT
+    How long to keep analysis proxies (the proxies/ prefix) before S3 expires
+    them. They exist so a retried analysis can skip a ~16-minute re-transcode;
+    2 days covers a normal debugging session. Minimum useful value is 1 — S3
+    expiration is day-granular.
+  EOT
+  type        = number
+  default     = 2
+}
+
 # --- Analysis-proxy transcoder ------------------------------------------------
 
 variable "supabase_url" {

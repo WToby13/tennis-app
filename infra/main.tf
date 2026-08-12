@@ -34,7 +34,7 @@ resource "aws_s3_bucket_cors_configuration" "videos" {
   }
 }
 
-# Clean up parts from uploads that never completed.
+# Clean up parts from uploads that never completed, and expire analysis proxies.
 resource "aws_s3_bucket_lifecycle_configuration" "videos" {
   bucket = aws_s3_bucket.videos.id
   rule {
@@ -43,6 +43,26 @@ resource "aws_s3_bucket_lifecycle_configuration" "videos" {
     filter {} # apply to all objects
     abort_incomplete_multipart_upload {
       days_after_initiation = var.abort_incomplete_multipart_days
+    }
+  }
+
+  # Analysis proxies are disposable re-encodes made to fit TwelveLabs' input
+  # limit. The app deliberately no longer deletes them when a run finishes:
+  # rebuilding one costs ~16 minutes of Fargate, so keeping it makes a retry
+  # near-instant. This rule is what stops them accumulating.
+  #
+  # S3 expiration is evaluated once a day and applies to objects OLDER than
+  # `days`, so removal happens at 48h at the earliest and possibly later. The
+  # app treats that as a floor, not a promise: it HEADs the object before using
+  # one rather than assuming a proxy younger than 48h is still present.
+  rule {
+    id     = "expire-analysis-proxies"
+    status = "Enabled"
+    filter {
+      prefix = "proxies/"
+    }
+    expiration {
+      days = var.analysis_proxy_retention_days
     }
   }
 }

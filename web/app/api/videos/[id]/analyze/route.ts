@@ -1,7 +1,7 @@
 import { needsAnalysisProxy } from "@/lib/analysisProxy";
 import {
   advanceAnalysis,
-  discardProxy,
+  proxyIsAvailable,
   finalizeReady,
   friendlyAnalyzeError,
   stageOf,
@@ -119,10 +119,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const players = body?.players ? sanitizePlayers(body.players) : null;
   const playersPatch = players ? { analysisPlayers: players } : {};
 
+  // Proxies survive a run now (48h, then a bucket lifecycle rule), so a retry
+  // can reuse one instead of paying for another ~16-minute transcode. Ask
+  // storage rather than trusting the flag: the object may already have expired.
+  const hasProxy = await proxyIsAvailable(store, video);
+
   // Pre-flight size guard: skip the call (and the raw 400) for oversized files.
   // A match with a proxy is exempt — the proxy is what gets sent, and it's sized
   // to fit by construction.
-  if (!video.hasAnalysisProxy && video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
+  if (!hasProxy && video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
     const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}, max ${gb(MAX_ANALYSIS_BYTES)}). Automatic compression is coming soon.`;
     await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null, analysisWindows: null });
     return json({ analysisStatus: "failed", error: msg }, { status: 400 });
@@ -131,7 +136,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Too big to send as-is → compress it first. The match sits in 'processing'
   // with no task id, which is how a poll tells "transcoding" from "analysing"
   // (see GET below) without needing another column.
-  if (!video.hasAnalysisProxy && needsAnalysisProxy(video.sizeBytes)) {
+  if (!hasProxy && needsAnalysisProxy(video.sizeBytes)) {
     if (!transcodeEnabled()) {
       const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}). Automatic compression isn't set up yet.`;
       await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null, analysisWindows: null });
@@ -171,7 +176,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // Analyse the proxy when one exists — it's the same match at a size the API
     // will accept. Empirically the breakdown is indistinguishable from the
     // original at full resolution; see lib/analysisProxy.ts.
-    const url = video.hasAnalysisProxy
+    const url = hasProxy
       ? await storage().getAnalysisProxyUrl(video.id)
       : await storage().getPlaybackUrl(video.id, video.key);
     // Long matches go out as several short windows, run concurrently; short ones

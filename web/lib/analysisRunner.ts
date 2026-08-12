@@ -49,18 +49,37 @@ export function friendlyAnalyzeError(code: string | undefined, fallback: string)
 }
 
 /**
- * Delete a match's analysis proxy once the run is over, whatever the outcome.
- * The proxy exists only to satisfy the size limit; keeping it would mean paying
- * to store every large match twice. Best-effort and idempotent.
+ * Proxies are NOT deleted when a run finishes.
+ *
+ * They used to be, on the grounds that keeping one means storing a large match
+ * twice. But the proxy is the expensive artefact: rebuilding it costs ~16
+ * minutes of Fargate for a 32-minute match, and deleting it immediately meant
+ * every retry — including retries of runs that failed for reasons that had
+ * nothing to do with the video — paid that again. Two failures in a row while
+ * iterating on analysis quality made the trade obvious.
+ *
+ * A bucket lifecycle rule (infra/main.tf) expires `proxies/` after 48 hours
+ * instead, so retries within that window are near-instant and nothing is
+ * retained indefinitely. A 406 MB proxy costs roughly a cent to hold for two
+ * days.
+ *
+ * The consequence is that `videos.has_analysis_proxy` can outlive the object,
+ * so anything about to *use* a proxy must confirm it's still there —
+ * `proxyIsAvailable` below, rather than the flag alone.
  */
-export async function discardProxy(store: MetadataStore, video: Video): Promise<void> {
-  if (!video.hasAnalysisProxy) return;
-  try {
-    await storage().deleteAnalysisProxy(video.id);
-    await store.update(video.id, { hasAnalysisProxy: false });
-  } catch (err) {
-    console.warn("[analyze] proxy cleanup failed", video.id, err);
-  }
+
+/**
+ * Whether this match's proxy is still usable, correcting the flag if not.
+ *
+ * Returns false both when no proxy was ever made and when the lifecycle rule has
+ * since removed it; either way the caller needs to transcode before analysing.
+ */
+export async function proxyIsAvailable(store: MetadataStore, video: Video): Promise<boolean> {
+  if (!video.hasAnalysisProxy) return false;
+  if (await storage().analysisProxyExists(video.id)) return true;
+  // Expired out from under us — clear the flag so the next step re-transcodes.
+  await store.update(video.id, { hasAnalysisProxy: false });
+  return false;
 }
 
 /**
@@ -102,14 +121,12 @@ export async function finalizeReady(
   });
 }
 
-/** Fail a run, clean up its proxy, and return the updated row. */
+/** Fail a run and return the updated row. The proxy is left for a retry. */
 async function failRun(store: MetadataStore, video: Video, message: string): Promise<Video> {
-  const failed = await store.update(video.id, {
+  return store.update(video.id, {
     analysisStatus: "failed",
     analysisError: message,
   });
-  await discardProxy(store, failed);
-  return failed;
 }
 
 /**
@@ -217,7 +234,6 @@ async function advanceWindowed(
   console.info(`[analyze] ${video.id}: merged ${windows.length} windows → ${merged.length} rallies`);
   const ready = await finalizeReady(store, video.id, merged);
   await store.update(video.id, { analysisWindows: null });
-  await discardProxy(store, ready);
   return ready;
 }
 
@@ -278,19 +294,15 @@ export async function advanceAnalysis(
           JSON.stringify(task.result)?.slice(0, 2000),
         );
       }
-      const done = await finalizeReady(store, video.id, raw);
-      await discardProxy(store, done);
-      return done;
+      return finalizeReady(store, video.id, raw);
     }
     if (task.status === "failed") {
       const message =
         (typeof task.error === "string" ? task.error : task.error?.message) ?? "Analysis failed";
-      const failed = await store.update(video.id, {
+      return store.update(video.id, {
         analysisStatus: "failed",
         analysisError: message,
       });
-      await discardProxy(store, failed);
-      return failed;
     }
     // Still queued/pending — leave it; the next tick tries again.
     return video;

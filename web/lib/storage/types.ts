@@ -57,6 +57,17 @@ export interface StorageAdapter {
 
   /** Delete the proxy. Best-effort — it's disposable by definition. */
   deleteAnalysisProxy(videoId: string): Promise<void>;
+
+  /**
+   * Whether the proxy object is still there.
+   *
+   * Proxies are retained for 48 hours so a retry doesn't pay for another
+   * transcode, then removed by a bucket lifecycle rule rather than by this app.
+   * That means `videos.has_analysis_proxy` can outlive the object it describes,
+   * so anything about to *use* a proxy asks storage rather than trusting the
+   * flag.
+   */
+  analysisProxyExists(videoId: string): Promise<boolean>;
 }
 
 /** The storage object key for a video's poster thumbnail. Deterministic — no DB column needed. */

@@ -49,7 +49,16 @@ master > ~2 GB   →  Fargate builds a 1080p proxy first, then the proxy is anal
 The proxy path sets `analysis_status=processing` with **no** `analysis_task_id` —
 that combination is what distinguishes "compressing" from "analysing". When the
 container sets `has_analysis_proxy`, the next poll hands the proxy's signed URL to
-TwelveLabs. On any terminal state the proxy is deleted.
+TwelveLabs.
+
+**Proxies are kept for 48 hours after a run, not deleted.** Rebuilding one costs
+~16 minutes of Fargate, so a retry within that window skips straight to analysis;
+the `expire-analysis-proxies` lifecycle rule on the `proxies/` prefix is what
+removes them (`analysis_proxy_retention_days` in Terraform). S3 expiration is
+day-granular and evaluated once a day, so 48h is the earliest removal, not a
+guarantee — the app HEADs the object before using a proxy rather than trusting
+`has_analysis_proxy`, and re-transcodes if it has gone. Deleting a match still
+removes its proxy immediately.
 
 Results run through `smoothTennis`, which fits tennis's rigid structure (server
 alternates each game, games ≥4 points, ends change every 2 games) to the model's
@@ -275,7 +284,8 @@ Developer account.
 2. Record (or upload) something over ~2 GB → confirm the card shows *compressing*,
    then *analysing*, then results.
 3. `aws logs tail /ecs/tennis-transcoder --follow` during that run.
-4. Confirm `proxies/<id>.mp4` is **gone** from S3 afterwards.
+4. Confirm `proxies/<id>.mp4` is **still there** afterwards (retained 48h), and
+   that an immediate retry goes straight to *analysing* without re-compressing.
 5. Delete a match; confirm the master and thumbnail leave the bucket.
 
 ### Before real users

@@ -3,6 +3,7 @@ import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
+  HeadObjectCommand,
   ListPartsCommand,
   PutObjectCommand,
   S3Client,
@@ -113,9 +114,9 @@ export class S3StorageAdapter implements StorageAdapter {
   async deleteVideoAssets(videoId: string, key: string): Promise<void> {
     const del = (k: string) =>
       this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: k })).catch(() => {});
-    // The analysis proxy is normally cleaned up when the run finishes, but a
-    // match deleted *during* analysis would otherwise leave it orphaned — and
-    // nothing else ever looks at that key again.
+    // The proxy would otherwise outlive the match by up to 48 hours (it's the
+    // lifecycle rule that normally removes it, not this app). Deleting a match
+    // must take its bytes with it, so this removes it now.
     await Promise.all([del(key), del(thumbnailKey(videoId)), del(analysisProxyKey(videoId))]);
   }
 
@@ -182,5 +183,17 @@ export class S3StorageAdapter implements StorageAdapter {
     await this.client
       .send(new DeleteObjectCommand({ Bucket: this.bucket, Key: analysisProxyKey(videoId) }))
       .catch(() => {});
+  }
+
+  async analysisProxyExists(videoId: string): Promise<boolean> {
+    try {
+      await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: analysisProxyKey(videoId) }),
+      );
+      return true;
+    } catch {
+      // 404 (lifecycle-expired) and 403 alike mean "don't try to analyse it".
+      return false;
+    }
   }
 }

@@ -143,4 +143,9 @@ export class LocalStorageAdapter implements StorageAdapter {
   async deleteAnalysisProxy(): Promise<void> {
     // No proxy is ever written in local mode.
   }
+
+  async analysisProxyExists(): Promise<boolean> {
+    // Local mode never makes one, so callers always take the direct path.
+    return false;
+  }
 }
