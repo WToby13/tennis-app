@@ -777,9 +777,16 @@ video {
   align-items: center;
   justify-content: center;
 }
+/* The breakdown and the controls sit under the video inside the theater, so the
+   stage can't have the viewport to itself — an 85vh video pushed the lanes off
+   the bottom of a laptop screen. Measured at 720p: 83px of title above the
+   theater, ~200px of breakdown and 54px of controls below the stage. The
+   subtraction reserves that (measured: 83 + 249 + 54 = 386, rounded up to 400
+   for the gaps between them), and the floor keeps the video usable on a short
+   window (the page scrolls in that case, as it must). */
 .watch-stage video {
   width: 100%;
-  max-height: 85vh;
+  max-height: max(180px, calc(100vh - 400px));
   object-fit: contain;
   background: #000;
   border-radius: 0;
@@ -1017,11 +1024,44 @@ video {
   padding: 0 6px;
   pointer-events: none;
 }
-.tl-bar-rally {
-  background: var(--accent);
+.tl-lane-rallies {
+  height: 22px; /* shorter than the service-games lane: many more, much smaller */
 }
-.tl-bar-rally:hover {
+.tl-bar-rally {
+  top: 2px;
+  bottom: 2px;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  /* A 1px ring in the lane colour, so two rallies a second apart still read as
+     two bars rather than one blob. */
+  box-shadow: 0 0 0 1px var(--surface-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Deliberately NOT overflow:hidden — the hover tooltip is an absolutely
+     positioned child that sits above the bar, and clipping the bar hid it
+     entirely. The shot label is width-gated in the component instead. */
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+/* Hovering the lane fades everything but the rally under the pointer, which
+   makes a dense stretch readable without changing any geometry. */
+.tl-lane-rallies:hover .tl-bar-rally {
+  opacity: 0.35;
+}
+.tl-lane-rallies .tl-bar-rally:hover {
+  opacity: 1;
   background: var(--accent-dim);
+  box-shadow: 0 0 0 1px var(--text);
+  z-index: 2;
+}
+/* Shot count, rendered only into bars measured wide enough to hold it. */
+.tl-bar-shots {
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--bg);
+  pointer-events: none;
 }
 /* Hover tooltip (CSS-only): floats above the bar, centered, clamped width. */
 .tl-tip {

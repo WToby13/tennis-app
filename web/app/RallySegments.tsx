@@ -311,6 +311,42 @@ export function RallySegments({
     return out;
   }, [total]);
 
+  /**
+   * Lane width in pixels, so a bar can decide whether it has room for its shot
+   * count. Bars are positioned in % of the match duration, so the same rally is
+   * 40px wide on a desktop and 8px on a phone — the only honest way to know is
+   * to measure. Falls back to hiding the labels until the first measurement.
+   */
+  const laneRef = useRef<HTMLDivElement | null>(null);
+  const [laneWidth, setLaneWidth] = useState(0);
+  useEffect(() => {
+    const el = laneRef.current;
+    if (!el) return;
+    const measure = () => setLaneWidth(el.getBoundingClientRect().width);
+    measure();
+    // ResizeObserver catches the cases a window listener misses (the sidebar, or
+    // the video finishing layout and reflowing the lane); the listener is the
+    // fallback for anywhere the observer doesn't deliver.
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(([entry]) => setLaneWidth(entry.contentRect.width))
+        : null;
+    ro?.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [segments.length]);
+
+  /**
+   * Room needed for a shot count, per digit. Below this the number spills past
+   * the bar's edges (the bar can't clip it — see .tl-bar-rally in globals.css)
+   * and reads as noise rather than data.
+   */
+  const shotsLabelFits = (shots: number, barPx: number) =>
+    barPx >= (shots >= 10 ? 17 : 11);
+
   const pct = (x: number) => `${Math.min(100, Math.max(0, (x / total) * 100))}%`;
 
   /**
@@ -513,7 +549,7 @@ export function RallySegments({
           {/* Row 2 — raw rallies */}
           <div className="tl-row">
             <div className="tl-row-label">Rallies</div>
-            <div className="tl-lane" onClick={seekFromPointer}>
+            <div className="tl-lane tl-lane-rallies" ref={laneRef} onClick={seekFromPointer}>
               {segments.map((s) => {
                 const start = s.startS ?? 0;
                 const end = s.endS ?? start;
@@ -542,6 +578,9 @@ export function RallySegments({
                     }}
                     title={`${fmtTime(start)}–${fmtTime(end)}`}
                   >
+                    {shots != null && shotsLabelFits(shots, ((end - start) / total) * laneWidth) && (
+                      <span className="tl-bar-shots">{shots}</span>
+                    )}
                     <span className={`tl-tip ${tipClass(start)}`}>
                       <span className="tl-tip-strong">
                         {fmtTime(start)}–{fmtTime(end)}
