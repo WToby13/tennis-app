@@ -1424,3 +1424,94 @@ video {
     50% { opacity: 0.75; }
   }
 }
+
+/* ---- timeline scrubber + playhead ---------------------------------------- */
+/* The breakdown used to sit in .watch-below, which supplied the horizontal
+   padding. In the theater it has to bring its own or the lanes run under the
+   window edge. Matches .theater > .controls so the three stack flush. */
+.theater > .segments {
+  margin-top: 0;
+  padding: 14px 26px 0;
+}
+/* The breakdown now lives inside the theater, between the video and the
+   controls: service games above the scrubber, rallies below it, navigation
+   underneath. All three share one % coordinate system over the match duration,
+   so a single playhead can cross the whole stack. */
+.tl-stack {
+  position: relative;
+}
+.tl-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 18px; /* stop at the axis rather than crossing its labels */
+  width: 2px;
+  margin-left: -1px;
+  background: var(--danger);
+  pointer-events: none;
+  z-index: 3;
+}
+.tl-playhead::before {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+.tl-lane {
+  cursor: pointer; /* the empty gaps seek too, not just the bars */
+}
+
+.tl-scrub {
+  position: relative;
+  height: 22px;
+  margin: 2px 0 10px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none; /* we handle the drag ourselves */
+}
+.tl-scrub-track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.tl-scrub-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+}
+.tl-scrub-handle {
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--surface);
+  pointer-events: none;
+}
+.tl-scrub:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* In fullscreen the stack sits on black with the controls. */
+.theater.is-fullscreen .segments {
+  flex: 0 0 auto;
+  padding: 8px 20px 0;
+  background: rgba(0, 0, 0, 0.85);
+}
+.theater.is-fullscreen .segments-head,
+.theater.is-fullscreen .seg-hint,
+.theater.is-fullscreen .tl-axis {
+  display: none; /* keep the lanes; drop the chrome that costs vertical space */
+}

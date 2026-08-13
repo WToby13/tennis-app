@@ -78,6 +78,10 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [paused, setPaused] = useState(true);
+  /** Playback position, driving the timeline playhead. Updated from the video's
+   *  own timeupdate (~4/s) rather than a rAF loop — the playhead moves across a
+   *  30-minute match, so sub-frame precision buys nothing and costs renders. */
+  const [currentTime, setCurrentTime] = useState(0);
   // Social state.
   const [likeCount, setLikeCount] = useState(0);
   const [likedByMe, setLikedByMe] = useState(false);
@@ -422,6 +426,9 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
               preload="metadata"
               onPlay={() => setPaused(false)}
               onPause={() => setPaused(true)}
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onSeeked={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onLoadedMetadata={(e) => setCurrentTime(e.currentTarget.currentTime)}
               onDoubleClick={toggleFullscreen}
             />
           ) : (
@@ -437,6 +444,28 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             </div>
           )}
         </div>
+
+        {ready && (
+          <RallySegments
+            videoId={id}
+            canRun={canAnalyze}
+            durationS={video.durationS}
+            initialStatus={analysisStatus}
+            initialSegments={segments}
+            initialError={analysisError}
+            initialPlayers={analysisPlayers}
+            // You first: only the owner can run a breakdown, and they're usually
+            // one of the two players — but they'd never tagged themselves, so the
+            // panel offered every name except their own.
+            participantNames={[
+              ...(isOwner && author ? [author.displayName] : []),
+              ...participants.map((p) => p.displayName),
+            ]}
+            onSeek={seekTo}
+            onPlayersNamed={tagPlayers}
+            currentTime={currentTime}
+          />
+        )}
 
         {ready && (
           <div className="controls">
@@ -487,27 +516,6 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       </div>
 
       <div className="watch-below">
-        {ready && (
-          <RallySegments
-            videoId={id}
-            canRun={canAnalyze}
-            durationS={video.durationS}
-            initialStatus={analysisStatus}
-            initialSegments={segments}
-            initialError={analysisError}
-            initialPlayers={analysisPlayers}
-            // You first: only the owner can run a breakdown, and they're usually
-            // one of the two players — but they'd never tagged themselves, so the
-            // panel offered every name except their own.
-            participantNames={[
-              ...(isOwner && author ? [author.displayName] : []),
-              ...participants.map((p) => p.displayName),
-            ]}
-            onSeek={seekTo}
-            onPlayersNamed={tagPlayers}
-          />
-        )}
-
         <CommentSection videoId={id} />
       </div>
 

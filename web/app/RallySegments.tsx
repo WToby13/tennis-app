@@ -100,6 +100,7 @@ export function RallySegments({
   participantNames,
   onSeek,
   onPlayersNamed,
+  currentTime = 0,
 }: {
   videoId: string;
   canRun: boolean;
@@ -113,6 +114,8 @@ export function RallySegments({
   onSeek: (seconds: number) => void;
   /** Names the owner entered here, to tag on the match as players. */
   onPlayersNamed?: (names: string[]) => void;
+  /** Playback position, so the playhead tracks the video across every lane. */
+  currentTime?: number;
 }) {
   const [status, setStatus] = useState<Status>(initialStatus);
   const [segments, setSegments] = useState<Segment[]>(initialSegments);
@@ -261,6 +264,33 @@ export function RallySegments({
     setP2Name(p1Name);
   }, [p1Name, p2Name]);
 
+  /**
+   * Swap the two names on the timeline itself and persist it.
+   *
+   * player_1/player_2 are positional — whoever the model judged to be nearest
+   * the camera at the start — so it gets them the wrong way round often enough
+   * that this needed to be one click rather than a trip through the setup modal.
+   * Nothing about the analysis changes: the segments still say player_1, only
+   * the label attached to that slot moves.
+   */
+  const swapSaved = useCallback(async () => {
+    const next: Players = { player_1: players.player_2, player_2: players.player_1 };
+    setPlayers(next); // optimistic — a relabel should feel instant
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/videos/${videoId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ players: next }),
+      });
+      if (!res.ok) setPlayers(players); // put it back
+    } catch {
+      setPlayers(players);
+    } finally {
+      setBusy(false);
+    }
+  }, [videoId, players]);
+
   const games = useMemo(() => buildServiceGames(segments), [segments]);
 
   const serveCounts = useMemo(() => {
@@ -282,6 +312,32 @@ export function RallySegments({
   }, [total]);
 
   const pct = (x: number) => `${Math.min(100, Math.max(0, (x / total) * 100))}%`;
+
+  /**
+   * Seek to wherever in the match a click landed. Every lane and the scrubber
+   * share one coordinate system (full width, % of `total`), so the same handler
+   * works for all of them — clicking a bar seeks to that bar, clicking the gap
+   * between bars seeks to that moment.
+   */
+  const seekFromPointer = useCallback(
+    (e: React.PointerEvent<HTMLElement> | React.MouseEvent<HTMLElement>) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const ratio = (e.clientX - rect.left) / rect.width;
+      onSeek(Math.min(total, Math.max(0, ratio * total)));
+    },
+    [onSeek, total],
+  );
+
+  /** Drag the scrubber: keep seeking while the pointer is held. */
+  const scrubDrag = useCallback(
+    (e: React.PointerEvent<HTMLElement>) => {
+      if (e.buttons !== 1) return;
+      seekFromPointer(e);
+    },
+    [seekFromPointer],
+  );
+
   const spanPct = (a: number, b: number) => `${Math.max(0.4, ((b - a) / total) * 100)}%`;
   const tipClass = (x: number) => {
     const lp = (x / total) * 100;
@@ -372,22 +428,45 @@ export function RallySegments({
               </span>
             ))}
             {canRun && (
-              <button className="player-edit" onClick={openSetup}>
-                Edit players
-              </button>
+              <>
+                {/* The model decides which player is "near at the start"; when it
+                    gets that backwards every name on the timeline is wrong, and
+                    the fix is a relabel, not another analysis run. */}
+                <button
+                  className="player-edit"
+                  onClick={swapSaved}
+                  disabled={busy}
+                  title="Swap the two names — no re-analysis needed"
+                >
+                  Swap names
+                </button>
+                <button className="player-edit" onClick={openSetup}>
+                  Edit players
+                </button>
+              </>
             )}
           </div>
+
+          {/* One coordinate system for the whole stack, so a single playhead can
+              span the service games, the scrubber and the rallies. */}
+          <div className="tl-stack">
+            <div className="tl-playhead" style={{ left: pct(currentTime) }} aria-hidden="true" />
 
           {/* Row 1 — service games */}
           <div className="tl-row">
             <div className="tl-row-label">Service games</div>
-            <div className="tl-lane">
+            <div className="tl-lane" onClick={seekFromPointer}>
               {games.map((g, i) => (
                 <button
                   key={`g${i}`}
                   className={`tl-bar tl-bar-game ${g.server ?? ""}`}
                   style={{ left: pct(g.startS), width: spanPct(g.startS, g.endS) }}
-                  onClick={() => onSeek(g.startS)}
+                  // Stop the lane's own seek-to-pointer handler running too — a
+                  // bar means "the start of this game", not "wherever I clicked".
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSeek(g.startS);
+                  }}
                   title={`${displayPlayer(g.server)} serving`}
                 >
                   <span className="tl-bar-label">{displayPlayer(g.server)}</span>
@@ -402,10 +481,39 @@ export function RallySegments({
             </div>
           </div>
 
+          {/* The scrubber sits between the two lanes, so service games read as
+              "above the timeline" and rallies as "below" it. */}
+          <div
+            className="tl-scrub"
+            role="slider"
+            aria-label="Seek"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(total)}
+            aria-valuenow={Math.round(currentTime)}
+            aria-valuetext={fmtTime(currentTime)}
+            tabIndex={0}
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+              seekFromPointer(e);
+            }}
+            onPointerMove={scrubDrag}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowLeft") onSeek(Math.max(0, currentTime - 5));
+              else if (e.key === "ArrowRight") onSeek(Math.min(total, currentTime + 5));
+              else return;
+              e.preventDefault();
+            }}
+          >
+            <div className="tl-scrub-track">
+              <div className="tl-scrub-fill" style={{ width: pct(currentTime) }} />
+            </div>
+            <div className="tl-scrub-handle" style={{ left: pct(currentTime) }} />
+          </div>
+
           {/* Row 2 — raw rallies */}
           <div className="tl-row">
             <div className="tl-row-label">Rallies</div>
-            <div className="tl-lane">
+            <div className="tl-lane" onClick={seekFromPointer}>
               {segments.map((s) => {
                 const start = s.startS ?? 0;
                 const end = s.endS ?? start;
@@ -428,7 +536,10 @@ export function RallySegments({
                     key={s.id}
                     className="tl-bar tl-bar-rally"
                     style={{ left: pct(start), width: spanPct(start, end) }}
-                    onClick={() => onSeek(start)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSeek(start);
+                    }}
                     title={`${fmtTime(start)}–${fmtTime(end)}`}
                   >
                     <span className={`tl-tip ${tipClass(start)}`}>
@@ -452,6 +563,7 @@ export function RallySegments({
                 <span className="tl-tick-label">{fmtTime(t)}</span>
               </div>
             ))}
+          </div>
           </div>
         </div>
       )}
