@@ -777,16 +777,14 @@ video {
   align-items: center;
   justify-content: center;
 }
-/* The breakdown and the controls sit under the video inside the theater, so the
-   stage can't have the viewport to itself — an 85vh video pushed the lanes off
-   the bottom of a laptop screen. Measured at 720p: 83px of title above the
-   theater, ~200px of breakdown and 54px of controls below the stage. The
-   subtraction reserves that (measured: 83 + 249 + 54 = 386, rounded up to 400
-   for the gaps between them), and the floor keeps the video usable on a short
-   window (the page scrolls in that case, as it must). */
+/* Opening a match should be the video, big, with its navigation under it —
+   nothing else competing. The breakdown is below the fold on purpose: it's for
+   review, not for landing. (An earlier version reserved room to fit all three on
+   one screen, which cost the video half its height for a panel most first views
+   never look at.) */
 .watch-stage video {
   width: 100%;
-  max-height: max(180px, calc(100vh - 400px));
+  max-height: 85vh;
   object-fit: contain;
   background: #000;
   border-radius: 0;
@@ -1466,12 +1464,12 @@ video {
 }
 
 /* ---- timeline scrubber + playhead ---------------------------------------- */
-/* The breakdown used to sit in .watch-below, which supplied the horizontal
-   padding. In the theater it has to bring its own or the lanes run under the
-   window edge. Matches .theater > .controls so the three stack flush. */
+/* The breakdown is inside the theater (so fullscreen keeps it) but sits AFTER
+   the controls in the DOM, which is the reading order for the normal view. It
+   has to bring its own horizontal padding here, matching .theater > .controls. */
 .theater > .segments {
   margin-top: 0;
-  padding: 14px 26px 0;
+  padding: 18px 26px 0;
 }
 /* The breakdown now lives inside the theater, between the video and the
    controls: service games above the scrubber, rallies below it, navigation
@@ -1544,11 +1542,20 @@ video {
   border-radius: 4px;
 }
 
-/* In fullscreen the stack sits on black with the controls. */
+/* In fullscreen the stack sits on black with the controls. The theater is a
+   flex column there, so `order` restores video → lanes → controls without
+   touching the DOM order the normal view needs. */
+.theater.is-fullscreen .watch-stage {
+  order: 0;
+}
 .theater.is-fullscreen .segments {
+  order: 1;
   flex: 0 0 auto;
   padding: 8px 20px 0;
   background: rgba(0, 0, 0, 0.85);
+}
+.theater.is-fullscreen > .controls {
+  order: 2;
 }
 .theater.is-fullscreen .segments-head,
 .theater.is-fullscreen .seg-hint,

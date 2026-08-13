@@ -446,28 +446,6 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
         </div>
 
         {ready && (
-          <RallySegments
-            videoId={id}
-            canRun={canAnalyze}
-            durationS={video.durationS}
-            initialStatus={analysisStatus}
-            initialSegments={segments}
-            initialError={analysisError}
-            initialPlayers={analysisPlayers}
-            // You first: only the owner can run a breakdown, and they're usually
-            // one of the two players — but they'd never tagged themselves, so the
-            // panel offered every name except their own.
-            participantNames={[
-              ...(isOwner && author ? [author.displayName] : []),
-              ...participants.map((p) => p.displayName),
-            ]}
-            onSeek={seekTo}
-            onPlayersNamed={tagPlayers}
-            currentTime={currentTime}
-          />
-        )}
-
-        {ready && (
           <div className="controls">
               <div className="group" aria-label="Playback speed">
                 {SPEEDS.map((s) => (
@@ -512,6 +490,28 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 </button>
               </div>
             </div>
+        )}
+
+        {ready && (
+          <RallySegments
+            videoId={id}
+            canRun={canAnalyze}
+            durationS={video.durationS}
+            initialStatus={analysisStatus}
+            initialSegments={segments}
+            initialError={analysisError}
+            initialPlayers={analysisPlayers}
+            // You first: only the owner can run a breakdown, and they're usually
+            // one of the two players — but they'd never tagged themselves, so the
+            // panel offered every name except their own.
+            participantNames={[
+              ...(isOwner && author ? [author.displayName] : []),
+              ...participants.map((p) => p.displayName),
+            ]}
+            onSeek={seekTo}
+            onPlayersNamed={tagPlayers}
+            currentTime={currentTime}
+          />
         )}
       </div>
 
