@@ -33,7 +33,16 @@ export const runtime = "nodejs";
  * re-encoded rather than rejected, which sidesteps the ambiguity entirely.
  */
 const MAX_ANALYSIS_BYTES = 4_000_000_000; // 4.0 GB (decimal, matches TwelveLabs' units)
+
+/**
+ * Pegasus rejects video over 2 hours whatever it weighs, and unlike size this is
+ * a limit compression can't get around — so it's worth failing fast rather than
+ * after an hour of transcoding.
+ */
+const MAX_ANALYSIS_SECONDS = 2 * 60 * 60;
+
 const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`;
+const hhmm = (s: number) => `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
 
 /**
  * AI rally segmentation (TwelveLabs). Owner-only.
@@ -124,11 +133,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // storage rather than trusting the flag: the object may already have expired.
   const hasProxy = await proxyIsAvailable(store, video);
 
-  // Pre-flight size guard: skip the call (and the raw 400) for oversized files.
-  // A match with a proxy is exempt — the proxy is what gets sent, and it's sized
-  // to fit by construction.
-  if (!hasProxy && video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
-    const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}, max ${gb(MAX_ANALYSIS_BYTES)}). Automatic compression is coming soon.`;
+  // Duration is the one limit compression cannot get around: Pegasus rejects
+  // video over 2 hours whatever it weighs. Check it before doing an hour of
+  // transcoding for a match that can never be analysed.
+  if (video.durationS && video.durationS > MAX_ANALYSIS_SECONDS) {
+    const msg = `This match is too long for AI analysis (${hhmm(video.durationS)}, max ${hhmm(MAX_ANALYSIS_SECONDS)}).`;
     await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null, analysisWindows: null });
     return json({ analysisStatus: "failed", error: msg }, { status: 400 });
   }
@@ -136,6 +145,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Too big to send as-is → compress it first. The match sits in 'processing'
   // with no task id, which is how a poll tells "transcoding" from "analysing"
   // (see GET below) without needing another column.
+  //
+  // This has to come BEFORE any byte-size rejection. It used to come after, so a
+  // 5.6 GB match was turned away with "too large, automatic compression is
+  // coming soon" — by the very code path whose whole job is to compress it. The
+  // proxy threshold (~2 GB) sits well below MAX_ANALYSIS_BYTES, so anything big
+  // enough to worry about is compressible and never reaches that check.
   if (!hasProxy && needsAnalysisProxy(video.sizeBytes)) {
     if (!transcodeEnabled()) {
       const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}). Automatic compression isn't set up yet.`;
@@ -158,6 +173,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await store.update(id, { analysisStatus: "failed", analysisError: msg });
       return json({ analysisStatus: "failed", error: msg }, { status: 502 });
     }
+  }
+
+  // Backstop for the direct path only, now that compression has had its turn:
+  // anything reaching here is either under the proxy threshold or already has a
+  // proxy, so this should be unreachable. It stays so that a future change to
+  // the threshold surfaces as a clear message rather than a raw 400 from the API.
+  if (!hasProxy && video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
+    const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}, max ${gb(MAX_ANALYSIS_BYTES)}).`;
+    await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null, analysisWindows: null });
+    return json({ analysisStatus: "failed", error: msg }, { status: 400 });
   }
 
   // Dev stub: no key + local mode → mark processing with a stub task id.
