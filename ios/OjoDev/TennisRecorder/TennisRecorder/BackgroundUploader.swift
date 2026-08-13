@@ -169,7 +169,15 @@ final class BackgroundUploader: NSObject {
     /// (1 h TTL) could already have expired. Now a window's worth is prepared at a
     /// time and refilled as parts land, so disk stays bounded and each URL is
     /// minted shortly before it's used.
-    private static let window = 6
+    ///
+    /// Sized at 24 rather than 6 because refilling needs *our* code to run, while
+    /// the enqueued tasks themselves keep going while the app is suspended. A
+    /// 5.6 GB match is ~297 parts, so a window of 6 meant ~50 refills, each one
+    /// waiting on iOS to wake the app — and a real 48-minute match had to be
+    /// uploaded three times, succeeding only with the screen kept awake. At 24
+    /// that's ~12 refills. Disk stays bounded (24 × 19 MB ≈ 450 MB of slices for
+    /// that match) and 24 URLs are still minted far inside their 1 h TTL.
+    private static let window = 24
 
     /// Parts being sliced/presigned right now, as "<recordingId>|<partNumber>".
     /// A part is invisible to `getAllTasks` between being chosen and its upload

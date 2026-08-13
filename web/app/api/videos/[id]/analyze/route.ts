@@ -162,7 +162,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       await store.update(id, {
         analysisStatus: "processing",
         analysisTaskId: null,
-        analysisWindows: null,
+        // The window plan is stored now, before the transcode, because this
+        // request is the only place that knows `startTimeSec` — the poll that
+        // eventually starts the analysis runs minutes later with nothing but the
+        // row. Storing it as a plan (windows with no taskId yet) rather than a
+        // bare offset also pins the exact slices a retry will use.
+        analysisWindows: planWindows(video.durationS, startTimeSec),
         analysisError: null,
         ...playersPatch,
       });

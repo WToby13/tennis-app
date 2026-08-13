@@ -30,7 +30,10 @@ export type AnalysisStage = "compressing" | "analysing" | "done";
 
 export function stageOf(video: Video): AnalysisStage {
   if (video.analysisStatus !== "processing") return "done";
-  const started = video.analysisTaskId || video.analysisWindows?.length;
+  // `analysisWindows` alone isn't enough: a plan is stored before the transcode
+  // starts (to carry the warm-up trim), and those windows have no task id yet.
+  // Only a window that's actually been submitted means we're analysing.
+  const started = video.analysisTaskId || video.analysisWindows?.some((w) => w.taskId);
   return video.hasAnalysisProxy || started ? "analysing" : "compressing";
 }
 
@@ -270,7 +273,12 @@ export async function advanceAnalysis(
     if (!video.hasAnalysisProxy || !config.twelvelabs.enabled) return video;
     try {
       const url = await storage().getAnalysisProxyUrl(video.id);
-      return await startWindows(store, video, url, planWindows(video.durationS));
+      // A plan stored by POST (windows with no taskId) carries the warm-up trim
+      // the owner asked for. Re-planning here would silently analyse from 0:00.
+      const planned = video.analysisWindows?.length
+        ? video.analysisWindows
+        : planWindows(video.durationS);
+      return await startWindows(store, video, url, planned);
     } catch (err) {
       const code = err instanceof TwelveLabsApiError ? err.code : undefined;
       return failRun(store, video, friendlyAnalyzeError(code, err instanceof Error ? err.message : ""));
