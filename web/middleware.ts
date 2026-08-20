@@ -77,6 +77,9 @@ export async function middleware(request: NextRequest) {
     "/invite",
     "/api/invites",
     "/api/cron",
+    // Resend's inbound webhook. Arrives with no session, so it has to be
+    // public; the route authenticates it by signature instead.
+    "/api/inbound",
   ];
   const isPublic = publicPrefixes.some((p) => path === p || path.startsWith(`${p}/`));
 

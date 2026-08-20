@@ -77,6 +77,30 @@ export const config = {
     resendApiKey: process.env.RESEND_API_KEY ?? "",
     from: process.env.EMAIL_FROM ?? "Ojo Tennis <no-reply@ojotennis.com>",
     enabled: Boolean(process.env.RESEND_API_KEY),
+
+    /**
+     * Inbound mail, forwarded to a real inbox by `/api/inbound`.
+     *
+     * The published addresses (`support@`, `privacy@`) have to reach a human —
+     * they are in the privacy policy, the terms and the App Store listing.
+     * Resend receives them and raises a webhook; the route turns that into a
+     * forward. `from` must be on the verified sending domain, because the
+     * forward is a fresh send: the original sender's address goes in Reply-To,
+     * not in From, or the message fails SPF and lands in spam.
+     */
+    inbound: {
+      webhookSecret: process.env.RESEND_WEBHOOK_SECRET ?? "",
+      forwardTo: process.env.INBOUND_FORWARD_TO ?? "",
+      from: process.env.INBOUND_FORWARD_FROM ?? "Ojo Tennis <no-reply@ojotennis.com>",
+      /**
+       * Its own key, because forwarding has to *read* the received message and
+       * `RESEND_API_KEY` is deliberately sending-only — it fails this call with
+       * `restricted_api_key`. Rather than widen the key that every outbound
+       * email uses, inbound gets a full-access one of its own. Falls back to
+       * the main key so the wiring still works if you would rather use one.
+       */
+      apiKey: process.env.RESEND_INBOUND_API_KEY || process.env.RESEND_API_KEY || "",
+    },
   },
 
   /**
