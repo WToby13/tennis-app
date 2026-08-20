@@ -32,6 +32,49 @@ is misconfigured (an unverified sending domain rejects mail to anyone but your o
 a silent 403 under the old code). **An invite must never depend on the mail provider being
 healthy.**
 
+## Receiving mail (`support@`, `privacy@`)
+
+Both addresses are published in the privacy policy, the terms and the App Store
+listing, so they must not bounce — and until this is set up, they do: the domain
+has no `MX` record, so nothing accepts mail for it at all.
+
+Resend can *receive* but has no forwarding switch. Receiving raises an
+`email.received` webhook carrying only metadata; [`app/api/inbound/route.ts`](../web/app/api/inbound/route.ts)
+verifies the signature and calls the SDK's `receiving.forward()`. The original
+message goes on intact, with **Reply-To set to whoever wrote in** — so replying
+in Gmail answers them, not you.
+
+### Setup (once)
+
+1. **Resend → Domains → `ojotennis.com` → enable Inbound.** Copy the `MX` record
+   it gives you.
+2. **Simply.com DNS → add that `MX` on the root domain.** Nothing to conflict
+   with: there are no `MX` records today, and the sending setup is on the
+   `send.` subdomain, which this does not touch.
+3. **Resend → API Keys → create a key with _full access_**, and set it as
+   `RESEND_INBOUND_API_KEY`. This cannot be the sending key: forwarding reads
+   the received message, and a sending-only key fails with `restricted_api_key`.
+4. **Resend → Webhooks → add endpoint** `https://ojotennis.com/api/inbound`,
+   event **`email.received`**. Copy the signing secret (`whsec_…`).
+5. **Vercel → Environment Variables**, then redeploy:
+   - `RESEND_WEBHOOK_SECRET` — the `whsec_…` from step 4
+   - `RESEND_INBOUND_API_KEY` — the full-access key from step 3
+   - `INBOUND_FORWARD_TO` — the inbox mail should land in
+6. **Test:** email `support@ojotennis.com` from a phone. It should arrive within
+   a few seconds; check Reply goes back to the sending address, not to yourself.
+
+### Notes
+
+- The route returns **500 on failure so Resend retries.** Mail waiting for a
+  fix beats mail accepted and dropped.
+- `/api/inbound` is in the middleware's public list — the webhook arrives with
+  no session and authenticates by signature instead.
+- Verified locally with real HMACs: bad signature → 401, valid → forwards, valid
+  signature over a tampered body → 401, non-`email.received` → ignored.
+- Anything sent to an address that isn't routed still bounces. Resend Inbound
+  can catch-all the domain, which is what you want here — two addresses are
+  published and typos happen.
+
 ## Future emails (same pattern — just add a template)
 - "A match was shared with you" (share link opened / direct share).
 - Welcome email on signup.

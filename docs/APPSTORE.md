@@ -112,8 +112,13 @@ hours.
 ### 3.3 Point the support addresses somewhere real
 
 The legal pages and the app reference `support@ojotennis.com` and
-`privacy@ojotennis.com`. Set up forwarding for both at your domain registrar. A
-reviewer occasionally emails the support address, and a bounce is a rejection.
+`privacy@ojotennis.com`. **Right now both bounce** — the domain has no `MX`
+record, so nothing accepts mail for it. A reviewer occasionally emails the
+support address, and a bounce is a rejection.
+
+Forwarding is built and committed (`/api/inbound`), but it needs an `MX` record,
+a full-access Resend key and three Vercel env vars before it does anything.
+Six steps, about fifteen minutes: **[`docs/EMAIL.md`](EMAIL.md) → Receiving mail**.
 
 ### 3.4 Get the legal documents looked at
 
