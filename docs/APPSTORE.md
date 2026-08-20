@@ -71,6 +71,7 @@ Worth knowing, because two of these were live bugs:
 | `0014_moderation.sql` would not apply: it rebased `get_feed` on **0007**, dropping the `in_library` column **0008** added. Forced through with a DROP it would have applied cleanly and silently broken "add to profile" on every feed card. | 0014 now matches 0008's return type; `moderation_test.sql` asserts the column survives. |
 | Account deletion left the deleted person's **name and email on other people's matches** — `video_participants.user_id` is ON DELETE SET NULL, so the row survives the cascade. Contradicted the privacy policy. | `DELETE /api/users/me` now anonymises those rows before deleting the user. The participant slot stays, so the match still records that two people played. |
 | `/invite/<token>` rendered inside the signed-in app sidebar for a logged-out recipient — the highest-intent page in the funnel. | `/invite` added to `Shell.tsx`'s public prefixes. |
+| **Settings was unreachable in the app**, so Delete account and Blocked accounts could not be opened at all — an automatic 5.1.1(v) rejection. The gear had been put on `ProfileView`, which is only ever pushed for *other* players; the You tab renders `LibraryView`. Found by running the app, not by reading it. | Gear moved to `LibraryView`'s toolbar and the misleading self-tab branch deleted from `ProfileView`. Verified on the simulator: You → gear → Delete account, and the blocked list loads against production. |
 
 The two suites live in `supabase/tests/` and run offline against a scratch
 Postgres: `supabase/tests/run.sh`.

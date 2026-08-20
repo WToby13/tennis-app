@@ -15,6 +15,7 @@ struct LibraryView: View {
     /// Shared so coming back to this tab doesn't blank the header and re-fetch.
     @ObservedObject private var cache = AppCache.shared
     @State private var editing = false
+    @State private var settingsOpen = false
 
     private var profile: ProfileSummary? { cache.profile }
     private let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
@@ -37,6 +38,20 @@ struct LibraryView: View {
         .background(Theme.bg)
         .navigationTitle("You")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The only way into Settings, and therefore the only way to reach
+            // "Delete account" and the blocked-accounts list. This tab renders
+            // LibraryView, not ProfileView — ProfileView is for *other* people —
+            // so a gear on ProfileView alone left both of those unreachable, which
+            // is an automatic rejection under Guideline 5.1.1(v).
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { settingsOpen = true } label: { Image(systemName: "gearshape") }
+                    .accessibilityLabel("Settings")
+            }
+        }
+        .sheet(isPresented: $settingsOpen) {
+            SettingsView(auth: auth)
+        }
         .refreshable {
             await library.refreshFromCloud(force: true)
             await cache.refreshProfile(force: true)

@@ -22,7 +22,6 @@ struct ProfileView: View {
     @State private var isSelf = false
     @State private var loading = true
     @State private var editing = false
-    @State private var settingsOpen = false
     @State private var blocked = false
 
     private let api = UploadAPI()
@@ -51,15 +50,10 @@ struct ProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .toolbar {
-            // Own tab only: settings is where account deletion, the blocked list
-            // and the legal documents live.
-            if isOwnTab, auth != nil {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { settingsOpen = true } label: { Image(systemName: "gearshape") }
-                        .accessibilityLabel("Settings")
-                }
-            }
             // Someone else's profile: report them, or block them outright.
+            // Settings (account deletion, blocked accounts, the legal documents)
+            // is NOT here: this screen is only ever pushed for another player.
+            // The You tab is LibraryView, and that is where the gear lives.
             if !isOwnTab, let p = profile {
                 ToolbarItem(placement: .topBarTrailing) {
                     ProfileBlockMenu(
@@ -76,9 +70,6 @@ struct ProfileView: View {
                 editing = false
                 Task { await load() }
             })
-        }
-        .sheet(isPresented: $settingsOpen) {
-            if let auth { SettingsView(auth: auth) }
         }
     }
 
