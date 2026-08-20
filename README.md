@@ -8,7 +8,7 @@ Hobby MVP for me + friends. See the full design in [`docs/PLAN.md`](docs/PLAN.md
 ```
 tennis-app/
 ├── web/    Next.js review app + multipart API (runs locally today; S3/Supabase are config)
-└── ios/    SwiftUI recorder (AVFoundation capture + background URLSession multipart) — reference source
+└── ios/    SwiftUI recorder (AVFoundation capture + background URLSession multipart) — `ios/Ojo/Ojo.xcodeproj`
 ```
 
 ## Quick start (web)
@@ -37,6 +37,7 @@ and credentials. Metadata moves from the local JSON store to Supabase (`web/lib/
 - [x] Web: S3 + signed CloudFront wiring + Terraform infra (live)
 - [x] Web: Supabase magic-link auth + Postgres metadata — set `NEXT_PUBLIC_SUPABASE_*` to enable (see [`supabase/README.md`](supabase/README.md))
 - [x] iOS: full SwiftUI source (record + Supabase auth + multipart upload) — build in Xcode per [`ios/README.md`](ios/README.md)
+- [x] iOS: App Store prep — renamed to Ojo, moderation + account deletion, legal pages ([`docs/APPSTORE.md`](docs/APPSTORE.md))
 - [ ] iOS: TestFlight (needs paid Apple Developer account)
 - [ ] Infra: faststart Lambda (iPhone moov-atom remux → smooth scrubbing)
-- [ ] iOS: background `URLSession` + resume for long uploads
+- [x] iOS: background `URLSession`, per-part retry, and resume-from-S3 for long uploads

@@ -33,11 +33,17 @@ export async function startProxyTranscode(video: {
   }
 
   // Duration is what sizes the encode. If it's somehow missing, derive a rough
-  // one from bytes at the recorder's ~15 Mbps so we still produce something sane
-  // rather than falling back to the minimum bitrate for a two-hour match.
+  // one from bytes at the recorder's capture rate so we still produce something
+  // sane rather than falling back to the minimum bitrate for a two-hour match.
+  //
+  // Tracks `CameraRecorder.videoBitRate` (8 Mbps) plus audio/container overhead.
+  // It was 15 Mbps, matching AVFoundation's old default before capture was
+  // pinned. Both clients always send `durationS`, so this only fires for a row
+  // that lost it — and a match recorded before the change guesses ~1.8× long.
+  const RECORDER_BITS_PER_SECOND = 8_800_000;
   const durationS = video.durationS && video.durationS > 0
     ? video.durationS
-    : (video.sizeBytes * 8) / 15_000_000;
+    : (video.sizeBytes * 8) / RECORDER_BITS_PER_SECOND;
 
   const client = new ECSClient({ region: config.aws.region });
   const res = await client.send(

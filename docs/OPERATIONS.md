@@ -8,10 +8,26 @@ it says so; where it's an estimate, it says that too.
 ## 1. Life of a recording
 
 ### Record (iPhone)
-`CameraRecorder` captures H.264 at 1080p, locked landscape, 30 fps. The file
-lands in the app's Documents directory and is indexed by `RecordingLibrary`, so it
-survives relaunches. **Measured: a real 33-minute match is 3.6 GB (~15.3 Mbps).**
-Extrapolated, 2 hours is ~13.8 GB.
+`CameraRecorder` captures H.264 at 1080p, locked landscape, 30 fps, at a **pinned
+8 Mbps** — about **4 GB/hour**. The file lands in the app's Documents directory and
+is indexed by `RecordingLibrary`, so it survives relaunches.
+
+Capture used to run at AVFoundation's default for `.hd1920x1080`, which measured
+**15.4 Mbps**: a 33-minute match was 3.6 GB and a 61.8-minute one 7.14 GB. That
+filled a 64 GB phone and made every match an hour of phone-radio upload. Pinning
+the bitrate roughly halves both. Nothing that matters loses out — `analysisProxy.ts`
+establishes empirically that the AI breakdown is indistinguishable at 1080p
+~1.7 Mbps, so analysis keeps ~4.7× headroom, and resolution (the axis that decides
+whether the ball is visible) is unchanged.
+
+Two knock-ons, both good: a match now has to run past **~33 minutes** rather than
+~17 to exceed `PROXY_THRESHOLD_BYTES`, so shorter matches skip the Fargate proxy
+and go straight to analysis; and `partSizeFor` yields proportionally smaller parts,
+still far above S3's 5 MiB floor.
+
+Recording also refuses to start below ~10 minutes of recordable space, and
+`minFreeDiskSpaceLimit` stops a running capture before the volume fills — cleanly,
+so the footage up to that point stays playable. Both surface in the camera UI.
 
 The recording exists only on the phone at this point. Nothing is uploaded until
 you ask.
@@ -23,7 +39,7 @@ Tapping **Upload & AI Analyse** (or **Retry**) starts `BackgroundUploader`:
    and an S3 multipart upload. The server picks the part size from the file size
    (`partSizeFor`), targeting ~300 parts, so a 6 GB match uses 20 MiB parts rather
    than 750 × 8 MiB.
-2. Parts are sliced, presigned and uploaded **six at a time**, refilled from the
+2. Parts are sliced, presigned and uploaded **24 at a time**, refilled from the
    `URLSession` delegate as each lands. Bytes go phone → S3 directly; they never
    pass through the web app.
 3. `POST /api/uploads/:id/complete` assembles the object and sets `status=ready`.
@@ -32,6 +48,48 @@ Tapping **Upload & AI Analyse** (or **Retry**) starts `BackgroundUploader`:
 
 Uploads run on a background `URLSession`, so they continue while the app is
 suspended and resume across relaunches.
+
+### Why an upload doesn't fail any more
+A 45-minute match is ~300 parts and half an hour of a phone radio. A dropped
+connection, a Wi-Fi/cellular hand-off, an S3 `SlowDown`, or a presigned URL that
+outlived its hour is a certainty over that window, not an edge case — and each of
+those used to fail the *whole* match, which is why a long recording routinely took
+three or four attempts to get through. Three things stop that now:
+
+- **Retry is per part, not per match.** A failed PUT re-presigns and re-enqueues
+  that one part with exponential backoff + jitter (`maxPartAttempts = 8`),
+  scheduled with `earliestBeginDate` so the backoff still elapses while the app is
+  suspended. A 403 from an expired URL heals itself, because the retry mints a new
+  one. Only a part that fails eight times running fails the job.
+- **Retry resumes; it never restarts.** The job file names an S3 multipart upload
+  that is still open, so a retry calls `GET /api/uploads/:id/list-parts` first and
+  keeps every part S3 already holds (sizes are checked before an ETag is trusted).
+  A match that died at part 280 of 300 finishes in a minute instead of re-sending
+  5 GB. This is why a failed upload's job is kept on disk rather than deleted.
+- **`complete` can't lose the transfer.** Once every part has landed the job is
+  latched to `completing` *before* the call goes out, so an app that's suspended
+  or killed mid-`complete` retries the finish on next launch instead of
+  re-uploading the match. If S3 rejects the part list, it's rebuilt from
+  `list-parts` (S3's own view is authoritative) and retried; if an earlier attempt
+  actually landed and we never heard back, `GET /api/videos/:id` reveals that and
+  the upload is adopted.
+
+A background task's description is `recordingId|videoId|partNumber`. The `videoId`
+is load-bearing: without it, a task left over from an abandoned attempt would
+record its ETag against the *new* attempt's part — an ETag from a different
+multipart upload — and `complete` would fail with `InvalidPart`.
+
+### Reading the upload log
+`UploadLog` writes every step to the unified log and to a capped `upload.log` in
+the app's Documents directory, so a failure that happened on a court hours ago can
+still be read back. With the phone attached:
+
+```
+log stream --predicate 'subsystem == "com.ojotennis.app"' --info
+```
+
+Or pull `upload.log` out of the container via Xcode → Window → Devices &
+Simulators → the app → Download Container.
 
 ### Analysis
 Triggered three ways, all landing on `POST /api/videos/:id/analyze`:
@@ -276,7 +334,7 @@ must stay **off** so the iOS app and shared links can reach `/api/*`.
 
 ### 6. iOS
 `UploadAPI.Config.apiBaseURL` already points at `https://ojotennis.com`. Build to
-a device from `ios/OjoDev/TennisRecorder/`. TestFlight needs a paid Apple
+a device from `ios/Ojo/`. TestFlight needs a paid Apple
 Developer account.
 
 ### 7. Verify end to end

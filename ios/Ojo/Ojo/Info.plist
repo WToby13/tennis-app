@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Ojo uses the camera to record your tennis match.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ojo records match audio alongside the video.</string>
+	<!--
+	  No proprietary or non-standard encryption — the app only uses HTTPS. Declaring
+	  it here means every TestFlight and App Store build skips the export-compliance
+	  question instead of stalling on it.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.ojotennis.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ojo</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
