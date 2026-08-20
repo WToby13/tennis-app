@@ -75,6 +75,30 @@ in Gmail answers them, not you.
   can catch-all the domain, which is what you want here — two addresses are
   published and typos happen.
 
+### If the Resend account holds more than one domain
+
+**Resend webhooks cannot be scoped to a domain.** Creating one takes an endpoint
+and a list of events, and nothing else — so *every* endpoint on the account is
+called for *every* inbound message on the account, whichever domain it was
+addressed to.
+
+With two projects sharing one Resend account, each one's handler sees the
+other's mail. That is not only a duplicate in the inbox: the other project
+forwards it, logs its subject and sender, and becomes an undeclared processor of
+mail sent to an address whose privacy policy does not name it.
+
+This route therefore forwards only mail addressed to `INBOUND_DOMAIN`, checking
+`to`, `cc`, `bcc` and `received_for` (an alias delivers to one address while the
+visible `To:` still says another). Anything else returns 200 and is dropped —
+200 rather than an error, because a non-2xx would make Resend retry a message
+that is correctly not ours.
+
+**Any other project on the same Resend account needs the same guard**, or it
+will keep forwarding Ojo's support mail into its own logs and inbox. The
+alternative is a separate Resend account per project, which is the cleaner
+separation if the projects have different data-protection stories — and Ojo's,
+which handles video of identifiable people, arguably does.
+
 ## Future emails (same pattern — just add a template)
 - "A match was shared with you" (share link opened / direct share).
 - Welcome email on signup.

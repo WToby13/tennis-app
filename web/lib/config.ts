@@ -100,6 +100,16 @@ export const config = {
        * the main key so the wiring still works if you would rather use one.
        */
       apiKey: process.env.RESEND_INBOUND_API_KEY || process.env.RESEND_API_KEY || "",
+      /**
+       * The only domain this deployment forwards mail for.
+       *
+       * Resend webhooks cannot be scoped to a domain — a webhook is an endpoint
+       * plus a list of events — so if the Resend account holds more than one
+       * domain, every endpoint on it is called for every inbound message. This
+       * is what keeps another project's mail out of Ojo's forwarder and out of
+       * Ojo's logs.
+       */
+      domain: process.env.INBOUND_DOMAIN ?? "ojotennis.com",
     },
   },
 

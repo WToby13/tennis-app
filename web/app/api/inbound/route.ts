@@ -20,7 +20,7 @@ export const runtime = "nodejs";
  * having over a plain re-send.
  */
 export async function POST(req: Request) {
-  const { webhookSecret, forwardTo, from, apiKey } = config.email.inbound;
+  const { webhookSecret, forwardTo, from, apiKey, domain } = config.email.inbound;
 
   if (!webhookSecret || !forwardTo) {
     // Refuse rather than accept-and-drop: a 500 makes Resend retry, so mail
@@ -34,7 +34,19 @@ export async function POST(req: Request) {
   const payload = await req.text();
   const resend = new Resend(apiKey);
 
-  let event: { type?: string; data?: { email_id?: string; from?: string; subject?: string } };
+  let event: {
+    type?: string;
+    data?: {
+      email_id?: string;
+      from?: string;
+      subject?: string;
+      to?: string[];
+      cc?: string[];
+      bcc?: string[];
+      /** Who the message was actually routed to — set when it arrived via an alias. */
+      received_for?: string[];
+    };
+  };
   try {
     event = resend.webhooks.verify({
       payload,
@@ -57,6 +69,35 @@ export async function POST(req: Request) {
   if (!emailId) {
     console.error("[inbound] email.received with no email_id");
     return json({ error: "no email id" }, { status: 400 });
+  }
+
+  // Only this domain's mail.
+  //
+  // Resend webhooks are account-wide — creating one takes an endpoint and a
+  // list of events, and nothing else — so every endpoint on the account is
+  // called for every inbound message on the account, whichever domain it was
+  // addressed to. Without this guard a second project's support mail would be
+  // forwarded by Ojo, land in Ojo's logs, and arrive twice; and the same is
+  // true in reverse, which is how this was noticed.
+  //
+  // `received_for` as well as `to`, because an alias delivers to one address
+  // while the visible To: header still says another.
+  const recipients = [
+    ...(event.data?.to ?? []),
+    ...(event.data?.cc ?? []),
+    ...(event.data?.bcc ?? []),
+    ...(event.data?.received_for ?? []),
+  ].map((a) => a.toLowerCase());
+
+  const suffix = `@${domain.toLowerCase()}`;
+  // Endswith on the address, not `includes` on the whole string: a display name
+  // or a sender at a lookalike domain must not be able to claim the match.
+  const mine = recipients.some((a) => a.slice(a.lastIndexOf("<") + 1).replace(/>$/, "").endsWith(suffix));
+
+  if (!mine) {
+    // 200, not an error: another project's endpoint is handling this one, and a
+    // non-2xx would make Resend retry a message that is correctly not ours.
+    return json({ ignored: "not addressed to this domain" });
   }
 
   const { error } = await resend.emails.receiving.forward({
