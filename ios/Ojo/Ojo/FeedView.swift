@@ -31,6 +31,16 @@ struct FeedView: View {
         }
         .background(Theme.bg)
         .navigationTitle("Home")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink(value: SearchTarget.players) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                }
+                .accessibilityLabel("Search players")
+            }
+        }
         .refreshable { await reload(force: true) }
         .task { await reload() }
     }

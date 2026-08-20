@@ -87,8 +87,8 @@ machine's `web/.env` before you wipe it). Never commit `web/.env`.
 ---
 
 ## 7. Supabase (auth + metadata)
-Migrations: `supabase/migrations/0001…0010` (0009 = AI analysis, 0010 = player
-names).
+Migrations: `supabase/migrations/0001…0014` (0009 = AI analysis, 0010 = player
+names, 0014 = moderation: blocks + content reports).
 - **Existing project** (already provisioned, all migrations applied): just point
   `.env` at it — nothing to run.
 - **Fresh project**: run every migration **in order** in the SQL editor. Then
@@ -106,10 +106,13 @@ manage it with Terraform bring `infra/terraform.tfstate` (§3). Details in
 ---
 
 ## 9. iOS app
-Two Xcode projects under `ios/`:
-- **`ios/OjoDev/TennisRecorder/`** — the **current** app (Ojo branding). Open
-  `TennisRecorder.xcodeproj`.
-- `ios/TennisRecorder/TennisRecorder/` — the older, superseded project.
+One Xcode project: **`ios/Ojo/`** — open `Ojo.xcodeproj`. (An older, superseded
+project lived at `ios/TennisRecorder/`; it was deleted on 2026-08-18 and is in
+git history if it is ever wanted.)
+
+Ships as **Ojo Tennis** on the App Store, **Ojo** on the home screen, bundle id
+`com.ojotennis.app`, minimum iOS 17, iPhone only. Submission walkthrough:
+[`APPSTORE.md`](APPSTORE.md).
 
 Setup in Xcode 26:
 1. Open the `.xcodeproj`; let SPM resolve **supabase-swift**.
@@ -157,7 +160,7 @@ npm install
 cp .env.example .env         # fill from Vercel env
 npm run dev
 ```
-For iOS: open `ios/OjoDev/TennisRecorder/TennisRecorder.xcodeproj` in Xcode 26,
+For iOS: open `ios/Ojo/Ojo.xcodeproj` in Xcode 26,
 set your signing team, run on device.
 
 Other reference docs: `docs/DEPLOY.md`, `docs/SHARING.md`, `docs/EMAIL.md`,

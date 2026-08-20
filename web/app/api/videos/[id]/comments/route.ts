@@ -3,7 +3,12 @@ import { badRequest, json, notFound } from "@/lib/util";
 
 export const runtime = "nodejs";
 
-/** Comments for a match, each flagged with whether the caller may delete it. */
+/**
+ * Comments for a match, each flagged with whether the caller may delete it and
+ * whether they wrote it. Those are different questions — a match owner can
+ * delete a comment they did not write — and the moderation menu needs the
+ * second one, so it never offers to report you to yourself.
+ */
 async function listWithPerms(id: string) {
   const [{ social, userId }, { store }] = [await socialForRequest(), await storeForRequest()];
   const video = await store.get(id);
@@ -13,6 +18,7 @@ async function listWithPerms(id: string) {
   return comments.map((c) => ({
     ...c,
     canDelete: !userId || c.authorId === userId || (ownerId != null && ownerId === userId),
+    isMine: Boolean(userId && c.authorId === userId),
   }));
 }
 

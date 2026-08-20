@@ -1,6 +1,7 @@
-import { sendParticipantInvites } from "@/lib/email/invites";
+import { cleanParticipants, saveParticipants } from "@/lib/participants";
 import { storeForRequest } from "@/lib/request";
-import type { ParticipantInput } from "@/lib/metadata";
+import { getSupabaseServer } from "@/lib/supabase/server";
+import { config } from "@/lib/config";
 import { json, notFound } from "@/lib/util";
 
 export const runtime = "nodejs";
@@ -18,6 +19,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
  * Replace a match's participant list. Editors only: the owner or any participant
  * (the set_participants RPC enforces this server-side too).
  * Body: { participants: [{ userId?, displayName, email? }] }.
+ * Returns the saved list plus every pending invite and its link.
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -27,33 +29,21 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (!video) return notFound("Video not found");
 
   const body = await req.json().catch(() => null);
-  const raw = Array.isArray(body?.participants) ? body.participants : [];
-  const clean: ParticipantInput[] = raw
-    .map((p: unknown) => {
-      const o = (p ?? {}) as Record<string, unknown>;
-      const displayName = typeof o.displayName === "string" ? o.displayName.trim() : "";
-      const userIdVal = typeof o.userId === "string" && o.userId ? o.userId : null;
-      const emailVal =
-        typeof o.email === "string" && o.email.trim() ? o.email.trim().toLowerCase() : null;
-      return { userId: userIdVal, displayName, email: emailVal };
-    })
-    .filter((p: ParticipantInput) => p.displayName.length > 0);
+  const clean = cleanParticipants(body?.participants);
 
-  // Only email guests that are newly added (don't re-invite on every edit).
   const before = await store.getParticipants(id);
-  const known = new Set(before.filter((p) => p.email).map((p) => p.email!.toLowerCase()));
-  const canEdit =
-    !userId || video.ownerId === userId || before.some((p) => p.userId === userId);
+  const canEdit = !userId || video.ownerId === userId || before.some((p) => p.userId === userId);
   if (!canEdit) return notFound("Video not found");
 
-  const participants = await store.setParticipants(id, clean);
+  const { participants, invites } = await saveParticipants({
+    store,
+    supabase: config.authEnabled ? await getSupabaseServer() : null,
+    userId,
+    videoId: id,
+    matchTitle: video.title,
+    participants: clean,
+    before,
+  });
 
-  const newEmails = clean
-    .filter((p) => p.userId === null && p.email && !known.has(p.email.toLowerCase()))
-    .map((p) => p.email as string);
-  if (newEmails.length) {
-    await sendParticipantInvites({ videoId: id, matchTitle: video.title, emails: newEmails });
-  }
-
-  return json({ participants });
+  return json({ participants, invites });
 }

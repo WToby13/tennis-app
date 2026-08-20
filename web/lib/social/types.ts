@@ -44,6 +44,23 @@ export interface ProfileSummary {
   followers: number;
   following: number;
   isFollowing: boolean;
+  /** Whether the caller has blocked this user — drives the profile's block/unblock control. */
+  isBlocked: boolean;
+}
+
+/** What a report says was wrong. Mirrors the `reason` check constraint in SQL. */
+export type ReportReason = "abuse" | "sexual" | "violence" | "spam" | "other";
+
+/** A flag raised against a match or a comment. */
+export interface ReportInput {
+  targetKind: "match" | "comment";
+  targetId: string;
+  /** The account responsible, so a report stays actionable if the content is deleted. */
+  reportedUserId: string | null;
+  /** Title or comment body as it read when reported — kept because the content may not survive. */
+  contentSnapshot: string | null;
+  reason: ReportReason;
+  details: string | null;
 }
 
 /**
@@ -71,4 +88,19 @@ export interface SocialStore {
 
   /** Add a viewable match to my library ("add to profile"). */
   saveToLibrary(videoId: string): Promise<void>;
+
+  // --- moderation ------------------------------------------------------------
+  // App Store Review Guideline 1.2: an app with user-generated content must let
+  // people report it and block whoever posted it.
+
+  /** Stop seeing this user's matches and comments, and them mine. Also unfollows both ways. */
+  blockUser(userId: string): Promise<void>;
+  unblockUser(userId: string): Promise<void>;
+  /** Whether the caller has blocked this user (one direction — the control's state). */
+  hasBlocked(userId: string): Promise<boolean>;
+  /** Everyone the caller has blocked, for the "Blocked accounts" list. */
+  listBlocked(): Promise<ProfileSummary[]>;
+
+  /** File a report against a match or a comment. */
+  report(input: ReportInput): Promise<void>;
 }

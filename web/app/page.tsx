@@ -7,13 +7,21 @@ import { MatchGridSkeleton } from "./Skeleton";
 
 export default function FeedPage() {
   const [feed, setFeed] = useState<FeedItem[] | null>(null);
+  const [viewerId, setViewerId] = useState<string | null>(null);
+  /** Matches hidden client-side after blocking their poster. */
+  const [hidden, setHidden] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("/api/feed")
       .then((r) => r.json())
-      .then((d) => setFeed(d.feed))
+      .then((d) => {
+        setFeed(d.feed);
+        setViewerId(d.viewerId ?? null);
+      })
       .catch(() => setFeed([]));
   }, []);
+
+  const visible = feed?.filter((i) => !hidden.includes(i.id)) ?? null;
 
   return (
     <div>
@@ -25,9 +33,9 @@ export default function FeedPage() {
         Matches from players you follow, and your own.
       </p>
 
-      {feed === null && <MatchGridSkeleton count={3} />}
+      {visible === null && <MatchGridSkeleton count={3} />}
 
-      {feed?.length === 0 && (
+      {visible?.length === 0 && (
         <div className="feed">
           <div className="card" style={{ padding: 32, textAlign: "center" }}>
             <p className="muted" style={{ marginBottom: 16 }}>
@@ -39,10 +47,20 @@ export default function FeedPage() {
         </div>
       )}
 
-      {feed && feed.length > 0 && (
+      {visible && visible.length > 0 && (
         <div className="feed">
-          {feed.map((item) => (
-            <FeedCard key={item.id} item={item} />
+          {visible.map((item) => (
+            <FeedCard
+              key={item.id}
+              item={item}
+              viewerId={viewerId}
+              onBlocked={() =>
+                setHidden((h) =>
+                  // Blocking removes everything by that poster, not just this card.
+                  h.concat((feed ?? []).filter((i) => i.ownerId === item.ownerId).map((i) => i.id)),
+                )
+              }
+            />
           ))}
         </div>
       )}

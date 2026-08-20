@@ -34,11 +34,16 @@ export async function GET(request: NextRequest) {
     if (!error) {
       // Google can't tell us the playing hand — send first-time OAuth users to
       // finish their profile before dropping them into the app.
+      //
+      // Unless they were going somewhere specific. Someone arriving from an
+      // invite or a shared match came to see *that*, and the profile detour
+      // dropped the destination on the floor — which for an invite meant it was
+      // never claimed. They can set their playing hand from the library later.
       const {
         data: { user },
       } = await supabase.auth.getUser();
       let dest = next;
-      if (user) {
+      if (user && next === "/") {
         const { data: profile } = await supabase
           .from("profiles")
           .select("handedness")

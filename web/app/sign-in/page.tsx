@@ -14,9 +14,15 @@ function nextTarget(): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 }
 
+/** Prefill from an invite link, so a returning player doesn't retype it. */
+function invitedEmail(): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("email") ?? "";
+}
+
 export default function SignInPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(invitedEmail);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

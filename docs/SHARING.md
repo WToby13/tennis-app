@@ -300,3 +300,58 @@ Slice 1 already routes access through `library_items` (not raw `owner_id`), so b
 inherit it. Only two cheap guards: (1) the split hide-vs-purge step in §6; (2) never hard-code
 `owner_id` as the sole access check — always go through library membership. Everything else is
 additive later; pre-building the club control plane now would be the mistake.
+
+---
+
+## 10. Invitations (2026-08-18) — `0015_invites.sql`
+
+Slice 2 shipped participants, but "add someone to a match" had four ways to fail
+silently. All four are fixed here; the model above is unchanged.
+
+### What was wrong
+
+1. **An email that already belonged to an account was a dead end.** `set_participants`
+   took `userId` at face value and never resolved the address, and `handle_new_user`
+   only claims on *new signup* — so tagging an existing user by email granted them
+   nothing, permanently.
+2. **The claim was keyed on the email address.** Nothing pinned or prefilled it, so
+   an invitee who signed up with a different address (or with Google) was never
+   linked to the match — the failure that started this work.
+3. **Delivery was invisible.** Send results were discarded, so a Resend rejection
+   left no trace anywhere: no UI, no row, no retry.
+4. **Nothing deduped.** A guest row and a linked row for the same person coexisted,
+   and the clients merged by display name — which never matches, because the guest
+   was named after an email prefix ("guillem.torner") and the account after a
+   profile ("Guillem Torner"). Hence the same player appearing twice.
+
+### The shape now
+
+**The token is the proof, not the address.** `video_participants` carries an
+`invite_token`; `/invite/<token>` is a public page that shows the match, sends you
+to sign-up with the address prefilled, then calls `claim_invite(token)` — which links
+whatever account you arrived with, grants library access, and replaces the
+placeholder name with your profile name.
+
+- `set_participants` **merges** instead of replace-all: it resolves an address to an
+  existing account, dedupes by account → address → name, keeps invite tokens alive
+  across edits, and names linked people from their profile.
+- Tokens are withheld by **column grant** (RLS is row-level, and the participant
+  select policy is "anyone who can see the match"). Editors read them through
+  `participant_invites()`. A new column on that table needs adding to the grant list.
+- `claim_invite` is idempotent for the same person and refuses a token someone else
+  already claimed.
+- Signup-by-matching-address still works, as a convenience rather than the only route.
+- The migration repairs existing data: links guest rows whose address is an account,
+  drops the duplicates that created, refreshes email-prefix names, backfills missing
+  library grants, and issues tokens to pending invites.
+
+Assertions covering all of this live in `supabase/tests/` and run against a throwaway
+local Postgres — no Supabase project needed. See `supabase/tests/run.sh`.
+
+**Fixed 2026-08-18:** `0014_moderation.sql` used to fail on `get_feed` with
+"cannot change return type of existing function". The cause wasn't a missing
+`drop` — it was that 0014 had rebased the function on **0007's** definition and
+so dropped the `in_library` column 0008 added. Forcing it through with a DROP
+would have applied cleanly and silently broken the "add to profile" state on
+every feed card. 0014 now matches 0008's return type and the whole chain runs.
+Assertions in `moderation_test.sql` guard the column.

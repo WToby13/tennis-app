@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { config, partSizeFor } from "@/lib/config";
-import { sendParticipantInvites } from "@/lib/email/invites";
+import { cleanParticipants, saveParticipants } from "@/lib/participants";
 import { storeForRequest } from "@/lib/request";
 import { storage } from "@/lib/storage";
+import { getSupabaseServer } from "@/lib/supabase/server";
 import { badRequest, extForContentType, json } from "@/lib/util";
 
 export const runtime = "nodejs";
@@ -53,24 +54,27 @@ export async function POST(req: Request) {
     hasAnalysisProxy: false,
   });
 
-  // Optional participants chosen in the recorder's post-record shelf.
-  if (Array.isArray(body.participants) && body.participants.length) {
-    const clean = body.participants
-      .map((p: Record<string, unknown>) => ({
-        userId: typeof p?.userId === "string" && p.userId ? p.userId : null,
-        displayName: typeof p?.displayName === "string" ? p.displayName.trim() : "",
-        email:
-          typeof p?.email === "string" && p.email.trim() ? p.email.trim().toLowerCase() : null,
-      }))
-      .filter((p: { displayName: string }) => p.displayName.length > 0);
-    if (clean.length) {
-      await store.setParticipants(video.id, clean).catch(() => {});
-      const emails = clean
-        .filter((p: { userId: string | null; email: string | null }) => p.userId === null && p.email)
-        .map((p: { email: string | null }) => p.email as string);
-      if (emails.length) {
-        await sendParticipantInvites({ videoId: video.id, matchTitle: video.title, emails });
-      }
+  // Players chosen in the recorder's post-record shelf. Same path the web editor
+  // takes, so an invite behaves identically whichever end it was typed at.
+  //
+  // Failures here must not sink the upload — the bytes are the point, and the
+  // player list is editable afterwards — but they are no longer swallowed
+  // silently: `invites` reports back so the recorder can show what happened.
+  let invites: Awaited<ReturnType<typeof saveParticipants>>["invites"] = [];
+  const clean = cleanParticipants(body.participants);
+  if (clean.length) {
+    try {
+      ({ invites } = await saveParticipants({
+        store,
+        supabase: config.authEnabled ? await getSupabaseServer() : null,
+        userId,
+        videoId: video.id,
+        matchTitle: video.title,
+        participants: clean,
+        before: [],
+      }));
+    } catch (err) {
+      console.error("[initiate] saving participants failed", err);
     }
   }
 
@@ -79,5 +83,6 @@ export async function POST(req: Request) {
     key: video.key,
     uploadId,
     partSizeBytes,
+    invites,
   });
 }

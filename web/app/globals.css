@@ -15,8 +15,9 @@
   --danger: #e5695b;
   --radius: 14px;
   --radius-sm: 10px;
-  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  /* The two --font-* vars are injected by next/font in app/layout.tsx. */
+  --font-sans: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: var(--font-space-grotesk), var(--font-inter), system-ui, sans-serif;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 30px rgba(0, 0, 0, 0.5);
 }
 
@@ -686,11 +687,23 @@ video {
   justify-content: center;
   margin-top: 30px;
 }
+.landing-note {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.landing-section {
+  margin-top: 88px;
+}
+.section-title {
+  font-size: 30px;
+  text-align: center;
+  margin-bottom: 34px;
+}
 .features {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 18px;
-  margin-top: 64px;
 }
 .feature {
   background: var(--surface);
@@ -701,6 +714,212 @@ video {
 .feature h3 {
   font-size: 17px;
   margin-bottom: 8px;
+}
+.feature p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* ---- landing: how it works ---- */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+.step {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+}
+.step-n {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.step h3 {
+  font-size: 17px;
+  margin-bottom: 8px;
+}
+.step p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* ---- landing: FAQ ---- */
+.faq {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.faq-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px 22px;
+}
+.faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  cursor: pointer;
+  list-style: none;
+}
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.faq-item summary h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+/* Chevron, drawn rather than shipped as an icon. */
+.faq-item summary::after {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.15s ease;
+}
+.faq-item[open] summary::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+.faq-item p {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ---- landing: closing CTA + footer ---- */
+.landing-cta {
+  margin-top: 96px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 56px 24px;
+}
+.landing-cta h2 {
+  font-size: 32px;
+}
+.landing-cta p {
+  margin: 12px 0 0;
+  font-size: 15px;
+}
+.landing-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.landing-footer-links {
+  display: flex;
+  gap: 18px;
+}
+
+/* ---- legal pages (/privacy, /terms) ----
+   One readable column of prose. Narrower than the landing page's 980px on
+   purpose: these are documents to be read, not scanned, and a 65-character
+   measure is what makes that bearable. */
+.legal {
+  max-width: 700px;
+  margin: 40px auto 0;
+  line-height: 1.65;
+}
+.legal h1 {
+  font-size: 38px;
+  margin-bottom: 6px;
+}
+.legal-updated {
+  font-size: 13px;
+  margin: 0 0 36px;
+}
+.legal h2 {
+  font-size: 22px;
+  margin: 40px 0 12px;
+}
+.legal h3 {
+  font-size: 16px;
+  margin: 26px 0 8px;
+  color: var(--text);
+}
+.legal p,
+.legal li {
+  color: var(--muted);
+  font-size: 15px;
+}
+.legal p {
+  margin: 0 0 14px;
+}
+.legal ul {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+.legal li {
+  margin-bottom: 8px;
+}
+.legal strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.legal a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.legal code {
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+@media (max-width: 640px) {
+  .legal h1 {
+    font-size: 30px;
+  }
+  .legal h2 {
+    font-size: 19px;
+  }
+}
+
+@media (max-width: 640px) {
+  .landing-hero {
+    padding-top: 48px;
+  }
+  .landing-hero h1 {
+    font-size: 38px;
+  }
+  .landing-hero .lead {
+    font-size: 17px;
+  }
+  .section-title {
+    font-size: 25px;
+  }
+  .landing-cta h2 {
+    font-size: 26px;
+  }
 }
 
 /* ---- segmented control (handedness) ---- */
@@ -965,6 +1184,87 @@ video {
   display: flex;
   gap: 8px;
   margin-top: 16px;
+}
+
+/* ---- report / block menu ---- */
+.mod-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+.mod-trigger {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+.mod-trigger:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+.mod-popover {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 190px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  padding: 4px;
+}
+.mod-popover button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.mod-popover button:hover {
+  background: var(--surface);
+}
+.mod-popover button.danger {
+  color: var(--danger);
+}
+
+/* Account deletion, below a rule and outside the form — visually separate from
+   the save/sign-out row so it can't be hit by muscle memory. */
+.danger-zone {
+  border-top: 1px solid var(--border);
+  padding: 16px 20px 20px;
+}
+.danger-zone p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.danger-actions {
+  display: flex;
+  gap: 8px;
+}
+.btn-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.btn-link.danger {
+  color: var(--danger);
 }
 .tl-row {
   margin-bottom: 12px;

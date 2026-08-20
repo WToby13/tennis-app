@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
 import { TrashIcon } from "./icons";
+import { ModerationMenu } from "./ModerationMenu";
 
 interface CommentT {
   id: string;
@@ -11,6 +12,8 @@ interface CommentT {
   body: string;
   createdAt: string;
   canDelete: boolean;
+  /** The caller wrote this one — distinct from canDelete, which a match owner also has. */
+  isMine?: boolean;
 }
 
 function timeAgo(iso: string): string {
@@ -56,6 +59,11 @@ export function CommentSection({ videoId }: { videoId: string }) {
     await fetch(`/api/videos/${videoId}/comments/${id}`, { method: "DELETE" }).catch(() => {});
   }
 
+  /** Blocking has to clear their comments from the page now, not on next load. */
+  function hideAuthor(authorId: string) {
+    setComments((c) => (c ?? []).filter((x) => x.authorId !== authorId));
+  }
+
   return (
     <div className="comments">
       <h3 style={{ fontSize: 15, marginBottom: 12 }}>
@@ -92,6 +100,17 @@ export function CommentSection({ videoId }: { videoId: string }) {
               <TrashIcon size={16} />
             </button>
           )}
+          <ModerationMenu
+            target={{
+              kind: "comment",
+              id: c.id,
+              videoId,
+              authorId: c.authorId,
+              authorName: c.authorName,
+            }}
+            isMine={c.isMine ?? false}
+            onBlocked={() => hideAuthor(c.authorId)}
+          />
         </div>
       ))}
 

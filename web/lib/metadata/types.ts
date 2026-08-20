@@ -109,6 +109,33 @@ export interface ParticipantInput {
   email: string | null;
 }
 
+/**
+ * An email invite on a match, with the token that claims it.
+ *
+ * Editors only. The token is a bearer capability — holding it makes you that
+ * participant — so it is withheld from `getParticipants` and reaches a client
+ * solely through this type. See `participant_invites` in 0015_invites.sql.
+ */
+export interface ParticipantInvite {
+  id: string;
+  displayName: string;
+  email: string;
+  token: string | null;
+  /** They've joined; the link has done its job. */
+  claimed: boolean;
+}
+
+/** What an invite link can show someone who isn't signed in yet. */
+export interface InvitePreview {
+  videoId: string;
+  matchTitle: string;
+  /** The name the inviter typed for them. */
+  invitedName: string;
+  invitedEmail: string | null;
+  inviterName: string | null;
+  claimed: boolean;
+}
+
 /** A user found via search, for tagging as a participant. */
 export interface UserResult {
   id: string;
@@ -155,6 +182,22 @@ export interface MetadataStore {
   setParticipants(videoId: string, participants: ParticipantInput[]): Promise<Participant[]>;
   /** Search Ojo users by name, for tagging. */
   searchUsers(query: string): Promise<UserResult[]>;
+
+  // --- invites ---------------------------------------------------------------
+  /**
+   * A match's email invites with their claim tokens. Editors only — this is the
+   * only path by which a token reaches a client, so the UI can offer a copyable
+   * link when mail delivery fails.
+   */
+  listInvites(videoId: string): Promise<ParticipantInvite[]>;
+  /** What to show on an invite link before the recipient has an account. */
+  invitePreview(token: string): Promise<InvitePreview | null>;
+  /**
+   * Claim an invite as the signed-in caller and return the match id. The token —
+   * not a matching email address — is the proof, so it works whichever address
+   * or provider they signed up with.
+   */
+  claimInvite(token: string): Promise<string | null>;
 
   // --- analysis / segments ---------------------------------------------------
   /** A match's AI segments of a given kind, ordered. */

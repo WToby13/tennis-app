@@ -20,4 +20,12 @@ export function social(supabase?: SupabaseClient, userId?: string | null): Socia
   return localStore;
 }
 
-export type { Comment, FeedItem, LikeState, ProfileSummary, SocialStore } from "./types";
+export type {
+  Comment,
+  FeedItem,
+  LikeState,
+  ProfileSummary,
+  ReportInput,
+  ReportReason,
+  SocialStore,
+} from "./types";

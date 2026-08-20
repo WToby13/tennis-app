@@ -15,12 +15,22 @@ function nextTarget(): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
 }
 
+/**
+ * The address an invite was sent to, prefilled so the common case is one less
+ * thing to type. It is only a convenience: the invite is claimed by its token,
+ * so signing up with a different address (or with Google) still works.
+ */
+function invitedEmail(): string {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("email") ?? "";
+}
+
 export default function SignUpPage() {
   const router = useRouter();
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [handedness, setHandedness] = useState<Hand>("right");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(invitedEmail);
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

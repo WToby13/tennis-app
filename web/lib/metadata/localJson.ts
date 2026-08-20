@@ -1,9 +1,11 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type {
+  InvitePreview,
   LibraryEntry,
   MetadataStore,
   Participant,
+  ParticipantInvite,
   ShareLink,
   UserResult,
   Video,
@@ -182,6 +184,19 @@ export class LocalJsonMetadataStore implements MetadataStore {
 
   async searchUsers(): Promise<UserResult[]> {
     return [];
+  }
+
+  // Invites need a second person to invite, so they are inert here too.
+  async listInvites(): Promise<ParticipantInvite[]> {
+    return [];
+  }
+
+  async invitePreview(): Promise<InvitePreview | null> {
+    return null;
+  }
+
+  async claimInvite(): Promise<string | null> {
+    return null;
   }
 
   async getSegments(videoId: string, kind = "rally"): Promise<VideoSegment[]> {

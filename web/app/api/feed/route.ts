@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 /** Home feed: matches shared by people you follow + your own, newest first. */
 export async function GET() {
-  const { social } = await socialForRequest();
+  const { social, userId } = await socialForRequest();
   const items = await social.getFeed();
   const withThumbs = await Promise.all(
     items.map(async (i) => ({
@@ -16,5 +16,7 @@ export async function GET() {
         .catch(() => null),
     })),
   );
-  return json({ feed: withThumbs });
+  // The viewer's own id, so a card can tell whose match it is showing and hide
+  // the report/block menu on the viewer's own posts.
+  return json({ feed: withThumbs, viewerId: userId });
 }

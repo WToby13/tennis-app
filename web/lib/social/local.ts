@@ -53,4 +53,16 @@ export class LocalSocialStore implements SocialStore {
   }
   async setSharedToFollowers(): Promise<void> {}
   async saveToLibrary(): Promise<void> {}
+
+  // Moderation is inert here for the same reason the graph is: local mode has
+  // exactly one user, so there is nobody to block and nobody to report to.
+  async blockUser(): Promise<void> {}
+  async unblockUser(): Promise<void> {}
+  async hasBlocked(): Promise<boolean> {
+    return false;
+  }
+  async listBlocked(): Promise<ProfileSummary[]> {
+    return [];
+  }
+  async report(): Promise<void> {}
 }

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Avatar } from "./Avatar";
 import { FeedComments } from "./FeedComments";
 import { BookmarkIcon, CommentIcon, HeartIcon, ShareIcon } from "./icons";
+import { ModerationMenu } from "./ModerationMenu";
 import { useLike } from "./useLike";
 import { formatDate, formatDuration } from "@/lib/matchFormat";
 
@@ -26,7 +27,16 @@ export interface FeedItem {
   thumbnailUrl: string | null;
 }
 
-export function FeedCard({ item }: { item: FeedItem }) {
+export function FeedCard({
+  item,
+  viewerId,
+  onBlocked,
+}: {
+  item: FeedItem;
+  /** The signed-in user, so the card can hide report/block on their own match. */
+  viewerId?: string | null;
+  onBlocked?: () => void;
+}) {
   const { liked, count, busy, toggle } = useLike(item.id, item.likeCount, item.likedByMe);
   const [saved, setSaved] = useState(item.inLibrary);
   const who = item.sharedBy ? item.sharedByName : item.authorName;
@@ -66,6 +76,18 @@ export function FeedCard({ item }: { item: FeedItem }) {
             <span className="name">{who ?? "Ojo player"}</span>
           )}
           {item.sharedBy && <div className="sub">shared a match</div>}
+        </div>
+        <div style={{ marginLeft: "auto" }}>
+          <ModerationMenu
+            target={{
+              kind: "match",
+              id: item.id,
+              authorId: item.ownerId,
+              authorName: item.authorName,
+            }}
+            isMine={Boolean(viewerId && item.ownerId === viewerId)}
+            onBlocked={onBlocked}
+          />
         </div>
       </div>
 

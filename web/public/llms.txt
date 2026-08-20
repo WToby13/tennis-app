@@ -1,0 +1,42 @@
+# Ojo Tennis
+
+> Ojo Tennis is a web app for recording, reviewing and sharing tennis matches. You prop an ordinary
+> phone at the back of the court and record the whole session, upload it to Ojo, then watch it back
+> in a player built for review — scrubbing, frame-by-frame stepping and slow motion. Ojo's AI
+> breakdown marks where each rally starts and ends and groups them into service games, so you can
+> jump from point to point. Matches are private by default and shareable by a revocable link.
+
+Ojo Tennis is free while in early access. It is not affiliated with any tennis federation, club or
+equipment manufacturer.
+
+## What it is for
+
+- Recreational and club tennis players who have never seen themselves play.
+- Reviewing a full match (up to ~2 hours) rather than clipping highlights.
+- Sending a specific match to a hitting partner or a coach.
+
+## What it does not do
+
+- It does not require a court-mounted camera, tripod rig, subscription hardware or a second person
+  to film. A phone at the back of the court is the whole setup.
+- It does not keep score, call lines, or produce shot-by-shot statistics.
+- It does not publish your matches. Every upload is private to its owner until the owner shares it.
+
+## Key facts
+
+- Platform: web app (any modern browser) plus an iPhone recorder app.
+- Recording: landscape, from behind the baseline, one tap for a whole session.
+- Upload: chunked, so an interrupted or slow connection does not lose the file. Large matches are
+  compressed automatically rather than rejected.
+- Review: scrub, single-frame stepping, variable-speed and slow-motion playback.
+- Automatic analysis: rally start/end detection, grouped into service games.
+- Sharing: private by default; per-match private links that can be revoked; optionally visible to
+  players who follow you. A recipient can add a shared match to their own library without
+  re-uploading it.
+- Price: free during early access.
+
+## Pages
+
+- [Home](https://ojotennis.com/landing): what Ojo Tennis is, how it works, and FAQs.
+- [Create an account](https://ojotennis.com/sign-up): free sign-up.
+- [Sign in](https://ojotennis.com/sign-in): existing accounts.

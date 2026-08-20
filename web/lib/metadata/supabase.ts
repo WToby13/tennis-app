@@ -2,10 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomToken } from "../util";
 import type {
   AnalysisPlayers,
+  InvitePreview,
   LibraryEntry,
   MetadataStore,
   Participant,
   ParticipantInput,
+  ParticipantInvite,
   ShareLink,
   UserResult,
   Video,
@@ -237,14 +239,16 @@ export class SupabaseMetadataStore implements MetadataStore {
   }
 
   async createShareLink(videoId: string, createdBy: string | null): Promise<ShareLink> {
-    // Reuse an existing live link so the shareable URL stays stable.
-    const { data: existing } = await this.supabase
+    // Reuse this sharer's own live link so their URL stays stable. Scoped to
+    // created_by on purpose: links are per-sharer and individually revocable, so
+    // reusing someone else's would mean revoking yours killed theirs too.
+    let q = this.supabase
       .from("share_links")
       .select("token")
       .eq("video_id", videoId)
-      .is("revoked_at", null)
-      .limit(1)
-      .maybeSingle();
+      .is("revoked_at", null);
+    q = createdBy ? q.eq("created_by", createdBy) : q.is("created_by", null);
+    const { data: existing } = await q.limit(1).maybeSingle();
     if (existing?.token) return { token: existing.token as string };
 
     const token = randomToken();
@@ -302,21 +306,75 @@ export class SupabaseMetadataStore implements MetadataStore {
     return this.getParticipants(videoId);
   }
 
+  async listInvites(videoId: string): Promise<ParticipantInvite[]> {
+    // Definer RPC: it checks edit rights, and mints a token for any pending
+    // invite that predates 0015 so old invites become linkable rather than
+    // stranded. The tokens are not readable through a plain select — the column
+    // is withheld by grant.
+    const { data, error } = await this.supabase.rpc("participant_invites", {
+      p_video_id: videoId,
+    });
+    if (error) throw new Error(`list invites failed: ${error.message}`);
+    return (
+      data as Array<{
+        id: string;
+        display_name: string;
+        email: string;
+        invite_token: string | null;
+        claimed: boolean;
+      }>
+    ).map((r) => ({
+      id: r.id,
+      displayName: r.display_name,
+      email: r.email,
+      token: r.invite_token,
+      claimed: r.claimed,
+    }));
+  }
+
+  async invitePreview(token: string): Promise<InvitePreview | null> {
+    const { data, error } = await this.supabase.rpc("invite_preview", { p_token: token });
+    const row = (
+      data as Array<{
+        video_id: string;
+        match_title: string;
+        invited_name: string;
+        invited_email: string | null;
+        inviter_name: string | null;
+        claimed: boolean;
+      }> | null
+    )?.[0];
+    if (error || !row) return null;
+    return {
+      videoId: row.video_id,
+      matchTitle: row.match_title,
+      invitedName: row.invited_name,
+      invitedEmail: row.invited_email,
+      inviterName: row.inviter_name,
+      claimed: row.claimed,
+    };
+  }
+
+  async claimInvite(token: string): Promise<string | null> {
+    const { data, error } = await this.supabase.rpc("claim_invite", { p_token: token });
+    if (error || !data) return null;
+    return data as string;
+  }
+
   async searchUsers(query: string): Promise<UserResult[]> {
-    const like = `%${query.replace(/[%_]/g, "")}%`;
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .select("id, display_name, first_name, last_name")
-      .or(`display_name.ilike.${like},first_name.ilike.${like},last_name.ilike.${like}`)
-      .limit(10);
+    // Through the `search_users` RPC rather than a select on `profiles`, so the
+    // result is filtered by the symmetric `is_blocked()` — see 0016. A block has
+    // to hide people in both directions, and only the database can see the half
+    // of user_blocks where the caller is the blocked party.
+    const { data, error } = await this.supabase.rpc("search_users", {
+      p_query: query,
+      p_limit: 10,
+    });
     if (error) throw new Error(`search users failed: ${error.message}`);
-    return (data as Array<{ id: string; display_name: string | null; first_name: string | null; last_name: string | null }>).map(
-      (r) => ({
-        id: r.id,
-        displayName:
-          r.display_name || [r.first_name, r.last_name].filter(Boolean).join(" ") || "Ojo player",
-      }),
-    );
+    return (data as Array<{ id: string; display_name: string }>).map((r) => ({
+      id: r.id,
+      displayName: r.display_name,
+    }));
   }
 
   async getSegments(videoId: string, kind = "rally"): Promise<VideoSegment[]> {

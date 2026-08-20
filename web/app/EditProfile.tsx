@@ -36,6 +36,10 @@ export function EditProfile({
   const [handedness, setHandedness] = useState<Hand>(initial.handedness);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Two-step delete: the button arms a confirmation rather than opening a
+  // second modal on top of this one.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const save = useCallback(
     async (e: React.FormEvent) => {
@@ -70,6 +74,25 @@ export function EditProfile({
   );
 
   async function signOut() {
+    await getSupabaseBrowser().auth.signOut();
+    window.location.href = "/landing";
+  }
+
+  /**
+   * Delete the account for real — matches, video files and all. The parallel of
+   * the iOS Settings screen, which is where App Store Review Guideline
+   * 5.1.1(v) requires it; here it exists so the privacy policy's promise that
+   * you can do this on the web is true.
+   */
+  async function deleteAccount() {
+    setDeleting(true);
+    setError(null);
+    const res = await fetch("/api/users/me", { method: "DELETE" }).catch(() => null);
+    if (!res?.ok) {
+      setDeleting(false);
+      setError("Couldn't delete your account. Try again, or email support@ojotennis.com.");
+      return;
+    }
     await getSupabaseBrowser().auth.signOut();
     window.location.href = "/landing";
   }
@@ -149,6 +172,34 @@ export function EditProfile({
             </button>
           </div>
         </form>
+
+        <div className="danger-zone">
+          {confirmingDelete ? (
+            <>
+              <p>
+                This deletes your account, every match you have recorded and the video files
+                behind them. It cannot be undone.
+              </p>
+              <div className="danger-actions">
+                <button
+                  className="btn secondary"
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deleting}
+                >
+                  Keep my account
+                </button>
+                <button className="btn danger" type="button" onClick={deleteAccount} disabled={deleting}>
+                  {deleting ? "Deleting…" : "Delete everything"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <button className="btn-link danger" type="button" onClick={() => setConfirmingDelete(true)}>
+              Delete account
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

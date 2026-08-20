@@ -4,7 +4,18 @@ import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 
 /** Paths that render without the app chrome (marketing + auth). */
-const PUBLIC_PREFIXES = ["/landing", "/sign-in", "/sign-up", "/login"];
+const PUBLIC_PREFIXES = [
+  "/landing",
+  "/sign-in",
+  "/sign-up",
+  "/login",
+  "/privacy",
+  "/terms",
+  // An emailed invite is opened by someone who usually has no account yet. It
+  // is allowed through the middleware, so without it here the recipient gets
+  // the signed-in app's sidebar wrapped around a sign-up card.
+  "/invite",
+];
 
 /**
  * Picks the layout by route: full-bleed for landing/auth pages, the sidebar

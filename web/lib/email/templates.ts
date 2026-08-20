@@ -40,18 +40,73 @@ function layout(opts: { heading: string; bodyHtml: string; ctaLabel?: string; ct
   </body></html>`;
 }
 
-/** "You were added to a match" — the guest-by-email invite. */
+/**
+ * "You were added to a match" — the invite for someone who isn't on Ojo yet.
+ *
+ * The link carries an invite token, so it works signed-out and the match is
+ * connected to whatever account they end up creating. That's deliberate: the old
+ * version asked them to sign up "with this email", which quietly failed the
+ * moment they used a different address or Google.
+ */
 export function participantInvite(opts: {
+  matchTitle: string;
+  inviteUrl: string;
+  inviterName?: string | null;
+}): RenderedEmail {
+  const who = opts.inviterName ? `${escapeHtml(opts.inviterName)} added you` : "You were added";
+  const whoText = opts.inviterName ? `${opts.inviterName} added you` : "You were added";
+  const subject = opts.inviterName
+    ? `${opts.inviterName} added you to a match on Ojo`
+    : "You've been added to a match on Ojo";
+  const bodyHtml = `<p>${who} as a player in <strong>${escapeHtml(opts.matchTitle)}</strong> on Ojo Tennis.</p>
+    <p>Open the link to watch it. You'll be asked to create a free account first — use any email or your Google account, and the match will be waiting in your library either way.</p>`;
+  const text = `${whoText} as a player in "${opts.matchTitle}" on Ojo Tennis.
+
+Open this link to watch it: ${opts.inviteUrl}
+
+You'll be asked to create a free account first — any email or your Google account works, and the match will be in your library either way.`;
+  return {
+    subject,
+    html: layout({
+      heading: "You're in a match",
+      bodyHtml,
+      ctaLabel: "Watch the match",
+      ctaUrl: opts.inviteUrl,
+    }),
+    text,
+  };
+}
+
+/**
+ * "You were added to a match" for someone who already has an Ojo account — the
+ * match is already in their library, so this is a nudge, not an invitation.
+ * Before this, being tagged notified you of precisely nothing.
+ */
+export function participantAdded(opts: {
   matchTitle: string;
   watchUrl: string;
   inviterName?: string | null;
 }): RenderedEmail {
-  const who = opts.inviterName ? `${opts.inviterName} added you` : "You were added";
-  const subject = `${opts.inviterName ? `${opts.inviterName} added you` : "You've been added"} to a match on Ojo`;
-  const bodyHtml = `<p>${who} to the match <strong>${escapeHtml(opts.matchTitle)}</strong> on Ojo Tennis.</p>
-    <p>Create your free account (with this email) to watch it — it'll be waiting in your library, and any other matches you're tagged in will show up automatically.</p>`;
-  const text = `${who} to the match "${opts.matchTitle}" on Ojo Tennis.\n\nCreate your free account with this email to watch it: ${opts.watchUrl}\n\nAny matches you're tagged in will appear in your library automatically.`;
-  return { subject, html: layout({ heading: "You're in a match", bodyHtml, ctaLabel: "Watch the match", ctaUrl: opts.watchUrl }), text };
+  const who = opts.inviterName ? `${escapeHtml(opts.inviterName)} added you` : "You were added";
+  const whoText = opts.inviterName ? `${opts.inviterName} added you` : "You were added";
+  const subject = opts.inviterName
+    ? `${opts.inviterName} added you to a match on Ojo`
+    : "You've been added to a match on Ojo";
+  const bodyHtml = `<p>${who} as a player in <strong>${escapeHtml(opts.matchTitle)}</strong>.</p>
+    <p>It's already in your library — open it to watch, comment, or run the AI breakdown.</p>`;
+  const text = `${whoText} as a player in "${opts.matchTitle}" on Ojo Tennis.
+
+It's already in your library: ${opts.watchUrl}`;
+  return {
+    subject,
+    html: layout({
+      heading: "You're in a match",
+      bodyHtml,
+      ctaLabel: "Watch the match",
+      ctaUrl: opts.watchUrl,
+    }),
+    text,
+  };
 }
 
 /** Minimal HTML escaping for interpolated user content (titles, names). */

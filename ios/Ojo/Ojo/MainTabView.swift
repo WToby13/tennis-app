@@ -59,7 +59,7 @@ struct MainTabView: View {
 
 extension View {
     /// The shared push destinations every tab's NavigationStack needs: a match's
-    /// Watch screen and a user's public profile.
+    /// Watch screen, a user's public profile, and people search.
     func ojoDestinations(library: RecordingLibrary) -> some View {
         self
             .navigationDestination(for: WatchTarget.self) { target in
@@ -69,6 +69,9 @@ extension View {
                 switch target {
                 case .user(let id): ProfileView(userId: id)
                 }
+            }
+            .navigationDestination(for: SearchTarget.self) { _ in
+                PeopleSearchView()
             }
     }
 }

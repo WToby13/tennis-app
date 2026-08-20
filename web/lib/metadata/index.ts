@@ -26,10 +26,12 @@ export function metadata(
 }
 
 export type {
+  InvitePreview,
   LibraryEntry,
   MetadataStore,
   Participant,
   ParticipantInput,
+  ParticipantInvite,
   ShareLink,
   UserResult,
   Video,

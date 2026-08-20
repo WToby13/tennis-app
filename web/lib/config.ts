@@ -80,6 +80,17 @@ export const config = {
   },
 
   /**
+   * Where content reports are emailed. Every report is written to
+   * `content_reports` regardless — this is only the nudge that gets them looked
+   * at, and the App Store listing commits to acting on one within 24 hours. If
+   * it's unset the route says so loudly in the logs rather than failing the
+   * report, because losing the user's flag is the worse outcome.
+   */
+  moderation: {
+    reportsTo: process.env.MODERATION_EMAIL ?? "",
+  },
+
+  /**
    * TwelveLabs video AI (rally segmentation). Analysis is a no-op / degrades to a
    * dev stub until the API key is set, so local dev works without it.
    */

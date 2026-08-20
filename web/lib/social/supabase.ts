@@ -1,5 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Comment, FeedItem, LikeState, ProfileSummary, SocialStore } from "./types";
+import type {
+  Comment,
+  FeedItem,
+  LikeState,
+  ProfileSummary,
+  ReportInput,
+  SocialStore,
+} from "./types";
 
 /** Row shape returned by the get_feed RPC (snake_case). */
 interface FeedRow {
@@ -87,11 +94,12 @@ export class SupabaseSocialStore implements SocialStore {
     if (!profile) return null;
     const p = profile as { id: string; display_name: string | null; first_name: string | null; last_name: string | null };
 
-    // Independent of each other — one round trip's worth of latency, not three.
-    const [followers, following, isFollowing] = await Promise.all([
+    // Independent of each other — one round trip's worth of latency, not four.
+    const [followers, following, isFollowing, isBlocked] = await Promise.all([
       this.count("follows", "followee_id", userId),
       this.count("follows", "follower_id", userId),
       this.isFollowing(userId),
+      this.hasBlocked(userId),
     ]);
 
     return {
@@ -101,6 +109,7 @@ export class SupabaseSocialStore implements SocialStore {
       followers,
       following,
       isFollowing,
+      isBlocked,
     };
   }
 
@@ -222,5 +231,89 @@ export class SupabaseSocialStore implements SocialStore {
       .from("library_items")
       .upsert({ video_id: videoId, user_id: this.userId, added_via: "share" });
     if (error) throw new Error(`save failed: ${error.message}`);
+  }
+
+  // --- moderation ------------------------------------------------------------
+
+  async blockUser(userId: string): Promise<void> {
+    // The follow edges in both directions are severed by a trigger on insert
+    // (migration 0014), so a block can't be undone into a restored feed link.
+    const { error } = await this.supabase
+      .from("user_blocks")
+      .upsert({ blocker_id: this.userId, blocked_id: userId });
+    if (error) throw new Error(`block failed: ${error.message}`);
+  }
+
+  async unblockUser(userId: string): Promise<void> {
+    const { error } = await this.supabase
+      .from("user_blocks")
+      .delete()
+      .eq("blocker_id", this.userId)
+      .eq("blocked_id", userId);
+    if (error) throw new Error(`unblock failed: ${error.message}`);
+  }
+
+  async hasBlocked(userId: string): Promise<boolean> {
+    if (!this.userId) return false;
+    const { data } = await this.supabase
+      .from("user_blocks")
+      .select("blocked_id")
+      .eq("blocker_id", this.userId)
+      .eq("blocked_id", userId)
+      .maybeSingle();
+    return Boolean(data);
+  }
+
+  async listBlocked(): Promise<ProfileSummary[]> {
+    if (!this.userId) return [];
+    const { data, error } = await this.supabase
+      .from("user_blocks")
+      .select("blocked_id")
+      .eq("blocker_id", this.userId)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(`blocked list failed: ${error.message}`);
+
+    const ids = (data as Array<{ blocked_id: string }>).map((r) => r.blocked_id);
+    if (!ids.length) return [];
+
+    // Names only — follower counts would be a query per row, and the blocked
+    // list is a management screen, not a profile.
+    const { data: profs } = await this.supabase
+      .from("profiles")
+      .select("id, display_name, first_name, last_name")
+      .in("id", ids);
+    const byId = new Map(
+      ((profs ?? []) as Array<{
+        id: string;
+        display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+      }>).map((p) => [
+        p.id,
+        p.display_name || [p.first_name, p.last_name].filter(Boolean).join(" ") || "Ojo player",
+      ]),
+    );
+
+    return ids.map((id) => ({
+      id,
+      displayName: byId.get(id) ?? "Ojo player",
+      followers: 0,
+      following: 0,
+      isFollowing: false,
+      isBlocked: true,
+    }));
+  }
+
+  async report(input: ReportInput): Promise<void> {
+    const { error } = await this.supabase.from("content_reports").insert({
+      reporter_id: this.userId,
+      target_kind: input.targetKind,
+      target_id: input.targetId,
+      reported_user_id: input.reportedUserId,
+      content_snapshot: input.contentSnapshot,
+      reason: input.reason,
+      details: input.details,
+    });
+    if (error) throw new Error(`report failed: ${error.message}`);
   }
 }
