@@ -278,19 +278,61 @@ App Store Connect → your app → **App Privacy**. Answer from what the app
 actually does — `/privacy` is the source of truth, and a mismatch between the
 two is something reviewers do check.
 
-| Data type | Collected | Linked to user | Tracking | Purpose |
-|---|---|---|---|---|
-| Email address | Yes | Yes | No | App functionality, account |
-| Name | Yes | Yes | No | App functionality |
-| Photos or Videos | Yes | Yes | No | App functionality |
-| User content (comments) | Yes | Yes | No | App functionality |
-| User ID | Yes | Yes | No | App functionality |
-| Identifiers → Device ID | No | — | — | — |
-| Usage data | No | — | — | — |
+Apple asks three things about every data type you tick: **what it's used for**,
+**whether it's linked to the user's identity**, and **whether it's used for
+tracking**. For this app the last two are the same every time — linked **Yes**
+(it all hangs off an account), tracking **No** — and the purpose is always **App
+Functionality** alone. Do not tick Analytics or Product Personalisation: there
+is no analytics SDK in either client, so ticking it would be a false statement
+on the label.
 
-**"Do you or your third-party partners use data for tracking?" → No.** There is
-no ad SDK and no cross-app tracking, so you do not need App Tracking
-Transparency.
+**Tick these five. Purpose: App Functionality. Linked: Yes. Tracking: No.**
+
+| Apple's category | Data type | What it actually is |
+|---|---|---|
+| Contact Info | **Name** | The name on the profile, shown to other players |
+| Contact Info | **Email Address** | Sign-in identity; also how an invite is addressed |
+| User Content | **Photos or Videos** | The match recording, and its thumbnail frame |
+| User Content | **Audio Data** | Match audio — the recording captures the microphone |
+| User Content | **Other User Content** | Comments, match titles, participant names, report details |
+| Identifiers | **User ID** | The Supabase account id |
+
+**Audio Data is the one most people miss.** It looks like it's covered by
+"Photos or Videos", but the app asks for microphone permission and records
+sound into the file, so it is its own declaration. Over-declaring costs you a
+line on the label; under-declaring is a mismatch with the Info.plist permission
+strings, which is the kind of thing review does notice.
+
+**Leave everything else unticked**, in particular:
+
+| Not collected | Why it's safe to say no |
+|---|---|
+| Usage Data, Analytics | No analytics SDK anywhere — verified in both clients |
+| Diagnostics / Crash Data | No crash reporter. `UploadLog` writes to the device's own log and a capped local file, and never transmits |
+| Device ID, Advertising Data | No ad SDK, no IDFA, no `AdSupport` |
+| Location | Never requested |
+| Search History | People-search queries are sent to be answered and not stored |
+| Health & Fitness | It is a tennis app, but it records no health data |
+| Purchases, Financial Info | Nothing is sold in the app |
+
+**"Do you or your third-party partners use data for tracking?" → No.** No ad
+SDK and no cross-app tracking, so you do not need App Tracking Transparency and
+should not add the prompt.
+
+**A judgement call, so you can decide it rather than discover it.** Your host
+(Vercel) writes ordinary server logs containing IP addresses, and the privacy
+policy says so. Apple's label covers data the *app* collects, and operational
+logs used for nothing but running the service are conventionally not declared.
+Declaring nothing here is the normal reading and what I would do — but it is a
+judgement, not a certainty, and the policy already discloses it in plain words,
+which is what actually matters legally.
+
+**Third parties who receive this data** (worth having straight, because it is
+the question that follows a privacy complaint): Supabase holds the account and
+metadata; AWS S3/CloudFront holds the video; Vercel serves the app; Resend
+sends invite email; Google is the OAuth provider if the user chooses it; and
+**TwelveLabs receives the video itself** when an AI breakdown is run. That last
+one is the most sensitive relationship you have, and `/privacy` names it.
 
 ---
 
@@ -345,6 +387,21 @@ Information**:
   matches already uploaded and analysed, and put its email and password in the
   demo-account fields. A reviewer who lands on an empty account rejects for
   "incomplete app" more often than for anything else.
+
+  Concretely, before you submit:
+
+  1. Make the demo account and sign in as it on the web.
+  2. Put **three matches** in its library, at least one with a finished AI
+     breakdown — that is the screen the product is actually about, and an
+     analysis run takes minutes, so it cannot be done during review.
+  3. Make a **second** account, have it follow the demo account and post a match
+     to followers, so the demo account's Home feed is not empty. An empty feed
+     is where a reviewer goes looking for the moderation tools and fails to find
+     them, because the ⋯ menu lives on a feed card.
+  4. Leave a comment from the second account, so there is a comment to report
+     that is not the reviewer's own.
+  5. Check the demo password has no characters that are awkward to type on a
+     locked-down review device, and that it does not expire.
 - **Contact:** your name, phone, and an email you'll read within a day.
 - **Notes** — write something like:
 
@@ -361,6 +418,14 @@ Information**:
   > profile; blocked accounts are listed and reversible under You → Settings →
   > Blocked accounts. Reports go to a moderation queue and are reviewed within
   > 24 hours; the rules are published at https://ojotennis.com/terms.
+  >
+  > Blocking is thorough rather than cosmetic: a blocked account disappears from
+  > the feed, from comments, and from people search (the magnifying glass beside
+  > the Home title) in both directions — the blocked person cannot find the
+  > blocker either. The second demo account below can be used to try this.
+  >
+  > Accepting the terms and the zero-tolerance policy is part of creating an
+  > account — the text is on the sign-up screen above the Create account button.
   >
   > Account deletion (5.1.1(v)): You → Settings (gear icon) → Delete account.
   > This deletes the account, every match and the underlying video files.
