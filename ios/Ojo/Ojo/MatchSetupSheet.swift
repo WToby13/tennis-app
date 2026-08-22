@@ -76,7 +76,9 @@ struct MatchSubject {
 struct MatchSetup {
     var title: String?
     var startTimeSec: Double?
-    /// `player_1` in the model's vocabulary — starts nearest the camera.
+    /// `player_1` in the smoother's vocabulary — starts nearest the camera.
+    /// (The model itself no longer names players; it only says whether the near
+    /// player changed within its own clip. See web/lib/twelvelabs/rally.ts.)
     var near = PlayerEntry()
     /// `player_2` — starts at the far end.
     var far = PlayerEntry()

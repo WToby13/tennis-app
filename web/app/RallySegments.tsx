@@ -662,7 +662,7 @@ export function RallySegments({
                 />
               </div>
               <datalist id="ai-player-names">
-                {participantNames.map((n) => (
+                {suggestions.map((n) => (
                   <option key={n} value={n} />
                 ))}
               </datalist>

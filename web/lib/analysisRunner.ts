@@ -7,7 +7,7 @@ import {
   getAnalysisTask,
 } from "./twelvelabs/client";
 import { RALLY_KIND, buildRallyRequest } from "./twelvelabs/rally";
-import { smoothTennis } from "./twelvelabs/smooth";
+import { assessRaw, degenerateWindow, smoothTennis } from "./twelvelabs/smooth";
 import { normalizeSegments } from "./twelvelabs/types";
 import { type AnalysisWindow, mergeWindowSegments, planWindows } from "./twelvelabs/windows";
 
@@ -102,8 +102,11 @@ export async function finalizeReady(
   store: MetadataStore,
   id: string,
   raw: Omit<VideoSegment, "id">[],
+  opts?: { linkGroups?: number[] },
 ): Promise<Video> {
-  const { segments, report } = raw.length ? smoothTennis(raw) : { segments: raw, report: null };
+  const { segments, report } = raw.length
+    ? smoothTennis(raw, { linkGroups: opts?.linkGroups })
+    : { segments: raw, report: null };
   if (report) console.info("[analyze] smoother report", JSON.stringify(report));
 
   if (report?.degenerate) {
@@ -195,6 +198,72 @@ export async function startWindows(
 }
 
 /**
+ * One retry per window, and no more.
+ *
+ * A templated window is usually a bad roll rather than a property of the video —
+ * a re-run at the same settings genuinely differs — so it is worth one more
+ * call. But if the same five minutes comes back templated twice, that stretch of
+ * footage is the problem (a long warm-up, a doubles rally, players off camera)
+ * and re-running it a third time just spends money to reach the same answer more
+ * slowly.
+ */
+const MAX_WINDOW_RETRIES = 1;
+
+/** The URL a window is analysed from — the proxy when there is one, else the master. */
+async function analysisSourceUrl(store: MetadataStore, video: Video): Promise<string> {
+  return (await proxyIsAvailable(store, video))
+    ? storage().getAnalysisProxyUrl(video.id)
+    : storage().getPlaybackUrl(video.id, video.key);
+}
+
+/**
+ * Re-submit a single window and leave the run in flight.
+ *
+ * The other windows keep their task ids and their results; only this one gets a
+ * new task. The next poll finds the run one window short of ready and waits, so
+ * the retry costs a few more polls and one window's worth of analysis rather
+ * than a whole match.
+ *
+ * The owner's poll and the cron sweep can both reach this at once, in which case
+ * two replacement tasks get created and the second write wins. That leaves one
+ * orphaned task — read-only work on TwelveLabs' side — and `attempt` still lands
+ * on 1 either way, so the retry stays bounded. Cheaper than a lock.
+ */
+async function retryWindow(
+  store: MetadataStore,
+  video: Video,
+  windows: AnalysisWindow[],
+  target: AnalysisWindow,
+): Promise<Video> {
+  const url = await analysisSourceUrl(store, video);
+  const task = await createAnalysisTask(
+    buildRallyRequest(url, {
+      startTimeSec: target.startS,
+      // `toEnd` windows send no end_time at all — see AnalysisWindow.toEnd.
+      endTimeSec: target.toEnd ? undefined : target.endS,
+    }),
+  );
+  // startS is unique across a plan, so it identifies the window being replaced.
+  const next = windows.map((w) =>
+    w.startS === target.startS
+      ? { ...w, taskId: task.task_id, attempt: (w.attempt ?? 0) + 1 }
+      : w,
+  );
+  return store.update(video.id, { analysisWindows: next, analysisError: null });
+}
+
+/** `615` → `10:15`. */
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+/**
+ * A window's span, for a message someone will read. `toEnd` windows still carry
+ * an `endS`, but the unknown-duration plan plants a 0 there — say "onward"
+ * rather than "0:00 and 0:00".
+ */
+const windowLabel = (w: AnalysisWindow) =>
+  w.endS > w.startS ? `${mmss(w.startS)}–${mmss(w.endS)}` : `${mmss(w.startS)} onward`;
+
+/**
  * Poll every window of a windowed run. Finalizes only once all of them are
  * ready, so a breakdown is never built from a partial match.
  */
@@ -231,11 +300,56 @@ async function advanceWindowed(
     return video;
   }
 
-  const merged = mergeWindowSegments(
-    done.map(({ window, task }) => ({ window, segments: normalizeSegments(task, RALLY_KIND) })),
+  const parts = done.map(({ window, task }) => ({
+    window,
+    segments: normalizeSegments(task, RALLY_KIND),
+  }));
+
+  // Judge each window on its own before merging.
+  //
+  // The guard in `finalizeReady` runs on the stitched result, and every
+  // threshold it uses is a whole-match statistic — so one templated window out
+  // of seven is averaged away by the six good ones and the run is presented as
+  // if nothing happened. A window that produced a template is evidence about
+  // the run whatever the total looks like, and it is also the only scale at
+  // which the failure is actually visible.
+  //
+  // A bad window is re-run on its own rather than dropped. The smoother fits
+  // strict server alternation across the match, so a 4.5-minute hole doesn't
+  // cost you that window — it throws every game after it out of phase. Only
+  // when the retry comes back templated too does the whole run fail.
+  for (const { window, segments } of parts) {
+    const quality = assessRaw(segments);
+    if (!degenerateWindow(quality)) continue;
+    const label = windowLabel(window);
+    console.warn(`[analyze] ${video.id}: window ${label} is templated`, JSON.stringify(quality));
+
+    if ((window.attempt ?? 0) < MAX_WINDOW_RETRIES) {
+      try {
+        console.info(`[analyze] ${video.id}: re-running window ${label}`);
+        return await retryWindow(store, video, windows, window);
+      } catch (err) {
+        // Couldn't start the retry (rate limit, expired proxy URL). Don't fail
+        // the run on that — leave the row in flight and let the next poll,
+        // which re-reads every window, try again.
+        console.error("[analyze] window retry failed to start", video.id, label, err);
+        return video;
+      }
+    }
+
+    return failRun(
+      store,
+      video,
+      `The AI returned the same answers for every point in one stretch of this match (${label}), twice in a row, so the breakdown wouldn't be meaningful. Something about that stretch of the video is hard for it to read.`,
+    );
+  }
+
+  const { segments: merged, linkGroups } = mergeWindowSegments(parts);
+  console.info(
+    `[analyze] ${video.id}: merged ${windows.length} windows → ${merged.length} rallies, ` +
+      `${new Set(linkGroups).size} identity frame(s)`,
   );
-  console.info(`[analyze] ${video.id}: merged ${windows.length} windows → ${merged.length} rallies`);
-  const ready = await finalizeReady(store, video.id, merged);
+  const ready = await finalizeReady(store, video.id, merged, { linkGroups });
   await store.update(video.id, { analysisWindows: null });
   return ready;
 }

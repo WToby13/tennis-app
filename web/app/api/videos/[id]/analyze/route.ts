@@ -13,7 +13,14 @@ import { startProxyTranscode, transcodeEnabled } from "@/lib/transcode";
 import { storage } from "@/lib/storage";
 import type { MetadataStore, Video, VideoSegment } from "@/lib/metadata/types";
 import { TwelveLabsApiError, TwelveLabsNotConfiguredError } from "@/lib/twelvelabs/client";
-import { RALLY_KIND } from "@/lib/twelvelabs/rally";
+import {
+  NEAR_OTHER,
+  NEAR_SAME,
+  NEAR_UNCLEAR,
+  RALLY_KIND,
+  SERVE_BOTTOM,
+  SERVE_TOP,
+} from "@/lib/twelvelabs/rally";
 import { planWindows } from "@/lib/twelvelabs/windows";
 import { type AnalysisTask, normalizeSegments } from "@/lib/twelvelabs/types";
 import { badRequest, json, notFound, sanitizePlayers } from "@/lib/util";
@@ -67,10 +74,12 @@ const STUB_TASK_ID = "stub-task";
  * plus a couple of 'unclear' fields and deliberately-low shot counts.
  */
 function stubSegments(): Omit<VideoSegment, "id">[] {
+  // `near` is window-relative now (see NEAR_SAME / NEAR_OTHER in twelvelabs/rally.ts):
+  // the stub is a single call, so "first near player of the clip" is game 1's.
   const games = [
-    { near: "player_1", role: "serving", base: 4 }, // game 1: P1 serves, near = P1
-    { near: "player_1", role: "receiving", base: 130 }, // game 2: P2 serves, near still P1
-    { near: "player_2", role: "receiving", base: 260 }, // game 3: P1 serves, ends changed → near P2
+    { near: NEAR_SAME, serve: SERVE_BOTTOM, base: 4 }, // game 1: near player serves
+    { near: NEAR_SAME, serve: SERVE_TOP, base: 130 }, // game 2: far end serves, near unchanged
+    { near: NEAR_OTHER, serve: SERVE_TOP, base: 260 }, // game 3: ends changed → the other is near
   ];
   const rally: Record<string, unknown>[] = [];
   let idx = 0;
@@ -82,9 +91,9 @@ function stubSegments(): Omit<VideoSegment, "id">[] {
         start_time: t,
         end_time: t + dur,
         metadata: {
-          what_you_see: `Point ${idx + 1}: near player ${g.role === "serving" ? "serves" : "returns"}.`,
-          near_player_role: idx === 2 ? "unclear" : g.role, // noise: one unclear role
-          near_player_identity: idx === 5 ? "unclear" : g.near, // noise: one unclear identity
+          what_you_see: `Point ${idx + 1}: near player ${g.serve === SERVE_BOTTOM ? "serves" : "returns"}.`,
+          serve_came_from: idx === 2 ? NEAR_UNCLEAR : g.serve, // noise: one unclear serve
+          near_player_identity: idx === 5 ? NEAR_UNCLEAR : g.near, // noise: one unclear identity
           times_ball_was_hit: 2 + (p % 3), // deliberately low → exercises the shot floor
         },
       });
