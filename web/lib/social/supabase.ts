@@ -3,6 +3,7 @@ import type {
   Comment,
   FeedItem,
   LikeState,
+  Notification,
   ProfileSummary,
   ReportInput,
   SocialStore,
@@ -26,6 +27,20 @@ interface FeedRow {
   comment_count: number;
   liked_by_me: boolean;
   in_library: boolean;
+}
+
+/** Row shape returned by the list_notifications RPC (snake_case). */
+interface NotificationRow {
+  id: string;
+  kind: Notification["kind"];
+  video_id: string;
+  comment_id: string | null;
+  body: string | null;
+  read_at: string | null;
+  created_at: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  video_title: string | null;
 }
 
 /** Supabase-backed social store, scoped to the caller's session (RLS applies). */
@@ -197,6 +212,38 @@ export class SupabaseSocialStore implements SocialStore {
   async deleteComment(commentId: string): Promise<void> {
     const { error } = await this.supabase.from("match_comments").delete().eq("id", commentId);
     if (error) throw new Error(`delete comment failed: ${error.message}`);
+  }
+
+  async listNotifications(limit = 50): Promise<Notification[]> {
+    const { data, error } = await this.supabase.rpc("list_notifications", { p_limit: limit });
+    if (error) throw new Error(`notifications failed: ${error.message}`);
+    return (data as NotificationRow[]).map((r) => ({
+      id: r.id,
+      kind: r.kind,
+      videoId: r.video_id,
+      commentId: r.comment_id,
+      body: r.body,
+      readAt: r.read_at,
+      createdAt: r.created_at,
+      actorId: r.actor_id,
+      actorName: r.actor_name,
+      videoTitle: r.video_title,
+    }));
+  }
+
+  async markNotificationsRead(ids?: string[]): Promise<void> {
+    if (!this.userId) return;
+    // An empty array means "these specific none", not "all" — the caller asked
+    // for nothing, so clearing the whole inbox would be the wrong reading.
+    if (ids && ids.length === 0) return;
+    let q = this.supabase
+      .from("notifications")
+      .update({ read_at: new Date().toISOString() })
+      .eq("user_id", this.userId)
+      .is("read_at", null);
+    if (ids) q = q.in("id", ids);
+    const { error } = await q;
+    if (error) throw new Error(`mark read failed: ${error.message}`);
   }
 
   async isSharedToFollowers(videoId: string): Promise<boolean> {

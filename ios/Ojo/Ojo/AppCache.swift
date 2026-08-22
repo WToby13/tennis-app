@@ -15,6 +15,9 @@ final class AppCache: ObservableObject {
     @Published private(set) var feed: [FeedItem] = []
     @Published private(set) var profile: ProfileSummary?
     @Published private(set) var feedError: String?
+    @Published private(set) var notifications: [AppNotification] = []
+    /// What the bell on Home badges itself with.
+    @Published private(set) var unreadNotifications = 0
 
     /// How long a result is considered good enough to show without a refetch.
     /// Pull-to-refresh always bypasses this.
@@ -22,6 +25,7 @@ final class AppCache: ObservableObject {
 
     private var feedFetchedAt: Date?
     private var profileFetchedAt: Date?
+    private var notificationsFetchedAt: Date?
     private let api = UploadAPI()
 
     private init() {}
@@ -53,6 +57,24 @@ final class AppCache: ObservableObject {
         }
     }
 
+    func refreshNotifications(force: Bool = false) async {
+        guard force || Self.isStale(notificationsFetchedAt) else { return }
+        if let resp = try? await api.listNotifications() {
+            notifications = resp.notifications
+            unreadNotifications = resp.unreadCount
+            notificationsFetchedAt = Date()
+        }
+    }
+
+    /// Opening the inbox is what "read" means here, so the badge clears as soon
+    /// as the list is on screen. The rows keep their unread styling from the copy
+    /// already in memory, so the page doesn't blank out under the reader.
+    func markNotificationsRead() async {
+        guard unreadNotifications > 0 else { return }
+        unreadNotifications = 0
+        try? await api.markNotificationsRead()
+    }
+
     /// Called after editing your profile, so the next read doesn't serve the old name.
     func invalidateProfile() { profileFetchedAt = nil }
 
@@ -61,7 +83,10 @@ final class AppCache: ObservableObject {
         feed = []
         profile = nil
         feedError = nil
+        notifications = []
+        unreadNotifications = 0
         feedFetchedAt = nil
         profileFetchedAt = nil
+        notificationsFetchedAt = nil
     }
 }

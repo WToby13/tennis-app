@@ -180,8 +180,14 @@ export interface MetadataStore {
   getParticipants(videoId: string): Promise<Participant[]>;
   /** Replace a match's participant list. Editors only (owner or participant). */
   setParticipants(videoId: string, participants: ParticipantInput[]): Promise<Participant[]>;
-  /** Search Ojo users by name, for tagging. */
-  searchUsers(query: string): Promise<UserResult[]>;
+  /**
+   * Search Ojo users by name, for tagging.
+   *
+   * `followingOnly` narrows it to people the caller follows, which is what the
+   * comment @ picker uses — you can only tag someone you follow. The default
+   * stays the full directory, for People Search and the participant picker.
+   */
+  searchUsers(query: string, followingOnly?: boolean): Promise<UserResult[]>;
 
   // --- invites ---------------------------------------------------------------
   /**

@@ -8,6 +8,11 @@ enum WatchTarget: Hashable {
     case video(id: String)
 }
 
+/// Somewhere on the watch page worth scrolling to by name.
+private enum PageAnchor: Hashable {
+    case comments
+}
+
 /// The match screen — review the footage and act on it (like, comment, follow,
 /// save, share, and for your own matches manage visibility / delete). Plays a
 /// local file when present, otherwise a signed cloud URL, and loads the cloud
@@ -19,6 +24,9 @@ enum WatchTarget: Hashable {
 struct WatchView: View {
     let target: WatchTarget
     @ObservedObject var library: RecordingLibrary
+    /// Set when the screen was opened from a notification, which is about the
+    /// conversation rather than the match — so land on it.
+    var startAtComments = false
 
     @Environment(\.dismiss) private var dismiss
     /// Compact height means a landscape phone — the cue to go immersive.
@@ -46,6 +54,8 @@ struct WatchView: View {
     @State private var isPublic = false
     @State private var sharePayload: SharePayload?
     @State private var preparingShare = false
+    /// Kept in step by the comment list so the bubble can carry a count.
+    @State private var commentCount = 0
 
     @ObservedObject private var chrome = ChromeState.shared
 
@@ -258,30 +268,48 @@ struct WatchView: View {
     // MARK: Page (portrait)
 
     private var page: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                stage
-                header
-                if let rec = pendingUpload {
-                    uploadActions(rec)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    stage
+                    header
+                    if let rec = pendingUpload {
+                        uploadActions(rec)
+                    }
+                    if let rec = localRecording, rec.status == .uploading {
+                        uploadProgress(rec)
+                    }
+                    if let vid = videoId, let d = detail {
+                        socialBar(vid: vid, d: d) {
+                            withAnimation { proxy.scrollTo(PageAnchor.comments, anchor: .top) }
+                        }
+                        RallyBreakdown(
+                            model: analysis,
+                            onSeek: { playerModel?.play(from: $0) },
+                            onSetup: { setup, run in applySetup(vid, setup: setup, run: run) },
+                            participants: currentParticipants
+                        )
+                        manageControls(vid: vid, d: d)
+                        Divider().overlay(Theme.border).padding(.horizontal, 16)
+                        CommentSection(
+                            videoId: vid,
+                            onSeek: { playerModel?.play(from: $0) },
+                            onCountChange: { commentCount = $0 }
+                        )
+                        .id(PageAnchor.comments)
+                    }
                 }
-                if let rec = localRecording, rec.status == .uploading {
-                    uploadProgress(rec)
-                }
-                if let vid = videoId, let d = detail {
-                    socialBar(vid: vid, d: d)
-                    RallyBreakdown(
-                        model: analysis,
-                        onSeek: { playerModel?.play(from: $0) },
-                        onSetup: { setup, run in applySetup(vid, setup: setup, run: run) },
-                        participants: currentParticipants
-                    )
-                    manageControls(vid: vid, d: d)
-                    Divider().overlay(Theme.border).padding(.horizontal, 16)
-                    CommentSection(videoId: vid)
-                }
+                .padding(.bottom, 32)
             }
-            .padding(.bottom, 32)
+            .scrollDismissesKeyboard(.interactively)
+            // Once the detail lands there is finally a comment section to scroll
+            // to. The beat afterwards lets the list lay out first, so this jumps
+            // to where the comments end up rather than where they started.
+            .task(id: detail?.video.id) {
+                guard startAtComments, detail != nil else { return }
+                try? await Task.sleep(for: .milliseconds(350))
+                withAnimation { proxy.scrollTo(PageAnchor.comments, anchor: .top) }
+            }
         }
     }
 
@@ -357,7 +385,7 @@ struct WatchView: View {
 
     // MARK: Social bar
 
-    private func socialBar(vid: String, d: VideoDetailResponse) -> some View {
+    private func socialBar(vid: String, d: VideoDetailResponse, onComments: @escaping () -> Void) -> some View {
         HStack(spacing: 22) {
             Button { toggleLike(vid) } label: {
                 HStack(spacing: 6) {
@@ -366,6 +394,17 @@ struct WatchView: View {
                 }
                 .foregroundStyle(liked ? Theme.danger : Theme.text)
             }
+            // Sits with like and share because that's where a thumb looks for it;
+            // the comments themselves are the length of the page away, so this
+            // takes you there rather than opening anything.
+            Button(action: onComments) {
+                HStack(spacing: 6) {
+                    Image(systemName: "bubble.right")
+                    if commentCount > 0 { Text("\(commentCount)").font(.subheadline.weight(.semibold)) }
+                }
+                .foregroundStyle(Theme.text)
+            }
+            .accessibilityLabel("Go to comments")
             Button { presentShare() } label: {
                 Image(systemName: "square.and.arrow.up").foregroundStyle(Theme.text)
             }

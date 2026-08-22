@@ -24,6 +24,7 @@ export type {
   Comment,
   FeedItem,
   LikeState,
+  Notification,
   ProfileSummary,
   ReportInput,
   ReportReason,

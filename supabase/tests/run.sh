@@ -1,8 +1,9 @@
 #!/bin/zsh
 # Run the SQL assertions against a throwaway local Postgres.
 #
-# Two suites: invites (set_participants, claim_invite, the signup trigger) and
-# moderation (blocking, reports, and what an account deletion leaves behind).
+# Three suites: invites (set_participants, claim_invite, the signup trigger),
+# moderation (blocking, reports, and what an account deletion leaves behind),
+# and notifications (who a comment's fan-out reaches, and who it must not).
 # Both sets of rules live in SQL, so this is where they can actually be tested —
 # no Supabase project and no network needed. Start a scratch cluster first:
 #
@@ -25,7 +26,7 @@ P() { psql -h 127.0.0.1 -p "$PORT" -U postgres -q -v ON_ERROR_STOP=1 "$@"; }
 # runs, including 0014_moderation — it redefines get_feed, so a chain that
 # skipped it would not be testing the function the app actually calls.
 fail=0
-for t in invites moderation; do
+for t in invites moderation notifications; do
   echo "--- $t ---"
   # Each suite gets a clean database: they both seed auth.users and would
   # otherwise trip over each other's fixtures.

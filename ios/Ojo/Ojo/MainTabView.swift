@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The four primary destinations. Record is not a "tab" you stay on — it's a
 /// prominent center button that launches the fullscreen camera as a modal, so
@@ -20,18 +21,41 @@ struct MainTabView: View {
     /// Set by fullscreen surfaces (the immersive Watch screen) that want the
     /// whole screen — see `ChromeState`.
     @ObservedObject private var chrome = ChromeState.shared
+    /// Whether the software keyboard is up.
+    ///
+    /// The bar rides up with the keyboard and would otherwise sit in the strip
+    /// directly above it, squeezing the field someone is typing into. Standing it
+    /// down while they type is what a tab bar is expected to do anyway.
+    @State private var keyboardUp = false
 
     var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
 
-            selectedTab
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if !chrome.tabBarHidden {
-                        OjoTabBar(tab: $tab, onRecord: { showCamera = true })
-                    }
+            // A plain VStack, not `safeAreaInset`.
+            //
+            // The bar used to be a bottom `safeAreaInset` on the NavigationStack,
+            // which asks SwiftUI to shrink the safe area of everything inside —
+            // including screens pushed onto the stack. On the Watch screen that
+            // did not hold: the comment composer, being the last thing on a very
+            // long page, stayed underneath the bar with no way to scroll it out,
+            // so the tap meant for the text field hit the tab bar instead.
+            //
+            // Stacking them just takes the height away from the NavigationStack
+            // instead of negotiating for it, so nothing inside can be laid out
+            // under the bar in the first place. The bar is opaque, so nothing is
+            // lost by content no longer scrolling beneath it.
+            VStack(spacing: 0) {
+                selectedTab
+                if !chrome.tabBarHidden && !keyboardUp {
+                    OjoTabBar(tab: $tab, onRecord: { showCamera = true })
                 }
+            }
         }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIResponder.keyboardWillShowNotification)) { _ in keyboardUp = true }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIResponder.keyboardWillHideNotification)) { _ in keyboardUp = false }
         .fullScreenCover(isPresented: $showCamera) {
             CameraScreen(library: library) { recording in
                 // Stop → jump straight to the new match's Watch screen to review,
@@ -73,6 +97,15 @@ extension View {
             .navigationDestination(for: SearchTarget.self) { _ in
                 PeopleSearchView()
             }
+            .navigationDestination(for: InboxTarget.self) { _ in
+                NotificationsView()
+            }
+            // A match reached from a notification is the same screen, opened at
+            // the conversation the notification was about.
+            .navigationDestination(for: CommentTarget.self) { target in
+                WatchView(target: .video(id: target.videoId), library: library,
+                          startAtComments: true)
+            }
     }
 }
 
@@ -91,7 +124,10 @@ struct OjoTabBar: View {
         .padding(.horizontal, 8)
         .padding(.top, 10)
         .padding(.bottom, 4)
-        .background(Theme.surface)
+        // The bar sits above the home indicator, but its background has to carry
+        // on past it — otherwise the page scrolls through a strip of its own
+        // colour below the bar, which reads as the bar floating over the content.
+        .background(Theme.surface.ignoresSafeArea(edges: .bottom))
         .overlay(alignment: .top) {
             Rectangle().fill(Theme.border).frame(height: 0.5)
         }

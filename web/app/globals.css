@@ -586,6 +586,144 @@ video {
   color: var(--danger);
 }
 
+/* A comment arrived at from the inbox — marked so it can be found in a long
+   list, and left marked rather than fading, because the highlight *is* the
+   answer to "which one?". */
+.comment-focus {
+  background: rgba(217, 102, 44, 0.09);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 2px 0 0 var(--accent);
+  padding-left: 10px;
+}
+
+/* ---- mentions + timestamps inside a comment ---- */
+.mention {
+  color: var(--accent);
+  font-weight: 600;
+}
+.mention:hover {
+  color: var(--accent-dim);
+  text-decoration: underline;
+}
+/* A timestamp is a button on the watch page and a link everywhere else; both
+   have to read as the same orange word inside a sentence, so the button's own
+   chrome is stripped back to nothing. */
+.ts-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.ts-link:hover {
+  color: var(--accent-dim);
+  text-decoration: underline;
+}
+
+/* ---- @ typeahead under the comment box ---- */
+.mention-wrap {
+  position: relative;
+}
+.mention-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  width: min(320px, 100%);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.mention-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.mention-menu button.active,
+.mention-menu button:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* ---- notifications ---- */
+.navlink-icon {
+  position: relative;
+  flex: 0 0 28px;
+  display: block;
+  line-height: 0;
+}
+.nav-badge {
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.notif-list {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  max-width: 680px;
+}
+.notif {
+  border-top: 1px solid var(--border);
+}
+.notif a {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 12px;
+  color: inherit;
+  border-radius: var(--radius-sm);
+}
+.notif a:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.notif.unread a {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.notif-head {
+  font-size: 14px;
+  line-height: 1.45;
+}
+.notif-match {
+  font-weight: 600;
+}
+.notif-body {
+  font-size: 14px;
+  color: var(--muted);
+  margin-top: 3px;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 /* ---- compact comments inside a feed card ---- */
 .feed-comments {
   padding: 6px 16px 16px;

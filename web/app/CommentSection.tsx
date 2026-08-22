@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Avatar } from "./Avatar";
+import { CommentBody } from "./CommentBody";
+import { MentionComposer } from "./MentionComposer";
 import { TrashIcon } from "./icons";
 import { ModerationMenu } from "./ModerationMenu";
 
@@ -21,11 +23,23 @@ function timeAgo(iso: string): string {
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
 }
 
-/** Match-level comments: composer + list, below the video. */
-export function CommentSection({ videoId }: { videoId: string }) {
+/**
+ * Match-level comments: composer + list, below the video.
+ *
+ * `onSeek` is handed down from the watch page so a timestamp someone wrote in a
+ * comment plays the match from there.
+ */
+export function CommentSection({
+  videoId,
+  onSeek,
+}: {
+  videoId: string;
+  onSeek?: (seconds: number) => void;
+}) {
   const [comments, setComments] = useState<CommentT[] | null>(null);
-  const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  /** The comment a notification link points at, so it can be found on arrival. */
+  const [focused, setFocused] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/videos/${videoId}/comments`)
@@ -34,21 +48,28 @@ export function CommentSection({ videoId }: { videoId: string }) {
       .catch(() => setComments([]));
   }, [videoId]);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const text = body.trim();
-    if (!text) return;
+  // Arriving from the inbox: #comment-<id> scrolls to it and marks it for a
+  // moment. Runs after the list lands, because the element does not exist until
+  // then.
+  useEffect(() => {
+    if (!comments?.length) return;
+    const hash = window.location.hash;
+    if (!hash.startsWith("#comment-")) return;
+    const id = hash.slice("#comment-".length);
+    if (!comments.some((c) => c.id === id)) return;
+    setFocused(id);
+    document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [comments]);
+
+  async function post(body: string) {
     setBusy(true);
     try {
       const res = await fetch(`/api/videos/${videoId}/comments`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ body: text }),
+        body: JSON.stringify({ body }),
       });
-      if (res.ok) {
-        setComments((await res.json()).comments ?? []);
-        setBody("");
-      }
+      if (res.ok) setComments((await res.json()).comments ?? []);
     } finally {
       setBusy(false);
     }
@@ -65,26 +86,19 @@ export function CommentSection({ videoId }: { videoId: string }) {
   }
 
   return (
-    <div className="comments">
+    <div className="comments" id="comments">
       <h3 style={{ fontSize: 15, marginBottom: 12 }}>
         Comments{comments ? ` (${comments.length})` : ""}
       </h3>
 
-      <form onSubmit={submit} className="comment-form">
-        <input
-          type="text"
-          placeholder="Add a comment…"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          disabled={busy}
-        />
-        <button className="btn" type="submit" disabled={busy || !body.trim()}>
-          Post
-        </button>
-      </form>
+      <MentionComposer onPost={post} busy={busy} placeholder="Add a comment… @ to tag a player" />
 
       {comments?.map((c) => (
-        <div key={c.id} className="comment">
+        <div
+          key={c.id}
+          id={`comment-${c.id}`}
+          className={`comment${focused === c.id ? " comment-focus" : ""}`}
+        >
           <Avatar name={c.authorName} size={30} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13 }}>
@@ -93,7 +107,9 @@ export function CommentSection({ videoId }: { videoId: string }) {
                 {timeAgo(c.createdAt)}
               </span>
             </div>
-            <div style={{ fontSize: 14, marginTop: 2, wordBreak: "break-word" }}>{c.body}</div>
+            <div style={{ fontSize: 14, marginTop: 2, wordBreak: "break-word" }}>
+              <CommentBody body={c.body} videoId={videoId} onSeek={onSeek} />
+            </div>
           </div>
           {c.canDelete && (
             <button className="comment-del" onClick={() => remove(c.id)} aria-label="Delete comment">

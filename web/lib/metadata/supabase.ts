@@ -361,15 +361,15 @@ export class SupabaseMetadataStore implements MetadataStore {
     return data as string;
   }
 
-  async searchUsers(query: string): Promise<UserResult[]> {
-    // Through the `search_users` RPC rather than a select on `profiles`, so the
-    // result is filtered by the symmetric `is_blocked()` — see 0016. A block has
-    // to hide people in both directions, and only the database can see the half
-    // of user_blocks where the caller is the blocked party.
-    const { data, error } = await this.supabase.rpc("search_users", {
-      p_query: query,
-      p_limit: 10,
-    });
+  async searchUsers(query: string, followingOnly = false): Promise<UserResult[]> {
+    // Through an RPC rather than a select on `profiles`, so the result is
+    // filtered by the symmetric `is_blocked()` — see 0016. A block has to hide
+    // people in both directions, and only the database can see the half of
+    // user_blocks where the caller is the blocked party.
+    const { data, error } = await this.supabase.rpc(
+      followingOnly ? "search_followed_users" : "search_users",
+      { p_query: query, p_limit: 10 },
+    );
     if (error) throw new Error(`search users failed: ${error.message}`);
     return (data as Array<{ id: string; display_name: string }>).map((r) => ({
       id: r.id,

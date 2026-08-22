@@ -161,6 +161,32 @@ struct Comment: Decodable, Identifiable, Hashable {
 
 struct CommentsResponse: Decodable { let comments: [Comment] }
 
+/// One item in the notification inbox (`GET /api/notifications`).
+///
+/// `kind` is why it is there: "mention" means a comment tagged you with @, and
+/// "reply" means someone added to a match conversation you are already part of.
+/// Left as a string rather than an enum so a kind added server-side later
+/// doesn't stop the whole inbox from decoding on an older build.
+struct AppNotification: Decodable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let videoId: String
+    let commentId: String?
+    let body: String?
+    let readAt: String?
+    let createdAt: String
+    let actorId: String?
+    let actorName: String?
+    let videoTitle: String?
+
+    var isUnread: Bool { readAt == nil }
+}
+
+struct NotificationsResponse: Decodable {
+    let notifications: [AppNotification]
+    let unreadCount: Int
+}
+
 struct ProfileSummary: Decodable {
     let id: String
     let displayName: String
@@ -339,12 +365,17 @@ struct UploadAPI {
         return try await send("/api/uploads/initiate", method: "POST", body: body)
     }
 
-    /// Search Ojo users by name, for tagging as participants.
-    func searchUsers(_ query: String) async throws -> [UserResult] {
+    /// Search Ojo users by name.
+    ///
+    /// `followingOnly` narrows it to people you follow, which is what the comment
+    /// @ picker asks for — you can only tag someone you follow. The default is
+    /// the whole directory, for people search and the participant picker.
+    func searchUsers(_ query: String, followingOnly: Bool = false) async throws -> [UserResult] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard q.count >= 2 else { return [] }
         let enc = q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? q
-        let resp: UsersResponse = try await send("/api/users?q=\(enc)", method: "GET")
+        let scope = followingOnly ? "&scope=following" : ""
+        let resp: UsersResponse = try await send("/api/users?q=\(enc)\(scope)", method: "GET")
         return resp.users
     }
 
@@ -464,6 +495,17 @@ extension UploadAPI {
 
     func deleteComment(videoId: String, commentId: String) async throws {
         _ = try await perform(try await makeRequest("/api/videos/\(videoId)/comments/\(commentId)", method: "DELETE", body: nil))
+    }
+
+    /// The signed-in player's notification inbox, newest first.
+    func listNotifications() async throws -> NotificationsResponse {
+        try await send("/api/notifications", method: "GET")
+    }
+
+    /// Mark the whole inbox read — what opening it does.
+    func markNotificationsRead() async throws {
+        _ = try await perform(try await makeRequest("/api/notifications/read", method: "POST",
+                                                    body: Data("{}".utf8)))
     }
 
     /// Follow (POST) or unfollow (DELETE) a user; returns the new following state.

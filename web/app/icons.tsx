@@ -75,5 +75,14 @@ export const GridIcon = ({ size = 24 }: P) =>
   svg(size, <><rect x="3" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" /></>);
 export const UploadIcon = ({ size = 24 }: P) =>
   svg(size, <><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" /><path d="M4 15v3.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15" /></>);
+export const BellIcon = ({ size = 24 }: P) =>
+  svg(
+    size,
+    <>
+      <path d="M18 15.5V10a6 6 0 1 0-12 0v5.5L4.5 18h15z" />
+      <path d="M10 21h4" />
+    </>,
+  );
+
 export const ProfileIcon = ({ size = 24 }: P) =>
   svg(size, <><circle cx="12" cy="8" r="3.6" /><path d="M4.5 20c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6" /></>);

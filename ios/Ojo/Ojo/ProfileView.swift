@@ -3,8 +3,15 @@ import Supabase
 
 /// A profile navigation value — a specific user's public profile. (Destinations
 /// are wired into the nav stacks alongside `WatchTarget`.)
-enum ProfileTarget: Hashable {
+enum ProfileTarget: Hashable, Identifiable {
     case user(id: String)
+
+    /// So a tapped @tag in a comment can drive `navigationDestination(item:)`.
+    var id: String {
+        switch self {
+        case .user(let id): return id
+        }
+    }
 }
 
 /// A player's profile — your own (the You tab: editable, with sign out) or

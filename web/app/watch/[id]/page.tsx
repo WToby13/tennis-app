@@ -10,6 +10,7 @@ import { LikeButton } from "../../LikeButton";
 import { RallySegments } from "../../RallySegments";
 import {
   CloseIcon,
+  CommentIcon,
   EditIcon,
   NextFrameIcon,
   PauseIcon,
@@ -282,6 +283,33 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     el.play().catch(() => {});
   }, []);
 
+  /**
+   * A timestamp someone wrote in a comment. Plays from there like any other
+   * seek, and pulls the player back into view — the comment that named the
+   * moment is usually a screen or more below it, so seeking alone would look
+   * like nothing happened.
+   */
+  const seekFromComment = useCallback(
+    (seconds: number) => {
+      seekTo(seconds);
+      theaterRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+    [seekTo],
+  );
+
+  /**
+   * `?t=` on the URL: where a timestamp links to from a feed card or the inbox,
+   * which have no player of their own. Applied once, on metadata, because
+   * setting currentTime before the asset has a duration is silently dropped.
+   */
+  const appliedStartTime = useRef(false);
+  const applyStartTime = useCallback(() => {
+    if (appliedStartTime.current) return;
+    appliedStartTime.current = true;
+    const t = Number(new URLSearchParams(window.location.search).get("t"));
+    if (Number.isFinite(t) && t > 0) seekTo(t);
+  }, [seekTo]);
+
   const togglePlay = useCallback(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -402,6 +430,16 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
               Added — go to library
             </Link>
           )}
+          <button
+            className="btn secondary"
+            onClick={() =>
+              document.getElementById("comments")?.scrollIntoView({ behavior: "smooth" })
+            }
+            title="Jump to the comments"
+          >
+            <CommentIcon size={17} />
+            Comments
+          </button>
           <button className="btn secondary" onClick={share} title="Copy a link to share">
             <ShareIcon size={17} />
             {copied ? "Copied" : "Share"}
@@ -428,7 +466,10 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
               onPause={() => setPaused(true)}
               onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
               onSeeked={(e) => setCurrentTime(e.currentTarget.currentTime)}
-              onLoadedMetadata={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onLoadedMetadata={(e) => {
+                setCurrentTime(e.currentTarget.currentTime);
+                applyStartTime();
+              }}
               onDoubleClick={toggleFullscreen}
             />
           ) : (
@@ -516,7 +557,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       </div>
 
       <div className="watch-below">
-        <CommentSection videoId={id} />
+        <CommentSection videoId={id} onSeek={seekFromComment} />
       </div>
 
       {editing && (

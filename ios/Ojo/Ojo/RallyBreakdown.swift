@@ -178,6 +178,8 @@ struct RallyBreakdown: View {
     let participants: [Participant]
 
     @State private var setupOpen = false
+    /// Whether the rally index is expanded past its first few rows.
+    @State private var showAllRallies = false
 
     var body: some View {
         Group {
@@ -295,12 +297,21 @@ struct RallyBreakdown: View {
         }
     }
 
+    /// A long match runs to eighty rallies or more, and listing every one of them
+    /// pushed the comments a screen and a half below the fold. Show a handful,
+    /// and let anyone who actually wants the full index ask for it.
+    private static let collapsedRallyCount = 5
+
     private var ralliesList: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let all = model.segments
+        let shown = showAllRallies ? all : Array(all.prefix(Self.collapsedRallyCount))
+        let hidden = all.count - shown.count
+
+        return VStack(alignment: .leading, spacing: 6) {
             Text("RALLIES")
                 .font(.caption2.weight(.semibold)).foregroundStyle(Theme.muted)
             VStack(spacing: 0) {
-                ForEach(Array(model.segments.enumerated()), id: \.element.id) { index, segment in
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, segment in
                     Button { onSeek(segment.startS ?? 0) } label: {
                         HStack(spacing: 12) {
                             Text("\(index + 1)")
@@ -321,14 +332,42 @@ struct RallyBreakdown: View {
                         .padding(.vertical, 9)
                     }
                     .buttonStyle(.plain)
-                    if index < model.segments.count - 1 {
+                    if index < shown.count - 1 {
                         Divider().overlay(Theme.border)
                     }
+                }
+                if hidden > 0 || showAllRallies {
+                    Divider().overlay(Theme.border)
+                    expandButton(hidden: hidden)
                 }
             }
             .padding(.horizontal, 12)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Theme.radius))
         }
+    }
+
+    /// The last row of the rally list: open the rest, or fold them away again.
+    private func expandButton(hidden: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { showAllRallies.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Text(showAllRallies
+                     ? "Show fewer rallies"
+                     : "Show all \(model.segments.count) rallies")
+                    .font(.subheadline.weight(.semibold))
+                Image(systemName: showAllRallies ? "chevron.up" : "chevron.down")
+                    .font(.caption.weight(.bold))
+            }
+            .foregroundStyle(Theme.accent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showAllRallies
+                            ? "Show fewer rallies"
+                            : "Show all \(model.segments.count) rallies, \(hidden) more")
     }
 
     /// One-line summary of a rally: who served, how long, how many shots.

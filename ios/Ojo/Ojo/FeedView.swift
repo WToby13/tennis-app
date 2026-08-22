@@ -31,6 +31,9 @@ struct FeedView: View {
         }
         .background(Theme.bg)
         .navigationTitle("Home")
+        // Centred, on the same row as the search glass — the large title stacked a
+        // second "Home" under it, and every other screen in the app is inline.
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(value: SearchTarget.players) {
@@ -40,9 +43,22 @@ struct FeedView: View {
                 }
                 .accessibilityLabel("Search players")
             }
+            ToolbarItem(placement: .topBarLeading) {
+                NotificationBell()
+            }
         }
         .refreshable { await reload(force: true) }
-        .task { await reload() }
+        // One task, not two. Stacking `.task` modifiers is legal but leaves the
+        // badge depending on a detail I would rather not rely on; sequencing them
+        // here is unambiguous.
+        .task {
+            await reload()
+            // Home is where the badge lives, so it is where it gets refreshed —
+            // every visit, and always from the network. A badge exists to be
+            // current, and one small query is a fair price for that; the 60s
+            // cache is right for the feed, not for this.
+            await cache.refreshNotifications(force: true)
+        }
     }
 
     private var emptyState: some View {
@@ -65,5 +81,8 @@ struct FeedView: View {
         loading = true
         defer { loading = false }
         await cache.refreshFeed(force: force)
+        // Pulling down on Home is the obvious way to ask "anything new?", and
+        // the bell is right there — so it answers for the inbox too.
+        if force { await cache.refreshNotifications(force: true) }
     }
 }

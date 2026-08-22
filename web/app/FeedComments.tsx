@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { CommentBody } from "./CommentBody";
+import { MentionComposer } from "./MentionComposer";
 
 interface C {
   id: string;
@@ -13,7 +15,6 @@ interface C {
 export function FeedComments({ videoId, commentCount }: { videoId: string; commentCount: number }) {
   const [comments, setComments] = useState<C[]>([]);
   const [total, setTotal] = useState(commentCount);
-  const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -27,22 +28,18 @@ export function FeedComments({ videoId, commentCount }: { videoId: string; comme
       .catch(() => {});
   }, [videoId, commentCount]);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const text = body.trim();
-    if (!text) return;
+  async function post(body: string) {
     setBusy(true);
     try {
       const res = await fetch(`/api/videos/${videoId}/comments`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ body: text }),
+        body: JSON.stringify({ body }),
       });
       if (res.ok) {
         const d = await res.json();
         setComments(d.comments ?? []);
         setTotal((d.comments ?? []).length);
-        setBody("");
       }
     } finally {
       setBusy(false);
@@ -60,22 +57,12 @@ export function FeedComments({ videoId, commentCount }: { videoId: string; comme
       )}
       {preview.map((c) => (
         <div key={c.id} className="feed-comment">
-          <span className="who">{c.authorName}</span> {c.body}
+          <span className="who">{c.authorName}</span>{" "}
+          {/* No player on a feed card, so a timestamp links into the match. */}
+          <CommentBody body={c.body} videoId={videoId} />
         </div>
       ))}
-      <form className="feed-add" onSubmit={submit}>
-        <input
-          id={`c-${videoId}`}
-          type="text"
-          placeholder="Add a comment…"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          disabled={busy}
-        />
-        <button className="post" type="submit" disabled={busy || !body.trim()}>
-          Post
-        </button>
-      </form>
+      <MentionComposer onPost={post} busy={busy} compact inputId={`c-${videoId}`} />
     </div>
   );
 }

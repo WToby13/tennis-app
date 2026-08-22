@@ -33,6 +33,27 @@ export interface Comment {
   createdAt: string;
 }
 
+/**
+ * One item in a person's notification inbox.
+ *
+ * `kind` is what put it there: `mention` means the comment named them with an
+ * @tag, `reply` means they were already part of that match's conversation.
+ * Comments are flat, so "the thread" is the match.
+ */
+export interface Notification {
+  id: string;
+  kind: "mention" | "reply";
+  videoId: string;
+  commentId: string | null;
+  /** A snapshot of the comment, taken when the notification was written. */
+  body: string | null;
+  readAt: string | null;
+  createdAt: string;
+  actorId: string | null;
+  actorName: string | null;
+  videoTitle: string | null;
+}
+
 export interface LikeState {
   count: number;
   likedByMe: boolean;
@@ -82,6 +103,15 @@ export interface SocialStore {
   listComments(videoId: string): Promise<Comment[]>;
   addComment(videoId: string, body: string): Promise<Comment>;
   deleteComment(commentId: string): Promise<void>;
+
+  // --- notifications ---------------------------------------------------------
+  // Rows are written by a database trigger on comment insert, never by the app,
+  // so there is no "create" here — only reading your own inbox and clearing it.
+
+  /** The caller's inbox, newest first. */
+  listNotifications(limit?: number): Promise<Notification[]>;
+  /** Mark the given notifications read, or the whole inbox when ids is omitted. */
+  markNotificationsRead(ids?: string[]): Promise<void>;
 
   isSharedToFollowers(videoId: string): Promise<boolean>;
   setSharedToFollowers(videoId: string, shared: boolean): Promise<void>;

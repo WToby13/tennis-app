@@ -102,7 +102,10 @@ which handles video of identifiable people, arguably does.
 ## Future emails (same pattern — just add a template)
 - "A match was shared with you" (share link opened / direct share).
 - Welcome email on signup.
-- Comment / tag notifications (once those ship).
+- Comment / tag notifications by email. The in-app inbox ships them already
+  (`0017_notifications.sql` + `/api/notifications`); email would be a second
+  delivery channel off the same rows, and wants an unsubscribe preference before
+  it goes anywhere near a digest.
 - Weekly digest of new matches from people you follow (with the following slice).
 
 Each becomes a `templates.ts` function + a call to `sendEmail`; no new infrastructure.

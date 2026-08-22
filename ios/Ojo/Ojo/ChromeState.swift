@@ -3,8 +3,8 @@ import SwiftUI
 
 /// Whether the app's own chrome should get out of the way.
 ///
-/// The tab bar is drawn by `MainTabView` as a `safeAreaInset`, so a screen pushed
-/// inside a tab's navigation stack can't remove it the way `.toolbar(.hidden,
+/// The tab bar is drawn by `MainTabView` as a sibling of the navigation stack, so
+/// a screen pushed inside that stack can't remove it the way `.toolbar(.hidden,
 /// for: .tabBar)` would with a system `TabView`. This is the channel for saying
 /// so: the immersive Watch screen sets it, the tab bar reads it.
 @MainActor

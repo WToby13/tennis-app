@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { NotificationBell } from "./NotificationBell";
 
 /** Nav icons, sized to match the 28px logo tile (see .rail .navlink svg). */
 const icons = {
@@ -64,6 +65,7 @@ export function Sidebar() {
               <span className="label">{item.label}</span>
             </Link>
           ))}
+          <NotificationBell />
         </nav>
 
         <div className="spacer" />

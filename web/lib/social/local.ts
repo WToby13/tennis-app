@@ -1,5 +1,12 @@
 import { metadata } from "../metadata";
-import type { Comment, FeedItem, LikeState, ProfileSummary, SocialStore } from "./types";
+import type {
+  Comment,
+  FeedItem,
+  LikeState,
+  Notification,
+  ProfileSummary,
+  SocialStore,
+} from "./types";
 
 /**
  * Single-user, no-auth dev store. The feed just mirrors the local library so the
@@ -48,6 +55,11 @@ export class LocalSocialStore implements SocialStore {
     return { id: "local", videoId, authorId: "local", authorName: "You", body, createdAt: new Date().toISOString() };
   }
   async deleteComment(): Promise<void> {}
+  /** Nobody to be tagged by in single-user dev, so the inbox is always empty. */
+  async listNotifications(): Promise<Notification[]> {
+    return [];
+  }
+  async markNotificationsRead(): Promise<void> {}
   async isSharedToFollowers(): Promise<boolean> {
     return false;
   }

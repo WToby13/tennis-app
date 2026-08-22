@@ -279,6 +279,7 @@ work that's:
 ```
 supabase/migrations/0011_analysis_proxy.sql
 supabase/migrations/0013_analysis_windows.sql
+supabase/migrations/0017_notifications.sql
 ```
 
 **0013 must be applied before the deploy that ships windowed analysis**, not
@@ -286,6 +287,15 @@ after: the new code writes `videos.analysis_windows` when it starts a long
 match, and without the column every such run fails on its first write. The
 migration is additive and safe to run against the current code, which ignores
 the column.
+
+**0017 must be applied before the deploy that ships @tags**, for the same
+reason from the other end: the notifications the clients read are written by a
+trigger that only exists once the migration has run, so shipping the UI first
+gives everyone a permanently empty inbox and no error to explain it. It is
+additive and safe to run early — against the current code it just starts filling
+a table nothing reads yet. Verify it locally first with
+`supabase/tests/run.sh`, which now includes a `notifications` suite covering who
+the fan-out reaches and who it must not.
 
 ### 2. Infrastructure
 ```bash
