@@ -55,6 +55,21 @@ export const NEAR_UNCLEAR = "unclear";
  * hits it above their head. Which end that happened at is the same information,
  * observed in one moment rather than inferred from stance.
  */
+export const ROLE_RECEIVING = "receiving";
+export const ROLE_SERVING = "serving";
+
+/**
+ * The previous vocabulary for the same question, asked the other way round:
+ * which END the serve came from. Kept so rows analysed under it still smooth.
+ *
+ * It was replaced because it needed the far player to be legible, and he is not.
+ * Measured one-sidedness across five runs: 80%, 83%, 88%, 95% and finally 100%,
+ * where a true split is near 50% — the last of those failed a match outright on
+ * the constant-role guard. The posture question it replaced, which only ever
+ * looks at the near player, ran 79%, 82% and 83% across three matches: less
+ * biased, and far steadier, because it never depends on whether the small figure
+ * at the top of the screen happened to be readable that day.
+ */
 export const SERVE_BOTTOM = "bottom";
 export const SERVE_TOP = "top";
 
@@ -138,11 +153,11 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
           "In one plain sentence, IN YOUR OWN WORDS, say how THIS point ENDED — the very last thing that happens to the ball before the two players stop running. Watch the final shot and write down what you actually saw: which of the two players played it, what the shot looked like, and where the ball finished up. Write it fresh from the picture rather than choosing from a set of phrases. No two points end quite the same way, so no two of these sentences should read the same — if you are about to write the sentence you wrote for the last point, look at the screen again and say what is different about this one. Do NOT say who served, do NOT say how long the point lasted, and do NOT describe anyone's clothing.",
       },
       {
-        name: "serve_came_from",
+        name: "near_player_role",
         type: "string",
         description:
-          `Every point begins with one player throwing the ball straight up and hitting it while the racket is ABOVE their head. Answer this by watching WHICH WAY THE BALL TRAVELS in the first second or two of THIS point, before it has crossed the net even once. ${SERVE_TOP} = the ball sets off TOWARDS the camera. It starts high up in the picture, near the small player at the top, and moves DOWN the screen towards you, getting bigger as it comes; the small far player is the one whose racket went above their head. ${SERVE_BOTTOM} = the ball sets off AWAY from the camera. It starts low down in the picture, near the big player at the bottom, and moves UP the screen and away, getting smaller as it goes; that big near player is the one whose racket went above their head. Check the far end FIRST: the far player is small and their swing is easy to miss, so look at the top of the picture and rule that out before you settle on the near player. Over a match the two ends serve about equally often, so if you find yourself giving the same answer point after point, look again. Do not work it out from who served the point before. ${NEAR_UNCLEAR} = the start of the point is off screen, or you cannot follow which way the ball first went.`,
-        enum: [SERVE_TOP, SERVE_BOTTOM, NEAR_UNCLEAR],
+          `Look ONLY at the big player nearest the camera, at the BOTTOM of the screen, during the first two seconds of THIS point, and say which of these two things he is doing. Ignore the far player completely — you do not need to see him at all to answer this. ${ROLE_RECEIVING} = he is NOT holding a ball. There is no yellow ball in his hand, and none on the ground by his feet either; the balls are all away at the far end. He stands still, a little way inside the court, knees bent and leaning forward, holding the racket out in front of him with both hands, sometimes bouncing gently on his toes. He does nothing at all until the ball comes over the net towards him, and only then does he move and swing. ${ROLE_SERVING} = he IS holding a ball. There is a yellow ball in one hand, and usually a spare one in his pocket or lying on the ground beside him. He stands right back at the white line along the very bottom edge of his side, often bounces the ball a few times first, then throws it straight up into the air and hits it with the racket ABOVE his head. The ball in his hand is the surest sign of the two: a player about to serve is always holding one, and a player waiting to receive never is — so look at his hands first. Read it off THIS point and never carry the answer over from the previous one. ${NEAR_UNCLEAR} = the near player is out of the picture, or you cannot see him at the moment the point starts.`,
+        enum: [ROLE_RECEIVING, ROLE_SERVING, NEAR_UNCLEAR],
       },
       {
         name: "players_swapped_ends_before",

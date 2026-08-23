@@ -1,5 +1,13 @@
 import type { VideoSegment } from "../metadata/types";
-import { NEAR_OTHER, NEAR_SAME, SERVE_BOTTOM, SERVE_TOP, SWAP_YES } from "./rally";
+import {
+  NEAR_OTHER,
+  NEAR_SAME,
+  ROLE_RECEIVING,
+  ROLE_SERVING,
+  SERVE_BOTTOM,
+  SERVE_TOP,
+  SWAP_YES,
+} from "./rally";
 
 /**
  * Post-processing smoother for TwelveLabs tennis rally segmentation — a faithful
@@ -9,7 +17,7 @@ import { NEAR_OTHER, NEAR_SAME, SERVE_BOTTOM, SERVE_TOP, SWAP_YES } from "./rall
  * we fit that structure to the votes:
  *   - the server ALTERNATES every game;
  *   - a game (one player's service turn) is >= 4 points;
- *   - serve_came_from == "bottom"  iff  the near player is the server;
+ *   - near_player_role == "serving"  iff  the near player is the server;
  *   - players change ends every 2 games, so near identity is constant for ~2
  *     games then flips.
  * The whole match is fixed by two unknowns (who serves game 1; which player is
@@ -105,7 +113,7 @@ export interface SmoothReport extends RawQuality {
    * identity track is observed rather than inferred.
    */
   linkGroups: number;
-  /** Agreement between the fitted server and the raw `serve_came_from` field. */
+  /** Agreement between the fitted server and the raw `near_player_role` field. */
   serverAgreementWithRole: number;
   gameLengths: number[];
   /**
@@ -160,12 +168,14 @@ function relLabel(v: unknown): boolean | null {
 /**
  * Whether the near player served this point.
  *
- * `serving` / `receiving` are the previous field's vocabulary and are still
- * read, so a row analysed before the change still smooths correctly.
+ * Two vocabularies map onto the same bit. `serving`/`receiving` is the current
+ * one — what the near player is doing — and `bottom`/`top` is the end the serve
+ * came from, which the definition asked for in between and which rows analysed
+ * during that spell still carry.
  */
 function serveLabel(v: unknown): boolean | null {
-  if (v === SERVE_BOTTOM || v === "serving") return true;
-  if (v === SERVE_TOP || v === "receiving") return false;
+  if (v === ROLE_SERVING || v === SERVE_BOTTOM) return true;
+  if (v === ROLE_RECEIVING || v === SERVE_TOP) return false;
   return null;
 }
 
@@ -185,12 +195,12 @@ function toPoints(segments: Seg[]): Point[] {
       dur: start != null && end != null ? end - start : null,
       near: typeof m.near_player_identity === "string" ? m.near_player_identity : UNK,
       rel: relLabel(m.near_player_identity),
-      role: typeof m.serve_came_from === "string"
-        ? m.serve_came_from
-        : typeof m.near_player_role === "string"
-          ? m.near_player_role
+      role: typeof m.near_player_role === "string"
+        ? m.near_player_role
+        : typeof m.serve_came_from === "string"
+          ? m.serve_came_from
           : UNK,
-      serveNear: serveLabel(m.serve_came_from ?? m.near_player_role),
+      serveNear: serveLabel(m.near_player_role ?? m.serve_came_from),
       swappedBefore:
         m.players_swapped_ends_before == null
           ? null
@@ -680,8 +690,8 @@ export function smoothTennis(
 
   // ---- Server, from the fitted identity plus the role field. ---------------
   //
-  // `serve_came_from` is the one raw field windowing left untouched: which end
-  // the serve came from needs no anchor outside the clip. So the implied server
+  // `near_player_role` is the one raw field windowing left untouched: what the
+  // near player is doing needs no anchor outside the clip. So the implied server
   // is read off the FITTED near player rather than the raw identity label, which
   // keeps the noise in identity from being counted twice — once in the identity
   // fit and again here.
