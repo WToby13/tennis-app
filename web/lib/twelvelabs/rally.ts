@@ -6,20 +6,16 @@ import type { CreateAnalysisTaskBody, SegmentDefinition } from "./types";
  * per point; server / player identity / shot counts are reconstructed afterwards
  * from the fixed structure of a match (see lib/twelvelabs/smooth.ts).
  *
- * Field ORDER matters — `what_you_see` stays first so the model looks at the
- * video before committing to the enums.
- *
- * What it is asked to look at changed, though. It used to ask for the start of
- * the point and its length, which was a mistake twice over: both were already
- * covered by other fields, so the sentence became a recitation of them ("The
- * near player serves from the bottom. The rally lasts about 3 seconds…" came
- * back 13 times in one match, and distinct wording fell run on run, 63% to 50%
- * to 40%). Worse, it made the model commit to a server in prose BEFORE the
- * serve field was answered, which is a plausible reason that field kept sliding
- * further toward "the near player did it".
- *
- * It now asks how the point ENDED, which no other field asks about, genuinely
- * differs point to point, and cannot be recited from an enum.
+ * There is no free-text field any more. `what_you_see` used to lead, on the
+ * theory that writing a sentence first made the model look at the video before
+ * committing to the enums. Three wordings in, that theory has nothing behind it:
+ * asked for the point's start and length it recited the other fields (63% → 50%
+ * → 40% distinct over successive runs, and it named a server in prose before the
+ * server field was answered); asked how the point ended it collapsed onto one
+ * sentence repeated sixteen times in a window, and every ending it did produce
+ * was attributed to the near player. It never made the enums better and twice
+ * made them worse, so it is gone. What survives are four questions with answers
+ * that can be checked.
  */
 export const RALLY_KIND = "rally";
 
@@ -146,12 +142,6 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
       "Make one segment per rally. Do not join two rallies into one segment and do not split one rally into two. Most rallies are SHORT: about 3 to 10 seconds of hitting, and only a long exchange reaches 20. This video is a short clip cut from the middle of a longer match, so it may begin and end part-way through the play. No two rallies are alike: how long one lasts, how many times the ball crosses the net and how it ends are different every time. Answer each segment from what is on screen during that segment. Never copy your answers from the previous segment." +
       notes,
     fields: [
-      {
-        name: "what_you_see",
-        type: "string",
-        description:
-          "In one plain sentence, IN YOUR OWN WORDS, say how THIS point ENDED — the very last thing that happens to the ball before the two players stop running. Watch the final shot and write down what you actually saw: which of the two players played it, what the shot looked like, and where the ball finished up. Write it fresh from the picture rather than choosing from a set of phrases. No two points end quite the same way, so no two of these sentences should read the same — if you are about to write the sentence you wrote for the last point, look at the screen again and say what is different about this one. Do NOT say who served, do NOT say how long the point lasted, and do NOT describe anyone's clothing.",
-      },
       {
         name: "near_player_role",
         type: "string",

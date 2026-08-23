@@ -76,15 +76,6 @@ export interface RawQuality {
    *  changeover structure in the timings at all. */
   gapSpread: number;
   /**
-   * Distinct `what_you_see` strings over total points. 1.0 means every point was
-   * described afresh; a low value means a handful of sentences were recycled.
-   *
-   * NOTE this is capped by the number of points, so it is only comparable
-   * between runs of similar length — 12 distinct strings is 0.13 over 95 points
-   * and 0.86 over 14.
-   */
-  descriptionDiversity: number;
-  /**
    * Share of points taking the most common duration, and the most common gap,
    * rounded to the second. Modal share rather than a distinct-value count
    * because only the former is scale-free: real tennis points cluster hard
@@ -134,11 +125,6 @@ function uniformity(values: (string | null)[]): number {
   const counts = new Map<string, number>();
   for (const v of known) counts.set(v, (counts.get(v) ?? 0) + 1);
   return Math.max(...counts.values()) / known.length;
-}
-
-/** Distinct values over `total`, as a 0-1 score. 1.0 = every value different. */
-function diversityOf(values: string[], total: number): number {
-  return total ? new Set(values).size / total : 1;
 }
 
 /** Share of the most common value, rounded to the second. 1 = every one the same. */
@@ -227,18 +213,11 @@ export function assessRaw(segments: Seg[]): RawQuality {
   const gaps = gapsBetween(pts);
   const sorted = [...gaps].sort((x, y) => x - y);
   const medGap = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
-  const descriptions = pts.map((p) =>
-    String((p.seg.metadata as Record<string, unknown>)?.what_you_see ?? ""),
-  );
   return {
     points: pts.length,
     identityUniformity: uniformity(pts.map((p) => p.near)),
     roleUniformity: uniformity(pts.map((p) => p.role)),
     gapSpread: medGap > 0 ? Math.max(...gaps) / medGap : 0,
-    descriptionDiversity: diversityOf(
-      descriptions.filter((d) => d !== ""),
-      descriptions.length,
-    ),
     durationUniformity: numericUniformity(pts.map((p) => p.dur)),
     gapUniformity: numericUniformity(gaps),
   };
@@ -270,16 +249,10 @@ const LONG_ENOUGH_TO_JUDGE_FIELDS = 32;
  *    inter-point gap, so the longest gap should dwarf the median. When the
  *    longest is barely twice the median, the timings were invented.
  * There WAS a fourth test here, on recycled prose: the same failure showed 12
- * distinct `what_you_see` strings across 95 points. It has been removed, because
- * the field it measured no longer means what it meant when the threshold was
- * set. `what_you_see` used to ask how long the point lasted, which produces text
- * that varies almost by construction, and 0.25 was safely below anything real.
- * It now asks how the point ENDED — into the net, long, wide, past a player —
- * which has perhaps four answers, so a perfectly good 124-rally match could
- * score 0.06 and fail. A guard whose threshold depends on the wording of a field
- * that changes is not a guard, and the cost of it misfiring is a run that fails
- * for the wrong reason. `descriptionDiversity` is still reported, and still
- * worth reading — it just no longer decides anything on its own.
+ * distinct `what_you_see` strings across 95 points. It went when its threshold
+ * stopped meaning anything — the field was rewritten to ask for a category
+ * rather than a duration, at which point a perfectly good match scored 0.05 —
+ * and the field itself has since been removed altogether.
  */
 export function degenerateMatch(q: RawQuality): boolean {
   const constantRole = q.points >= LONG_ENOUGH_TO_JUDGE_FIELDS && q.roleUniformity >= 0.98;
@@ -338,9 +311,8 @@ const GRID_UNIFORMITY = 0.95;
  *
  * So this catches one thing and nothing else: a literal timing grid, the same
  * point length and the same gap over and over. It used to also fail a window
- * narrated with one or two sentences, and that test is gone for the reason given
- * on `degenerateMatch` — `what_you_see` now asks for a category rather than a
- * duration, so low text diversity stopped being evidence of anything.
+ * narrated with one or two sentences; that test went with the free-text field it
+ * read, for the reason given on `degenerateMatch`.
  *
  * Partial templating inside a single window will get through, and
  * `degenerateMatch` on the stitched result remains the wider net. A guard that
@@ -769,7 +741,6 @@ export function smoothTennis(
       identityUniformity: r3(q.identityUniformity),
       roleUniformity: r3(q.roleUniformity),
       gapSpread: Math.round(q.gapSpread * 100) / 100,
-      descriptionDiversity: r3(q.descriptionDiversity),
       durationUniformity: r3(q.durationUniformity),
       gapUniformity: r3(q.gapUniformity),
       degenerate: degenerateMatch(q),
