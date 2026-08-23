@@ -6,8 +6,20 @@ import type { CreateAnalysisTaskBody, SegmentDefinition } from "./types";
  * per point; server / player identity / shot counts are reconstructed afterwards
  * from the fixed structure of a match (see lib/twelvelabs/smooth.ts).
  *
- * Field ORDER matters — `what_you_see` must stay first so the model observes
- * before committing to the enums (stops it emitting one constant template).
+ * Field ORDER matters — `what_you_see` stays first so the model looks at the
+ * video before committing to the enums.
+ *
+ * What it is asked to look at changed, though. It used to ask for the start of
+ * the point and its length, which was a mistake twice over: both were already
+ * covered by other fields, so the sentence became a recitation of them ("The
+ * near player serves from the bottom. The rally lasts about 3 seconds…" came
+ * back 13 times in one match, and distinct wording fell run on run, 63% to 50%
+ * to 40%). Worse, it made the model commit to a server in prose BEFORE the
+ * serve field was answered, which is a plausible reason that field kept sliding
+ * further toward "the near player did it".
+ *
+ * It now asks how the point ENDED, which no other field asks about, genuinely
+ * differs point to point, and cannot be recited from an enum.
  */
 export const RALLY_KIND = "rally";
 
@@ -118,14 +130,14 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
         name: "what_you_see",
         type: "string",
         description:
-          "START FRESH HERE EVERY TIME, describing only THIS point in one or two plain sentences. Say only the things that can CHANGE from point to point: (a) at the very start, is the large near player at the bottom of the screen throwing the ball up and hitting it above his head, OR is he standing lower down waiting and only swinging after the ball has come over the net; and (b) roughly how many seconds the point lasts and how many times the ball crosses the net. Do NOT describe clothing here. Do not reuse the previous point's wording.",
+          "In one plain sentence, say how THIS point ENDED — the very last thing that happens to the ball before the two players stop running and start walking. Name which player hit that final shot (the big one at the bottom of the screen, or the small one at the top), and then what the ball did: dropped into the dark net band across the middle; sailed over the far white line and bounced on the ground beyond it; bounced outside one of the white lines at the side; or flew past the other player, who reached for it and missed. Every point ends in its own way, so this sentence should come out different every time — if you are about to write the sentence you wrote for the last point, look at the screen again. Do NOT say who served, do NOT say how long the point lasted, and do NOT describe anyone's clothing.",
       },
       {
         name: "serve_came_from",
         type: "string",
         description:
-          `Every point begins with one player throwing the ball straight up and hitting it while the racket is ABOVE their head. Answer this by watching WHICH WAY THE BALL TRAVELS in the first second or two of THIS point, before it has crossed the net even once. ${SERVE_BOTTOM} = the ball sets off AWAY from the camera. It starts low down in the picture, near the big player at the bottom, and moves UP the screen and away, getting smaller as it goes; that big near player is the one whose racket went above their head. ${SERVE_TOP} = the ball sets off TOWARDS the camera. It starts high up in the picture, near the small player at the top, and moves DOWN the screen towards you, getting bigger as it comes; the small far player is the one whose racket went above their head. The direction the ball first travels is the thing to watch, because the far player is small and their swing is easy to miss — do not assume the big near player served just because they are the easier one to see. Both answers are common: each player serves for a whole game and then the other one does, so over a few minutes of play this answer changes. Do not work it out from who served the point before. ${NEAR_UNCLEAR} = the start of the point is off screen, or you cannot follow which way the ball first went.`,
-        enum: [SERVE_BOTTOM, SERVE_TOP, NEAR_UNCLEAR],
+          `Every point begins with one player throwing the ball straight up and hitting it while the racket is ABOVE their head. Answer this by watching WHICH WAY THE BALL TRAVELS in the first second or two of THIS point, before it has crossed the net even once. ${SERVE_TOP} = the ball sets off TOWARDS the camera. It starts high up in the picture, near the small player at the top, and moves DOWN the screen towards you, getting bigger as it comes; the small far player is the one whose racket went above their head. ${SERVE_BOTTOM} = the ball sets off AWAY from the camera. It starts low down in the picture, near the big player at the bottom, and moves UP the screen and away, getting smaller as it goes; that big near player is the one whose racket went above their head. Check the far end FIRST: the far player is small and their swing is easy to miss, so look at the top of the picture and rule that out before you settle on the near player. Over a match the two ends serve about equally often, so if you find yourself giving the same answer point after point, look again. Do not work it out from who served the point before. ${NEAR_UNCLEAR} = the start of the point is off screen, or you cannot follow which way the ball first went.`,
+        enum: [SERVE_TOP, SERVE_BOTTOM, NEAR_UNCLEAR],
       },
       {
         name: "players_swapped_ends_before",
