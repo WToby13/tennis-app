@@ -447,6 +447,24 @@ function trustedSwaps(pts: Point[]): number[] {
   return swaps.length / answered <= MAX_PLAUSIBLE_SWAP_SHARE ? swaps : [];
 }
 
+/**
+ * Which of the role field's two answers it gives less often, or null when it is
+ * even enough that neither carries extra weight. Derived per match, so a run
+ * where the field comes back balanced is trusted evenly.
+ */
+function minorityAnswer(pts: Point[]): boolean | null {
+  let serving = 0;
+  let receiving = 0;
+  for (const p of pts) {
+    if (p.serveNear === true) serving++;
+    else if (p.serveNear === false) receiving++;
+  }
+  if (!serving || !receiving) return null;
+  const share = Math.min(serving, receiving) / (serving + receiving);
+  if (share > 0.35) return null; // even enough that neither answer is the cheap one
+  return receiving < serving ? false : true;
+}
+
 function detectGames(pts: Point[], minGame: number, gapK: number): [number, number][] {
   const gaps: (number | null)[] = [];
   for (let i = 0; i < pts.length - 1; i++) {
@@ -485,12 +503,24 @@ function detectGames(pts: Point[], minGame: number, gapK: number): [number, numb
   // running, because the field is noisy point to point and a lone disagreement
   // is far more likely to be a misread than a game.
   const swapBoundaries = trustedSwaps(pts);
+
+  // The two directions of flip are not equally trustworthy, so they are not
+  // confirmed the same way. The role field leans hard toward the near player
+  // serving — 79-83% across three matches, against a truth near 50% — because
+  // that is the eventful, visible state while receiving is someone standing
+  // still. Nothing pushes it the other way: it does not claim to have seen a
+  // player waiting empty-handed when it did not. So a flip INTO the minority
+  // answer is close to proof and is taken on its own, while a flip back toward
+  // the majority is the cheap answer returning and still has to hold for two
+  // points before it counts as a game.
+  const minorityRole = minorityAnswer(pts);
   const serveFlips: number[] = [];
   for (let i = 1; i < pts.length; i++) {
     const prev = pts[i - 1].serveNear;
     const now = pts[i].serveNear;
     if (prev == null || now == null || prev === now) continue;
-    if (pts[i + 1]?.serveNear === now || i === pts.length - 1) serveFlips.push(i);
+    const trusted = minorityRole != null && now === minorityRole;
+    if (trusted || pts[i + 1]?.serveNear === now || i === pts.length - 1) serveFlips.push(i);
   }
 
   const cuts = [
