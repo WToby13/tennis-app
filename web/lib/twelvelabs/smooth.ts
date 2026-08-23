@@ -259,16 +259,23 @@ const LONG_ENOUGH_TO_JUDGE_FIELDS = 32;
  *  - No timing structure: a real changeover is 60-90s against a 15-25s
  *    inter-point gap, so the longest gap should dwarf the median. When the
  *    longest is barely twice the median, the timings were invented.
- *  - Recycled prose: seen at 12 distinct strings across 95 points, four of which
- *    covered 87 in a flat 22/22/22/21 rotation. The threshold is deliberately
- *    far below anything a genuine run produces (a clean run scores 1.0).
+ * There WAS a fourth test here, on recycled prose: the same failure showed 12
+ * distinct `what_you_see` strings across 95 points. It has been removed, because
+ * the field it measured no longer means what it meant when the threshold was
+ * set. `what_you_see` used to ask how long the point lasted, which produces text
+ * that varies almost by construction, and 0.25 was safely below anything real.
+ * It now asks how the point ENDED — into the net, long, wide, past a player —
+ * which has perhaps four answers, so a perfectly good 124-rally match could
+ * score 0.06 and fail. A guard whose threshold depends on the wording of a field
+ * that changes is not a guard, and the cost of it misfiring is a run that fails
+ * for the wrong reason. `descriptionDiversity` is still reported, and still
+ * worth reading — it just no longer decides anything on its own.
  */
 export function degenerateMatch(q: RawQuality): boolean {
   const constantRole = q.points >= LONG_ENOUGH_TO_JUDGE_FIELDS && q.roleUniformity >= 0.98;
   const constantIdentity = q.points >= LONG_ENOUGH_TO_JUDGE_FIELDS && q.identityUniformity >= 0.98;
   const noTimingStructure = q.points >= 12 && q.gapSpread < 2.5;
-  const recycledProse = q.points >= 20 && q.descriptionDiversity < 0.25;
-  return constantRole || constantIdentity || noTimingStructure || recycledProse;
+  return constantRole || constantIdentity || noTimingStructure;
 }
 
 /**
@@ -304,19 +311,6 @@ const WINDOW_MIN_POINTS_TO_JUDGE = 8;
 const GRID_UNIFORMITY = 0.95;
 
 /**
- * Recycled prose, at window scale — and only the flagrant version of it.
- *
- * The match-scale bar (0.25) can't be reused: it was set against 12 distinct
- * strings over 95 points, and the same four-sentence rotation inside a 14-point
- * window scores 0.29, above it. Raising the bar to catch that would cross into
- * real data, which ran 0.37 and up. 0.15 sits far below both, so it only fires
- * when a window is down to one or two sentences — with the point floor raised,
- * since 0.15 is unreachable below ~13 points anyway.
- */
-const WINDOW_PROSE_DIVERSITY = 0.15;
-const WINDOW_PROSE_MIN_POINTS = 15;
-
-/**
  * Whether ONE window's raw output is a template.
  *
  * Narrower than it first looks, deliberately. `degenerateMatch` can't simply be
@@ -332,19 +326,20 @@ const WINDOW_PROSE_MIN_POINTS = 15;
  * distributions that overlap on every soft measure — distinct durations,
  * distinct gaps, modal prose. Only the flagrant case separates cleanly.
  *
- * So this catches the flagrant case and nothing else: a literal grid, or a
- * window narrated with one or two sentences. Partial templating inside a single
- * window will get through, and `degenerateMatch` on the stitched result remains
- * the wider net. A guard that fired on real footage would be far worse than one
- * that misses — it fails the run and spends a retry to reach the same place.
+ * So this catches one thing and nothing else: a literal timing grid, the same
+ * point length and the same gap over and over. It used to also fail a window
+ * narrated with one or two sentences, and that test is gone for the reason given
+ * on `degenerateMatch` — `what_you_see` now asks for a category rather than a
+ * duration, so low text diversity stopped being evidence of anything.
+ *
+ * Partial templating inside a single window will get through, and
+ * `degenerateMatch` on the stitched result remains the wider net. A guard that
+ * fires on real footage is far worse than one that misses: it fails the run and
+ * spends a retry to arrive at the same place.
  */
 export function degenerateWindow(q: RawQuality): boolean {
   if (q.points < WINDOW_MIN_POINTS_TO_JUDGE) return false;
-  const griddedTimings =
-    q.durationUniformity >= GRID_UNIFORMITY && q.gapUniformity >= GRID_UNIFORMITY;
-  const oneOrTwoSentences =
-    q.points >= WINDOW_PROSE_MIN_POINTS && q.descriptionDiversity < WINDOW_PROSE_DIVERSITY;
-  return griddedTimings || oneOrTwoSentences;
+  return q.durationUniformity >= GRID_UNIFORMITY && q.gapUniformity >= GRID_UNIFORMITY;
 }
 
 /** Most common of P1/P2 in `values`, first-seen on ties; `fallback` if none. */
