@@ -477,6 +477,18 @@ function splitLongGames(
 const MAX_PLAUSIBLE_SWAP_SHARE = 0.25;
 
 /**
+ * What share of the changeovers a match must contain before the reported ones
+ * can be chained into an identity track of their own.
+ *
+ * High on purpose. Missing a changeover does not cost you that one flip, it
+ * inverts everything after it, so a partial list is not a worse version of the
+ * full one — it is wrong from the gap onward. Below this the reported swaps
+ * still mark game boundaries in `detectGames`, where a missing one costs only
+ * itself; they just no longer get to define who is where.
+ */
+const MIN_SWAP_COMPLETENESS = 0.8;
+
+/**
  * The points the model says a changeover happened before — or nothing at all,
  * when it reported so many that it clearly wasn't watching for them.
  *
@@ -678,12 +690,25 @@ export function smoothTennis(
   const perPoint = (byGame: string[]) => pts.map((_, i) => byGame[gameOf[i]]);
   const candidates: { label: string; pattern: string[] }[] = [];
 
-  // Observed changeovers, if the model reported any it can be believed on. This
-  // is the only candidate that isn't a guess about the shape of the match: the
-  // near player is whoever they were until the two of them walk past each other,
-  // and then they are the other one. It has to earn its place like the rest —
-  // if the field is noise it explains the identity labels badly and loses.
-  if (swapPoints.length) {
+  // Observed changeovers, but only when enough of them were reported to build a
+  // track out of.
+  //
+  // This candidate is unlike the others: they are patterns imposed on the match,
+  // it is a chain, and a chain with a link missing is wrong from that point to
+  // the end. Ends change after every odd game, so a match of G games contains
+  // about G/2 changeovers, and anything much short of that means flips are
+  // missing rather than absent.
+  //
+  // Without this gate it over-fits badly. On one 70-minute match of 31 games it
+  // won outright at 76.5% off SIX reported changeovers where about fifteen
+  // should exist; the re-run of the same video reported seven, and the same
+  // candidate came last at 52.2% — chance. A fit that swings from best to worst
+  // on near-identical input is not measuring anything, and it looks most
+  // confident exactly when it happens to be lucky.
+  const expectedSwaps = Math.floor(G / 2);
+  const swapsAreComplete =
+    expectedSwaps > 0 && swapPoints.length >= expectedSwaps * MIN_SWAP_COMPLETENESS;
+  if (swapPoints.length && swapsAreComplete) {
     for (const st of [P1, P2]) {
       let who = st;
       const track = pts.map((p, i) => {
