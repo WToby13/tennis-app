@@ -89,6 +89,18 @@ export interface RawQuality {
    */
   durationUniformity: number;
   gapUniformity: number;
+  /**
+   * The longest stretch of consecutive rallies that all share one duration AND
+   * one gap — a metronome, in other words.
+   *
+   * This is what the uniformity figures above cannot see. They are averages over
+   * a whole window, so a run of 19 identical rallies inside a window of 34 comes
+   * out at 0.91 and 0.58 and passes, which is exactly what happened on a real
+   * 70-minute match: 4 seconds on, 6 seconds off, a point every ten seconds for
+   * nearly three minutes. A run length notices a stretch however much good
+   * material surrounds it.
+   */
+  longestConstantRun: number;
 }
 
 export interface SmoothReport extends RawQuality {
@@ -207,6 +219,37 @@ function gapsBetween(pts: Point[]): number[] {
   return gaps;
 }
 
+/**
+ * The longest run of consecutive rallies sharing a duration and a gap.
+ *
+ * Compared at whole seconds, since that is the resolution the timings come back
+ * at, and a run needs both to hold: real play throws up two rallies of the same
+ * length often enough, but not two of the same length with the same pause after
+ * them, over and over.
+ */
+function longestConstantRun(pts: Point[]): number {
+  const gapAfter = (i: number): number | null => {
+    const a = pts[i].end;
+    const b = pts[i + 1]?.start;
+    return a != null && b != null ? Math.round(b - a) : null;
+  };
+  let best = pts.length ? 1 : 0;
+  let run = 1;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const sameDur =
+      pts[i].dur != null && pts[i - 1].dur != null && Math.round(pts[i].dur!) === Math.round(pts[i - 1].dur!);
+    const g = gapAfter(i);
+    const gPrev = gapAfter(i - 1);
+    if (sameDur && g != null && gPrev != null && g === gPrev) {
+      run++;
+      if (run > best) best = run;
+    } else {
+      run = 1;
+    }
+  }
+  return best;
+}
+
 /** Measure a batch of raw segments — a whole match, or a single window. */
 export function assessRaw(segments: Seg[]): RawQuality {
   const pts = toPoints(segments);
@@ -220,6 +263,7 @@ export function assessRaw(segments: Seg[]): RawQuality {
     gapSpread: medGap > 0 ? Math.max(...gaps) / medGap : 0,
     durationUniformity: numericUniformity(pts.map((p) => p.dur)),
     gapUniformity: numericUniformity(gaps),
+    longestConstantRun: longestConstantRun(pts),
   };
 }
 
@@ -270,28 +314,21 @@ export function degenerateMatch(q: RawQuality): boolean {
 const WINDOW_MIN_POINTS_TO_JUDGE = 8;
 
 /**
- * The bar for calling a window's timings a grid.
+ * How many rallies in a row must share a duration and a gap before the stretch
+ * is called generated rather than watched.
  *
- * Set from real data, and set high, because the first pass at this was wrong in
- * an instructive way. It used "share of DISTINCT durations" with a 0.4 bar,
- * calibrated against simulated points whose lengths were drawn evenly across
- * 5-21s. Real rallies are nothing like that — they pile up on a few short
- * lengths — so on three real matches (30 windows) that rule flagged 10 of them,
- * including a window whose own prose was entirely distinct. It would have failed
- * most re-runs.
+ * Measured on every run available — ten matches across four versions of the
+ * definition. The longest constant run in each, sorted:
  *
- * Measured across those 30 windows, all of them genuine:
+ *   2  2  2  2  3  3  |  8  9  10  15
  *
- *   duration modal share  0.10 .. 0.78
- *   gap      modal share  0.10 .. 1.00   (yes — one real window has identical gaps)
- *   prose    modal share  0.06 .. 0.46
- *
- * So neither axis separates on its own. What no real window did was max out
- * BOTH: the worst pair seen was 0.78 / 1.00. A generated grid sits at 1.00 /
- * 1.00 — same point length and same gap, every time — which is what the
- * recorded 32-minute failure looked like (a flat 12s-on, 8s-off).
+ * Nothing sits between 3 and 8. Real play produces runs of two and three by
+ * coincidence and then stops; the four on the right are all stretches the eye
+ * picks out as wrong, including the 4-second-on, 6-second-off metronome that ran
+ * for nearly three minutes of a 70-minute match. Six sits in the empty band with
+ * two to spare on either side.
  */
-const GRID_UNIFORMITY = 0.95;
+const GRID_RUN = 6;
 
 /**
  * Whether ONE window's raw output is a template.
@@ -314,6 +351,12 @@ const GRID_UNIFORMITY = 0.95;
  * narrated with one or two sentences; that test went with the free-text field it
  * read, for the reason given on `degenerateMatch`.
  *
+ * The grid is now found by RUN LENGTH rather than by how uniform the window is
+ * on average, because a window average cannot see a stretch. A metronome running
+ * for 19 rallies inside a window of 34 scored 0.91 and 0.58 against a bar of
+ * 0.95 and sailed through, while the stretch itself was three minutes of a point
+ * every ten seconds. See GRID_RUN.
+ *
  * Partial templating inside a single window will get through, and
  * `degenerateMatch` on the stitched result remains the wider net. A guard that
  * fires on real footage is far worse than one that misses: it fails the run and
@@ -321,7 +364,7 @@ const GRID_UNIFORMITY = 0.95;
  */
 export function degenerateWindow(q: RawQuality): boolean {
   if (q.points < WINDOW_MIN_POINTS_TO_JUDGE) return false;
-  return q.durationUniformity >= GRID_UNIFORMITY && q.gapUniformity >= GRID_UNIFORMITY;
+  return q.longestConstantRun >= GRID_RUN;
 }
 
 /** Most common of P1/P2 in `values`, first-seen on ties; `fallback` if none. */
@@ -773,6 +816,7 @@ export function smoothTennis(
       gapSpread: Math.round(q.gapSpread * 100) / 100,
       durationUniformity: r3(q.durationUniformity),
       gapUniformity: r3(q.gapUniformity),
+      longestConstantRun: q.longestConstantRun,
       degenerate: degenerateMatch(q),
     },
   };
