@@ -1,5 +1,5 @@
 import type { VideoSegment } from "../metadata/types";
-import { NEAR_OTHER, NEAR_SAME, SERVE_BOTTOM, SERVE_TOP } from "./rally";
+import { NEAR_OTHER, NEAR_SAME, SERVE_BOTTOM, SERVE_TOP, SWAP_YES } from "./rally";
 
 /**
  * Post-processing smoother for TwelveLabs tennis rally segmentation — a faithful
@@ -40,6 +40,8 @@ interface Point {
    * these into a match-wide identity.
    */
   rel: boolean | null;
+  /** true = the players changed ends in the gap before this point. */
+  swappedBefore: boolean | null;
   role: string; // serve_came_from (raw), kept as-is for the uniformity report
   /** true = the near player served this point; null = no usable answer. */
   serveNear: boolean | null;
@@ -189,6 +191,10 @@ function toPoints(segments: Seg[]): Point[] {
           ? m.near_player_role
           : UNK,
       serveNear: serveLabel(m.serve_came_from ?? m.near_player_role),
+      swappedBefore:
+        m.players_swapped_ends_before == null
+          ? null
+          : m.players_swapped_ends_before === SWAP_YES,
       shotsRaw: typeof m.times_ball_was_hit === "number" ? m.times_ball_was_hit : null,
     };
   });
@@ -438,6 +444,32 @@ function splitLongGames(
  * and the ball-retrieval regime scores the same at 1.6 as at 1.3, so the
  * merge-back really is absorbing the false splits it creates.
  */
+/**
+ * The share of points that may be flagged as a changeover before the field is
+ * disbelieved entirely.
+ *
+ * Ends change after every odd game, so in a match of ~20 games about a tenth of
+ * points follow one. Much past that and the model is not reporting changeovers,
+ * it is answering yes out of habit — and a field answering yes out of habit
+ * would shatter the match into a game per point. Below the bar we trust it;
+ * above it we fall back to the timings alone, which is where this started.
+ */
+const MAX_PLAUSIBLE_SWAP_SHARE = 0.25;
+
+/**
+ * The points the model says a changeover happened before — or nothing at all,
+ * when it reported so many that it clearly wasn't watching for them.
+ *
+ * One definition, used twice: a changeover both ends a game and swaps who is
+ * nearest the camera, so it feeds `detectGames` and the identity fit alike.
+ */
+function trustedSwaps(pts: Point[]): number[] {
+  const answered = pts.filter((p) => p.swappedBefore != null).length;
+  if (!answered) return [];
+  const swaps = pts.map((p, i) => (p.swappedBefore ? i : -1)).filter((i) => i > 0);
+  return swaps.length / answered <= MAX_PLAUSIBLE_SWAP_SHARE ? swaps : [];
+}
+
 function detectGames(pts: Point[], minGame: number, gapK: number): [number, number][] {
   const gaps: (number | null)[] = [];
   for (let i = 0; i < pts.length - 1; i++) {
@@ -454,7 +486,43 @@ function detectGames(pts: Point[], minGame: number, gapK: number): [number, numb
     boundaries = gaps.map((g, i) => (g != null && g > thr ? i : -1)).filter((i) => i >= 0);
   }
 
-  const cuts = [0, ...boundaries.map((i) => i + 1), pts.length];
+  // A changeover the model actually watched is better evidence than a gap we
+  // inferred, so those points open a game too. They are added to the gap
+  // boundaries rather than replacing them: the field is sparse by nature (most
+  // game boundaries are not changeovers) and a missed one still has the timing
+  // to fall back on.
+  // Two observed boundary cues, and between them they cover a whole match.
+  //
+  // Ends change after games 1, 3, 5, 7 — so `trustedSwaps` marks every ODD
+  // game's end and none of the even ones. The serving end fills in the rest: the
+  // server holds for a game, so `serve_came_from` is constant within one, and
+  // works out to bottom, bottom, top, top, bottom... — it flips after games 2,
+  // 4, 6. One cue for the odd boundaries, the other for the even.
+  //
+  // This matters because the gap cue above has quietly stopped working. The
+  // model's segments swallow the pauses (62% of a real match came back inside a
+  // "rally"), so only four gaps in 49 minutes cleared 30s where twenty games'
+  // worth were needed. These two cues need no gap at all.
+  //
+  // A serve-end flip counts only when the new answer holds for two points
+  // running, because the field is noisy point to point and a lone disagreement
+  // is far more likely to be a misread than a game.
+  const swapBoundaries = trustedSwaps(pts);
+  const serveFlips: number[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const prev = pts[i - 1].serveNear;
+    const now = pts[i].serveNear;
+    if (prev == null || now == null || prev === now) continue;
+    if (pts[i + 1]?.serveNear === now || i === pts.length - 1) serveFlips.push(i);
+  }
+
+  const cuts = [
+    0,
+    ...new Set(
+      [...boundaries.map((i) => i + 1), ...swapBoundaries, ...serveFlips].sort((a, b) => a - b),
+    ),
+    pts.length,
+  ];
   const games: [number, number][] = [];
   for (let k = 0; k < cuts.length - 1; k++) games.push([cuts[k], cuts[k + 1]]);
 
@@ -528,6 +596,7 @@ export function smoothTennis(
   }
   const groupOf = opts?.linkGroups ?? [];
   const groupIds = [...new Set(pts.map((_, i) => groupOf[i] ?? 0))];
+  const swapPoints = trustedSwaps(pts);
 
   // ---- Identity first, because the server now follows from it. -------------
   //
@@ -554,14 +623,37 @@ export function smoothTennis(
     Array.from({ length: G }, (_, g) =>
       Math.floor((g + offset) / 2) % 2 === 0 ? start : other(start),
     );
+  // Every candidate is expanded to one entry PER POINT, so a per-game pattern and
+  // the per-point one below can be scored the same way.
+  const perPoint = (byGame: string[]) => pts.map((_, i) => byGame[gameOf[i]]);
   const candidates: { label: string; pattern: string[] }[] = [];
+
+  // Observed changeovers, if the model reported any it can be believed on. This
+  // is the only candidate that isn't a guess about the shape of the match: the
+  // near player is whoever they were until the two of them walk past each other,
+  // and then they are the other one. It has to earn its place like the rest —
+  // if the field is noise it explains the identity labels badly and loses.
+  if (swapPoints.length) {
+    for (const st of [P1, P2]) {
+      let who = st;
+      const track = pts.map((p, i) => {
+        if (i > 0 && p.swappedBefore) who = other(who);
+        return who;
+      });
+      candidates.push({ label: `observed changeovers start=${st}`, pattern: track });
+    }
+  }
+
   for (const st of [P1, P2]) {
     for (const o of [1, 0]) {
-      candidates.push({ label: `changeover start=${st} offset=${o}`, pattern: idPattern(st, o) });
+      candidates.push({
+        label: `changeover start=${st} offset=${o}`,
+        pattern: perPoint(idPattern(st, o)),
+      });
     }
   }
   for (const st of [P1, P2]) {
-    candidates.push({ label: `constant ${st}`, pattern: Array.from({ length: G }, () => st) });
+    candidates.push({ label: `constant ${st}`, pattern: perPoint(Array.from({ length: G }, () => st)) });
   }
 
   /** How well a candidate explains the points, letting each group orient itself. */
@@ -575,7 +667,7 @@ export function smoothTennis(
         const rel = pts[i].rel;
         if (rel == null) continue;
         n++;
-        if (rel === (pattern[gameOf[i]] === P1)) agree++;
+        if (rel === (pattern[i] === P1)) agree++;
       }
       total += Math.max(agree, n - agree); // the group's better orientation
     }
@@ -588,6 +680,7 @@ export function smoothTennis(
     const score = scoreCandidate(c.pattern);
     if (score > bestIdScore) [bestId, bestIdScore] = [c, score];
   }
+  /** The fitted near player, per point. */
   const idFit = bestId.pattern;
 
   // ---- Server, from the fitted identity plus the role field. ---------------
@@ -599,7 +692,7 @@ export function smoothTennis(
   // fit and again here.
   const implied: (string | null)[] = pts.map((p, i) => {
     if (p.serveNear == null) return null;
-    const near = idFit[gameOf[i]];
+    const near = idFit[i];
     return p.serveNear ? near : other(near);
   });
 
@@ -620,9 +713,9 @@ export function smoothTennis(
   for (let gi = 0; gi < games.length; gi++) {
     const [a, b] = games[gi];
     const server = srvFit[gi];
-    const near = idFit[gi];
-    const role = near === server ? "serving" : "receiving";
     for (let i = a; i < b; i++) {
+      const near = idFit[i];
+      const role = near === server ? "serving" : "receiving";
       const dur = pts[i].dur;
       const floor = dur ? Math.max(1, Math.round(dur * hitsPerSec)) : 1;
       const reported = pts[i].shotsRaw ?? 0;

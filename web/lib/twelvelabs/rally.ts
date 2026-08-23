@@ -46,6 +46,25 @@ export const NEAR_UNCLEAR = "unclear";
 export const SERVE_BOTTOM = "bottom";
 export const SERVE_TOP = "top";
 
+/**
+ * The `players_swapped_ends_before` vocabulary.
+ *
+ * A field rather than a second segment definition, which is the same question
+ * asked the cheap way: TwelveLabs bills per segment definition, so a separate
+ * `game` definition would roughly double the bill, while another field on the
+ * one we already send costs a few output tokens.
+ *
+ * It exists because the gap signal turned out not to be there. ./smooth.ts finds
+ * game boundaries by looking for a long pause, but on a real 49-minute match
+ * only FOUR gaps exceeded 30s where about twenty games' worth were needed — the
+ * model's segments swallow the pauses, so the boundaries it should be inferring
+ * are simply not visible in the timings. A changeover, though, is a slow and
+ * unmistakable thing to look at: two people walking the length of the court and
+ * crossing at the net. Describing that is what this model is good at.
+ */
+export const SWAP_YES = "yes";
+export const SWAP_NO = "no";
+
 /** Preset params — the finalized "Advanced settings". */
 const PRESET = {
   model_name: "pegasus1.5",
@@ -64,7 +83,18 @@ const PRESET = {
   temperature: 0.2,
   max_tokens: 98304,
   min_segment_duration: 2,
-  max_segment_duration: 30,
+  // 30 let too much in. Measured on a real 49-minute match, 62% of the running
+  // time came back inside a "rally" segment, against 20-30% for actual tennis —
+  // the model was swallowing the walk-back and the setup either side of the
+  // point. That matters more than it sounds: everything downstream (games,
+  // changeovers, servers) is inferred from the GAPS between rallies, and at 62%
+  // coverage the median gap was 6 seconds, so there was almost no gap signal
+  // left to read. Real points at this level are 3-10s and rarely past 20.
+  //
+  // Advisory in practice — that same run returned four segments longer than the
+  // 30 it was given, up to 58s — so this leans on the prompt to do the real
+  // work, and is set to match what the prompt now asks for.
+  max_segment_duration: 20,
 } as const;
 
 /**
@@ -81,7 +111,7 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
   return {
     id: RALLY_KIND,
     description:
-      "Create one segment for each rally that is played. Here is exactly what a rally looks like in this video. A RALLY BEGINS when one player stands near the white line at the edge of their side (the line nearest the BOTTOM edge of the screen, or the line nearest the TOP edge of the screen), holds the small yellow ball in one hand, throws it straight up into the air, and hits it hard with the racket while the racket is ABOVE their head. The ball flies over the net (the dark band stretched across the middle of the court) to the other player who then hits it back. WHILE THE POINT IS HAPPENING, the yellow ball travels back and forth over the net: the players swing and hit the ball with rackets again and again. Both players jump and move quickly left and right and swing their arms. THE POINT ENDS the moment the ball stops going back over the net — the ball hits the dark net band in the middle OR the ball lands on the ground outside the painted white rectangle. AFTER A POINT ENDS, the players slow down, walk around, pick balls up off the ground with their rackets, they sometimes go rest on the side or switch sides before getting back into position; this slow walking-around part is NOT a point, it is the empty gap between two points. A long gap between the points usually means a switch in player serving. Make one segment per point. Do not join two points into one segment and do not split one point into two. The slow walking-around gap, followed by a player throwing the ball up and hitting it above their head, is always the dividing line between one point and the next. A point usually lasts 2 to 20 seconds. This video is a short clip cut from the middle of a longer match, so it may begin and end part-way through the play. No two points are alike: how long a point lasts, how many times the ball crosses the net and how it ends are different every time. Answer each segment from what is on screen during that segment. Never copy your answers from the previous segment." +
+      "Create one segment for each rally that is played. Here is exactly what a rally looks like in this video. A RALLY BEGINS when one player stands near the white line at the edge of their side (the line nearest the BOTTOM edge of the screen, or the line nearest the TOP edge of the screen), holds the small yellow ball in one hand, throws it straight up into the air, and hits it hard with the racket while the racket is ABOVE their head. The ball flies over the net (the dark band stretched across the middle of the court) to the other player who then hits it back. WHILE THE POINT IS HAPPENING, the yellow ball travels back and forth over the net: the players swing and hit the ball with rackets again and again. Both players jump and move quickly left and right and swing their arms. THE POINT ENDS the moment the ball stops going back over the net — the ball hits the dark net band in the middle OR the ball lands on the ground outside the painted white rectangle. The segment you make must cover ONLY the time the ball is actually flying between the two players. It must START on the hit above the head, not while the player is still bouncing the ball or walking to the line, and it must STOP on the very frame the ball stops crossing, not when the players have finished walking about afterwards. The empty gap between two points must never be inside a segment. AFTER A POINT ENDS, the players slow down, walk around, pick balls up off the ground with their rackets, they sometimes go rest on the side or switch sides before getting back into position; this slow walking-around part is NOT a point, it is the empty gap between two points. A long gap between the points usually means a switch in player serving. Make one segment per point. Do not join two points into one segment and do not split one point into two. The slow walking-around gap, followed by a player throwing the ball up and hitting it above their head, is always the dividing line between one point and the next. Most points are SHORT: about 3 to 10 seconds from the overhead hit to the ball stopping, and only a long exchange reaches 20. This video is a short clip cut from the middle of a longer match, so it may begin and end part-way through the play. No two points are alike: how long a point lasts, how many times the ball crosses the net and how it ends are different every time. Answer each segment from what is on screen during that segment. Never copy your answers from the previous segment." +
       notes,
     fields: [
       {
@@ -94,8 +124,15 @@ function rallyDefinition(context?: RallyContext): SegmentDefinition {
         name: "serve_came_from",
         type: "string",
         description:
-          `Every point begins with one player throwing the ball straight up into the air and hitting it hard with the racket while the racket is ABOVE their head. Find that FIRST hit of THIS point and say which end of the court it came from. ${SERVE_BOTTOM} = the big player nearest the camera, at the BOTTOM of the screen, threw the ball up and hit it; the ball starts near the bottom edge and travels away from the camera. ${SERVE_TOP} = the small player at the far end, at the TOP of the screen, threw the ball up and hit it; the ball starts near the top edge and travels toward the camera. Judge it from the first two seconds of THIS point and from that one shot alone — watch which player's racket goes above their head and which direction the ball first travels. Do not work it out from who served the point before. ${NEAR_UNCLEAR} = the start of the point is off screen, or you cannot see which player hit the ball first.`,
+          `Every point begins with one player throwing the ball straight up and hitting it while the racket is ABOVE their head. Answer this by watching WHICH WAY THE BALL TRAVELS in the first second or two of THIS point, before it has crossed the net even once. ${SERVE_BOTTOM} = the ball sets off AWAY from the camera. It starts low down in the picture, near the big player at the bottom, and moves UP the screen and away, getting smaller as it goes; that big near player is the one whose racket went above their head. ${SERVE_TOP} = the ball sets off TOWARDS the camera. It starts high up in the picture, near the small player at the top, and moves DOWN the screen towards you, getting bigger as it comes; the small far player is the one whose racket went above their head. The direction the ball first travels is the thing to watch, because the far player is small and their swing is easy to miss — do not assume the big near player served just because they are the easier one to see. Both answers are common: each player serves for a whole game and then the other one does, so over a few minutes of play this answer changes. Do not work it out from who served the point before. ${NEAR_UNCLEAR} = the start of the point is off screen, or you cannot follow which way the ball first went.`,
         enum: [SERVE_BOTTOM, SERVE_TOP, NEAR_UNCLEAR],
+      },
+      {
+        name: "players_swapped_ends_before",
+        type: "string",
+        description:
+          `Look at the gap BEFORE this point starts, and say whether the two players changed ends of the court in it. When they change ends they both stop playing, walk the whole length of the court and PAST EACH OTHER near the middle net, and each one carries on to the end the other one has just left; they usually stop by the side of the court first for a drink or a towel, and the whole thing takes far longer than an ordinary gap between two points. ${SWAP_YES} = that full swap happened in the gap immediately before THIS point, so the big near player at the bottom of the screen is now a DIFFERENT person from the one who was standing there earlier. ${SWAP_NO} = the gap before this point was an ordinary short one and both players stayed at their own ends. This is uncommon — in a few minutes of play it happens once, or not at all — so ${SWAP_NO} is the right answer for most points, and ${SWAP_YES} only when you actually watch the two of them cross. ${NEAR_UNCLEAR} = the gap before this point is not on screen.`,
+        enum: [SWAP_YES, SWAP_NO, NEAR_UNCLEAR],
       },
       {
         name: "near_player_identity",
