@@ -284,6 +284,28 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   }, []);
 
   /**
+   * Jump to the start of the next rally.
+   *
+   * The breakdown's whole claim is that the dead time between points is
+   * skippable, and doing that from the timeline means hitting a bar that's a few
+   * pixels wide on a phone. Reads the element's own clock rather than
+   * `currentTime`, which only refreshes ~4x/s, so a press right after a seek
+   * doesn't land back on the rally just left.
+   */
+  const nextRally = useCallback(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const after = el.currentTime + 0.25;
+    let next: number | null = null;
+    for (const s of segments) {
+      const start = s.startS;
+      if (start == null || start <= after) continue;
+      if (next === null || start < next) next = start;
+    }
+    if (next !== null) seekTo(next);
+  }, [segments, seekTo]);
+
+  /**
    * A timestamp someone wrote in a comment. Plays from there like any other
    * seek, and pulls the player back into view — the comment that named the
    * moment is usually a screen or more below it, so seeking alone would look
@@ -366,12 +388,13 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       else if (e.key === "l" || e.key === "ArrowRight") el.currentTime += 5;
       else if (e.key === "k" || e.key === " ") el.paused ? el.play() : el.pause();
       else if (e.key === "f") toggleFullscreen();
+      else if (e.key === "n") nextRally();
       else return;
       e.preventDefault();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stepFrames, editing, toggleFullscreen]);
+  }, [stepFrames, editing, toggleFullscreen, nextRally]);
 
   if (!video) {
     return (
@@ -382,6 +405,10 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       </div>
     );
   }
+
+  // Whether there's a rally left to skip to, so the button greys out at the end
+  // of the match rather than looking broken.
+  const hasNextRally = segments.some((s) => s.startS != null && s.startS > currentTime + 0.25);
 
   const players = participants.map((p) => p.displayName).join(", ");
   const dateStr = formatDate(video.recordedAt ?? video.createdAt);
@@ -520,6 +547,18 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 </button>
                 <button className="chip" onClick={() => seek(10)}>+10s</button>
               </div>
+              {segments.length > 0 && (
+                <div className="group" aria-label="Rallies">
+                  <button
+                    className="chip"
+                    onClick={nextRally}
+                    disabled={!hasNextRally}
+                    title="Skip to the start of the next rally"
+                  >
+                    Next rally <span className="kbd">n</span>
+                  </button>
+                </div>
+              )}
               <div className="group" aria-label="View">
                 <button
                   className="chip"

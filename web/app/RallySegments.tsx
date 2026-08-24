@@ -380,6 +380,71 @@ export function RallySegments({
     return lp < 12 ? "tip-left" : lp > 88 ? "tip-right" : "";
   };
 
+  /**
+   * What the video is showing right now, in words, under the heading.
+   *
+   * The lanes say where the rallies are; they don't say what you're looking at
+   * without hovering the bar under the playhead, which is a poor trade while the
+   * video is playing. Built from the smoothed fields only (game / server /
+   * receiver / shots) — the model's free text is gone (see lib/twelvelabs/rally.ts).
+   * Between points it counts down to the next rally, so the line still moves
+   * when nothing is being played.
+   */
+  const nowPlaying = useMemo(() => {
+    if (segments.length === 0) return null;
+    const t = currentTime;
+
+    const idx = segments.findIndex((s) => (s.startS ?? 0) <= t && t <= (s.endS ?? s.startS ?? 0));
+    if (idx >= 0) {
+      const s = segments[idx];
+      const server = asStr(s.metadata.server);
+      const receiver = asStr(s.metadata.receiver);
+      const shots = asNum(s.metadata.shots);
+      const game = asNum(s.metadata.game);
+      return {
+        live: true,
+        headline: server
+          ? `${displayPlayer(server)} serving${receiver ? ` to ${displayPlayer(receiver)}` : ""}`
+          : "Rally in play",
+        detail: [
+          game != null ? `Game ${game}` : null,
+          `Rally ${idx + 1} of ${segments.length}`,
+          shots != null ? `${shots} ${shots === 1 ? "hit" : "hits"}` : null,
+          `${fmtTime(t - (s.startS ?? 0))} in`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      };
+    }
+
+    let next: Segment | null = null;
+    for (const s of segments) {
+      if (s.startS == null || s.startS <= t) continue;
+      if (!next || s.startS < (next.startS ?? 0)) next = s;
+    }
+    if (!next) {
+      const lastEnd = segments.reduce((m, s) => Math.max(m, s.endS ?? 0), 0);
+      return {
+        live: false,
+        headline: "After the last rally",
+        detail: `${segments.length} ${segments.length === 1 ? "rally" : "rallies"} · play ended ${fmtTime(lastEnd)}`,
+      };
+    }
+    const away = Math.max(0, Math.ceil((next.startS ?? 0) - t));
+    const nextServer = asStr(next.metadata.server);
+    return {
+      live: false,
+      headline: next === segments[0] ? "Warm-up — before the first rally" : "Between points",
+      detail: [
+        `next rally at ${fmtTime(next.startS)}`,
+        away <= 90 ? `${away}s away` : null,
+        nextServer ? `${displayPlayer(nextServer)} to serve` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    };
+  }, [segments, currentTime, displayPlayer]);
+
   if (!canRun && segments.length === 0) return null;
 
   const button = canRun ? (
@@ -415,6 +480,14 @@ export function RallySegments({
         </h3>
         {button}
       </div>
+
+      {nowPlaying && status !== "processing" && (
+        <p className={`seg-now ${nowPlaying.live ? "is-live" : ""}`}>
+          <span className="seg-now-dot" aria-hidden="true" />
+          <span className="seg-now-headline">{nowPlaying.headline}</span>
+          <span className="seg-now-detail">{nowPlaying.detail}</span>
+        </p>
+      )}
 
       {canRun && status === "none" && segments.length === 0 && (
         <p className="muted seg-hint">Break this match into rallies with AI.</p>

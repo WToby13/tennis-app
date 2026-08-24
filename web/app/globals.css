@@ -407,6 +407,13 @@ a:hover {
 .chip:hover:not(.active) {
   background: rgba(255, 255, 255, 0.06);
 }
+.chip:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chip:disabled:hover {
+  background: transparent;
+}
 .chip .kbd {
   font-size: 10px;
   font-weight: 600;
@@ -1205,6 +1212,40 @@ video {
 .seg-hint {
   font-size: 13px;
   margin: 0 0 8px;
+}
+
+/* The running commentary under the heading: what the playhead is sitting on
+   right now. One line, so it survives on a phone and in fullscreen. */
+.seg-now {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 13px;
+  margin: 0 0 10px;
+  min-height: 18px;
+}
+.seg-now-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  align-self: center;
+  flex-shrink: 0;
+}
+/* Only a rally in play gets the clay dot — between points it's the same line
+   reporting a gap, and a lit dot there reads as "something is happening". */
+.seg-now.is-live .seg-now-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.seg-now-headline {
+  font-weight: 600;
+  color: var(--text);
+}
+.seg-now-detail {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 .seg-actions {
   display: flex;
