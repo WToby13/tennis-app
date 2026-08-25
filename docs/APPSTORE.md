@@ -533,20 +533,39 @@ Information**:
   demo-account fields. A reviewer who lands on an empty account rejects for
   "incomplete app" more often than for anything else.
 
-  Concretely, before you submit:
+  **Only one new account is needed.** Your own account plays the other player,
+  which saves uploading anything: a library is built from `library_items`, not
+  from ownership, so a match added from a share link sits in the demo account's
+  library and profile grid exactly like an uploaded one — and the AI breakdown
+  comes with it, because `video_segments` is readable by anyone who can view the
+  match (`can_view_video`), not only its owner.
 
-  1. Make the demo account and sign in as it on the web.
-  2. Put **three matches** in its library, at least one with a finished AI
-     breakdown — that is the screen the product is actually about, and an
-     analysis run takes minutes, so it cannot be done during review.
-  3. Make a **second** account, have it follow the demo account and post a match
-     to followers, so the demo account's Home feed is not empty. An empty feed
-     is where a reviewer goes looking for the moderation tools and fails to find
-     them, because the ⋯ menu lives on a feed card.
-  4. Leave a comment from the second account, so there is a comment to report
-     that is not the reviewer's own.
-  5. Check the demo password has no characters that are awkward to type on a
-     locked-down review device, and that it does not expire.
+  On the web, in this order:
+
+  1. **Create the demo account.** A real address you control, and a password with
+     no characters that are awkward to type on a locked-down review device.
+  2. **As yourself**, open three matches and create a share link for each —
+     including the one with a finished AI breakdown. That screen is what the
+     product is actually about, and an analysis run takes minutes, so it cannot
+     be produced during review.
+  3. **As the demo account** (a private window, so both sessions can coexist),
+     open each link and use *Add to my library*. Three matches, one analysed.
+  4. **As the demo account**, follow your own account — the magnifying glass
+     beside the Home title, then Follow on the profile.
+  5. **As yourself**, post one match to followers. This is what puts a card in
+     the demo account's Home feed, and an empty feed is where a reviewer goes
+     looking for the moderation tools and fails to find them: the ⋯ menu lives
+     on a feed card.
+  6. **As yourself**, leave a comment on that match, so there is a comment to
+     report that is not the reviewer's own.
+  7. **Check as the demo account** that Home shows your card with a working ⋯
+     menu, and that You shows three matches.
+
+  **Expect the reviewer to press Delete account** — 5.1.1(v) requires it to
+  work, and they do test it. That is safe here: the demo account owns no videos,
+  so the purge finds nothing and only its own rows cascade. Your matches belong
+  to your account and are untouched. Be ready to recreate the demo account if
+  the app comes back for a second submission.
 - **Contact:** your name, phone, and an email you'll read within a day.
 - **Notes** — write something like:
 
