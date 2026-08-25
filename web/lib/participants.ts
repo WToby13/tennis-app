@@ -1,3 +1,4 @@
+import { track } from "./analytics/server";
 import { inviteUrl, sendParticipantAdded, sendParticipantInvites } from "./email/invites";
 import type { MetadataStore, Participant, ParticipantInput } from "./metadata";
 import { displayNameFor, emailsForUserIds } from "./users";
@@ -100,6 +101,20 @@ export async function saveParticipants(opts: {
         inviterName,
       }).catch(() => {});
     }
+  }
+
+  // Naming who you played *is* sharing the match with them — they get it in
+  // their library either way — so it counts towards the share rate alongside a
+  // link and a post to followers. Tracked here rather than in the two callers so
+  // the recorder and the web editor can't drift apart on it, and only when
+  // somebody new was actually reached: re-saving an unchanged player list is not
+  // a share.
+  if (fresh.length || newlyLinked.length) {
+    track("match_shared", {
+      userId: opts.userId,
+      videoId,
+      props: { channel: "invite", invited: fresh.length, linked: newlyLinked.length },
+    });
   }
 
   // Every pending invite comes back with its link, including ones emailed on an

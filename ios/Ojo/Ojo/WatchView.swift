@@ -467,7 +467,15 @@ struct WatchView: View {
         url = newURL
         // Seed the timeline from the duration we already know, so the scrubber is
         // usable before the asset finishes loading.
-        playerModel = PlayerModel(url: newURL, knownDuration: durationS)
+        let model = PlayerModel(url: newURL, knownDuration: durationS)
+        // Capture the id now: by the time this fires the view may have moved on,
+        // and an event attributed to the wrong match is worse than no event.
+        let watched = videoId
+        let owner = detail?.isOwner == true
+        model.onFirstPlay = {
+            Analytics.track(.watchStarted, videoId: watched, props: ["isOwner": .bool(owner)])
+        }
+        playerModel = model
     }
 
     private func load() async {

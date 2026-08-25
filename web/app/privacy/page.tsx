@@ -14,7 +14,7 @@ const CONTACT = "privacy@ojotennis.com";
 
 export default function PrivacyPage() {
   return (
-    <LegalShell title="Privacy Policy" updated="2026-08-18">
+    <LegalShell title="Privacy Policy" updated="2026-08-23">
       <p>
         Ojo Tennis is a service for recording, reviewing and sharing your own tennis matches. This
         policy explains what we hold about you, why, and what you can do about it. It covers the Ojo
@@ -48,8 +48,36 @@ export default function PrivacyPage() {
       <h3>Technical data</h3>
       <p>
         Ordinary server logs from our hosting provider: IP address, timestamps and which pages or
-        API endpoints were called. We do not use advertising trackers, we do not sell data, and we
-        do not build advertising profiles.
+        API endpoints were called.
+      </p>
+
+      <h3>How you use the app</h3>
+      <p>
+        A record of the actions you take, so we can tell which parts of Ojo Tennis work and which
+        do not. Concretely: that a recording finished, that an upload started, finished or failed
+        and how big it was, that a match was shared and by which route, that a shared link was
+        opened, that an account was created, that playback started and roughly how long it ran,
+        and that an AI breakdown was requested and how it turned out. Each is stored with the time
+        it happened and, when you are signed in, with your account.
+      </p>
+      <p>
+        Some things we deliberately do <em>not</em> put in that record: any part of your video or a
+        still from it, the text of comments, who you follow, what you search for, your location, or
+        any advertising or device identifier. We use no third-party analytics service — this is our
+        own database, and nothing about how you use the app is sent to anyone else. We do not use
+        advertising trackers, we do not sell data, we do not build advertising profiles, and we do
+        not track you across other companies&rsquo; apps or websites.
+      </p>
+      <p>
+        <strong>You can turn this off.</strong> In the iPhone app: <strong>You → Settings →
+        Privacy → Share usage data</strong>. On the web: <strong>your profile → Usage data</strong>.
+        Switching it off stops the collection immediately, and the app discards anything it had not
+        yet sent. Everything else keeps working exactly as before.
+      </p>
+      <p>
+        We also count page views on ojotennis.com through Vercel, our hosting provider, to see how
+        people find the site. It sets no cookie and stores no identifier that could be traced back
+        to you or followed between visits, and the switch above turns it off too.
       </p>
 
       <h2>Why we hold it, and on what basis</h2>
@@ -69,6 +97,12 @@ export default function PrivacyPage() {
         <li>
           <strong>To email you</strong> about your own matches and invitations you were sent.
           Lawful basis: performance of our contract.
+        </li>
+        <li>
+          <strong>To understand how the app is used</strong> and decide what to fix or build next,
+          as described under <em>How you use the app</em> above. Lawful basis: our legitimate
+          interest in improving a service people find useful. You can object to this at any time
+          by turning the setting off — see that section for where it is.
         </li>
       </ul>
 
@@ -118,7 +152,8 @@ export default function PrivacyPage() {
           and can only be fetched through short-lived signed URLs.
         </li>
         <li>
-          <strong>Vercel</strong> — application hosting.
+          <strong>Vercel</strong> — application hosting, and the anonymous page-view counting
+          described above.
         </li>
         <li>
           <strong>TwelveLabs</strong> — the AI rally breakdown. A match is sent to TwelveLabs
@@ -155,6 +190,10 @@ export default function PrivacyPage() {
           report has to stay actionable against the account. Retained for two years.
         </li>
         <li>
+          <strong>Usage records</strong> — twelve months, then deleted automatically. Deleting your
+          account deletes yours straight away, without waiting for that.
+        </li>
+        <li>
           <strong>Server logs</strong> — retained by our hosting provider on their standard schedule
           (currently around 30 days).
         </li>
@@ -164,15 +203,18 @@ export default function PrivacyPage() {
       <p>
         You can delete your account and everything in it from inside the app: <strong>You →
         Settings → Delete account</strong>, or on the web from your profile page. This removes your
-        matches and their video files, your comments, likes, follows and profile. It happens
-        immediately and cannot be undone. If you would rather we did it, email{" "}
+        matches and their video files, your comments, likes, follows, profile and the record of how
+        you used the app. It happens immediately and cannot be undone. If you would rather we did it, email{" "}
         <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.
       </p>
 
       <h2>Your rights</h2>
       <p>
         Under UK GDPR you can ask us for a copy of your data, ask us to correct it, ask us to delete
-        it, ask us to restrict or stop a particular use, and ask for it in a portable format. Email{" "}
+        it, ask us to restrict or stop a particular use, object to any use we make on the basis of
+        our legitimate interests, and ask for it in a portable format. The one use that rests on
+        legitimate interests is the usage record described above, and you can stop it yourself with
+        the setting rather than having to ask us. For anything else, email{" "}
         <a href={`mailto:${CONTACT}`}>{CONTACT}</a> and we will respond within one month. If you are
         not satisfied, you can complain to the Information Commissioner&rsquo;s Office at{" "}
         <a href="https://ico.org.uk" rel="noopener noreferrer" target="_blank">

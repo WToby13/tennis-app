@@ -15,6 +15,8 @@ struct SettingsView: View {
     @State private var confirmingDelete = false
     @State private var deleting = false
     @State private var deleteError: String?
+    /// Seeded from UserDefaults on first render; the toggle writes straight back.
+    @State private var shareUsageData = !Analytics.isOptedOut
 
     private let api = UploadAPI()
 
@@ -28,6 +30,23 @@ struct SettingsView: View {
                     NavigationLink { BlockedAccountsView() } label: {
                         Label("Blocked accounts", systemImage: "hand.raised")
                     }
+                }
+
+                Section {
+                    Toggle("Share usage data", isOn: $shareUsageData)
+                        .onChange(of: shareUsageData) { _, on in
+                            Analytics.isOptedOut = !on
+                            if !on { Analytics.reset() }
+                        }
+                } header: {
+                    Text("Privacy")
+                } footer: {
+                    // UK GDPR Article 21 gives a right to object to processing
+                    // done on a legitimate-interests basis, which is what
+                    // /privacy claims for this — so the switch has to be here
+                    // and has to work. It is also the honest thing to show a
+                    // reviewer next to the privacy label.
+                    Text("Helps us see which parts of Ojo get used — uploads, shares and playback. Never your video, never sold, never used for advertising, and never shared with anyone else. Turning this off stops it immediately and discards anything not yet sent.")
                 }
 
                 Section("Legal") {

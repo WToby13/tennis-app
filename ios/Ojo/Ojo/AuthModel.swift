@@ -41,6 +41,7 @@ final class AuthModel: ObservableObject {
             let session = try await Supa.client.auth.signIn(email: email, password: password)
             accountEmail = session.user.email
             isSignedIn = true
+            Analytics.track(.signIn, props: ["method": "password"])
         } catch {
             self.error = error.localizedDescription
         }
@@ -69,6 +70,15 @@ final class AuthModel: ObservableObject {
             } else {
                 notice = "Account created. Confirm via email, then sign in."
             }
+            // Counted either way: the account exists, and whether it needs an
+            // email confirmation first is a Supabase setting, not something the
+            // person did. Flushed at once so it isn't lost if they close the app
+            // to go and find the confirmation mail.
+            Analytics.track(.signupCompleted, props: [
+                "method": "password",
+                "confirmationPending": .bool(response.session == nil),
+            ])
+            Analytics.flush()
         } catch {
             self.error = error.localizedDescription
         }
@@ -87,6 +97,10 @@ final class AuthModel: ObservableObject {
             )
             accountEmail = session.user.email
             isSignedIn = true
+            // Google gives us no "is this new" flag, so it's judged the same way
+            // the web callback judges it: from how old the account is.
+            let isNew = Date().timeIntervalSince(session.user.createdAt) < 120
+            Analytics.track(isNew ? .signupCompleted : .signIn, props: ["method": "google"])
         } catch {
             self.error = error.localizedDescription
         }
@@ -99,5 +113,8 @@ final class AuthModel: ObservableObject {
         isSignedIn = false
         // Cached feed/profile belong to the account that just left.
         AppCache.shared.clear()
+        // As do any events still waiting to go out — sending them now would
+        // attribute the last account's activity to whoever signs in next.
+        Analytics.reset()
     }
 }

@@ -41,5 +41,7 @@ and credentials. Metadata moves from the local JSON store to Supabase (`web/lib/
 - [ ] iOS: TestFlight (needs paid Apple Developer account)
 - [ ] Infra: faststart Lambda (iPhone moov-atom remux → smooth scrubbing)
 - [x] iOS: background `URLSession`, per-part retry, and resume-from-S3 for long uploads
+- [x] Product analytics: first-party events in Supabase + Vercel Web Analytics — the four
+      GTM numbers are queryable ([`docs/ANALYTICS.md`](docs/ANALYTICS.md))
 - [x] Web + iOS: `@player` tags and clickable timestamps in comments, with an in-app
       notification inbox (needs `supabase/migrations/0017_notifications.sql` applied)

@@ -22,6 +22,14 @@ final class PlayerModel: ObservableObject {
     /// fight the drag.
     var scrubbing = false
 
+    /// Called once, the first time the player is genuinely rendering frames.
+    ///
+    /// Hung off `timeControlStatus` rather than off the play button because a
+    /// tap that buffers forever and never shows anything is not a watch, and the
+    /// second-watch rate is only worth reading if "watched" means watched.
+    var onFirstPlay: (() -> Void)?
+    private var reportedFirstPlay = false
+
     /// Assumed frame rate for single-frame stepping (matches the web review page).
     private let fps: Double = 30
     private var timeObserver: Any?
@@ -49,7 +57,14 @@ final class PlayerModel: ObservableObject {
             .map { $0 == .playing }
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] playing in self?.isPlaying = playing }
+            .sink { [weak self] playing in
+                guard let self else { return }
+                self.isPlaying = playing
+                if playing, !self.reportedFirstPlay {
+                    self.reportedFirstPlay = true
+                    self.onFirstPlay?()
+                }
+            }
             .store(in: &cancellables)
 
         // Duration arrives late for a streamed item, and can be reported again if

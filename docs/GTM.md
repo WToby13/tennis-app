@@ -81,6 +81,29 @@ convert, nothing later works — fix that before widening.
 Watch for: uploads that fail on club Wi-Fi, an analysis run that comes back
 wrong, and whether anyone goes back and watches a match a *second* time.
 
+**This does not need the App Store, and it was wrong to assume it did.**
+Blocker #3 is waiting on Apple's identity check and could sit for a week. But
+every step of the loop above already works in a browser:
+
+| Step | Without the app |
+|---|---|
+| Film the match | The stock iPhone Camera app. It is a phone at the back of the court either way |
+| Get it in | Drag or pick the file on `/matches` — the web uploader takes `video/*` and uses the same multipart path |
+| Share it | Unchanged; the share link is a web link |
+| Recipient watches, adds it, signs up | Unchanged; all of it is the website |
+| Measure all four numbers | Unchanged — the events are written by the API routes both clients call |
+
+What the iOS app adds is *capture convenience and a resumable upload that
+survives club Wi-Fi* — real, and the reason it exists, but not a precondition
+for finding out whether people share matches and whether recipients convert.
+Those are the two questions Phase 0 exists to answer, and they can be answered
+now with five people and no Apple account.
+
+The honest caveat: a web upload of a 4 GB file from a phone is exactly the
+fragile thing `BackgroundUploader` was written to fix, so expect failures and do
+not read them as the product being broken. Keep Phase 0 matches short, or upload
+from a laptop over Wi-Fi.
+
 ### Phase 1 — One club (weeks 2–6)
 Your own club. This is where the loop compounds, because members already play
 each other — a recipient today is a recorder next week. Tactics that fit and
@@ -121,9 +144,9 @@ review on 2026-08-13.
 | # | Blocker | Status |
 |---|---|---|
 | 1 | `robots.txt`, `sitemap.xml`, the OG card and the PWA manifest were all being 307'd to `/sign-in` by the middleware — invisible to Google, and every shared link unfurled as a bare URL | **fixed** — [`web/middleware.ts`](../web/middleware.ts) |
-| 2 | Shared `/watch/:id` links wall the recipient behind sign-in at the highest-intent moment (§2) | **open** — biggest single conversion win |
-| 3 | iOS recorder not on TestFlight (needs a paid Apple Developer account) | **app is submission-ready** (renamed to Ojo, moderation + account deletion shipped 2026-08-18) — the $99 enrolment and the listing are the remaining manual steps, see [`APPSTORE.md`](APPSTORE.md) |
-| 4 | No analytics — the Phase 0 numbers above can't currently be measured | **open** — see §6 |
+| 2 | Shared `/watch/:id` links wall the recipient behind sign-in at the highest-intent moment (§2) | **open** — biggest single conversion win, and now **measurable before it is fixed**: `metrics_share_conversion.hit_sign_in_wall` counts exactly who this happens to |
+| 3 | iOS recorder not on TestFlight (needs a paid Apple Developer account) | **waiting on Apple** — enrolment submitted, sitting in identity verification as of 2026-08-23. The app itself is submission-ready. Nothing in the repo blocks it; see [`APPSTORE.md` §4.1](APPSTORE.md). **Note this no longer blocks Phase 0** — see §3 |
+| 4 | No analytics — the Phase 0 numbers above can't currently be measured | **fixed** 2026-08-23 — first-party events in Supabase plus Vercel Web Analytics, see [`ANALYTICS.md`](ANALYTICS.md). All four §6 numbers are queryable |
 | 5 | Phase 5 media pipeline (faststart) — scrubbing is the core promise and it's rough without it | **open** — [`ROADMAP.md`](ROADMAP.md) |
 | 6 | No privacy policy / terms. Storing video of identifiable people; needed before a public sign-up form, and before an App Store submission | **fixed** — [`/privacy`](../web/app/privacy/page.tsx) and [`/terms`](../web/app/terms/page.tsx), both public. Still worth a solicitor's eye before launch |
 
@@ -213,10 +236,23 @@ Four numbers. Everything else is decoration at this stage.
 | **Second-watch rate** — matches watched again ≥1 day later | The honest retention signal. A match watched once was a novelty; watched twice, it was useful. |
 | **Week-4 recording retention** | Whether it became a habit or a toy. |
 
-Nothing is instrumented yet (blocker #4). Vercel Analytics is one `npm i` and
-covers pageviews; the four metrics above are product events and need real
-tracking — the events themselves are cheap, since every one of them already
-corresponds to an existing API route.
+All four are instrumented as of 2026-08-23 (blocker #4). They are SQL views in
+Supabase — `metrics_share_rate`, `metrics_share_conversion`,
+`metrics_second_watch`, `metrics_recording_retention` — read from the SQL editor.
+[`ANALYTICS.md`](ANALYTICS.md) explains the design and, more importantly, the
+two caveats worth knowing before quoting a number from them: share conversion
+**under-reports** (anonymous ids don't survive a tab closing, a deliberate choice
+to stay out of cookie-banner territory), and every denominator starts on
+2026-08-23, so the first week's cohorts are partial.
+
+The hunch behind blocker #2 was the main reason to build this before launching
+rather than after. `metrics_share_conversion` has a `hit_sign_in_wall` column, so
+what the wall costs is a number *now*, and removing it can be judged rather than
+believed.
+
+A fifth view, `metrics_upload_reliability`, isn't a GTM number but is the thing
+most likely to sink a first release: it reports completion rate and total part
+retries per week, which is the field evidence OPERATIONS §1 has never had.
 
 ---
 

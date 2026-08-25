@@ -1,3 +1,4 @@
+import { track } from "@/lib/analytics/server";
 import { storeForRequest } from "@/lib/request";
 import { json, notFound } from "@/lib/util";
 
@@ -17,5 +18,11 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!video) return notFound("Video not found");
 
   const { token } = await store.createShareLink(id, userId);
+
+  // The loop's input (docs/GTM.md §2). Minting the link is the moment of
+  // intent — whether it then gets pasted into WhatsApp is something we find
+  // out from `share_link_opened`, not from here.
+  track("match_shared", { userId, videoId: id, props: { channel: "link" } });
+
   return json({ token, path: `/watch/${id}?s=${token}` });
 }

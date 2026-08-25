@@ -27,6 +27,10 @@ struct OjoApp: App {
         .onChange(of: scenePhase) { _, phase in
             // On return to foreground, finalize any uploads that finished while away.
             if phase == .active { BackgroundUploader.shared.resume() }
+            // Buffered events go out on both edges: leaving is the last chance
+            // before the app may be killed outright, and arriving is the first
+            // moment there is likely to be a network again.
+            if phase == .active || phase == .background { Analytics.flush() }
         }
     }
 }

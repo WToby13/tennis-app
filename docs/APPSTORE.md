@@ -8,6 +8,12 @@ Realistic timeline: **half a day of your time, plus 1–3 days of Apple's.** The
 enrolment is the slow, unpredictable part — start it first and do everything
 else while it processes.
 
+> **Status, 2026-08-23.** Enrolment is submitted and sitting in Apple's identity
+> verification. That is the whole critical path; nothing in the repo is blocking.
+> §4.1 covers the wait, and §4.2 is the reordered list of what is worth doing
+> meanwhile — the short version being that the share loop can be launched and
+> measured through the website without the App Store at all.
+
 ---
 
 ## 1. What the app is now
@@ -59,8 +65,11 @@ one project now, and it is the one that was called "Ojo Dev".
   migration chain, both SQL test suites, the web build and a Release iOS build
   were run together — see §2.1.
 
-**Not done, and it needs you:** run migrations `0014` and `0015`, set
-`MODERATION_EMAIL`, and have a lawyer glance at the two legal documents. See §3.
+**Not done, and it needs you:** run the outstanding migrations (now `0014`
+through `0020` — §3.1), set `MODERATION_EMAIL`, confirm
+`SUPABASE_SERVICE_ROLE_KEY` is set in Vercel, tick the new **Usage Data →
+Product Interaction** row on the privacy label (§8), and have a lawyer glance at
+the two legal documents. See §3.
 
 ### 2.1 What the merge check found
 
@@ -82,13 +91,27 @@ Postgres: `supabase/tests/run.sh`.
 
 ### 3.1 Run the outstanding migrations
 
-Supabase → SQL Editor → run **in this order**:
+Supabase → SQL Editor → run **in this order**, skipping any already applied:
 
 1. `supabase/migrations/0014_moderation.sql` — blocks and content reports.
 2. `supabase/migrations/0015_invites.sql` — the participant/invite rework.
+3. `supabase/migrations/0016_search_users.sql` — people search.
+4. `supabase/migrations/0017_notifications.sql` — @tags and the notification
+   inbox. Must be applied *before* the deploy that ships @tags, or the inbox is
+   permanently empty with no error to explain it.
+5. `supabase/migrations/0018_analysis_window_attempts.sql`
+6. `supabase/migrations/0019_events.sql` — product analytics.
+7. `supabase/migrations/0020_schedule_events_retention.sql` — the twelve-month
+   prune. **Not optional**: `/privacy` states that retention window, and this
+   job is what makes the sentence true.
 
 Without 0014, every Report and Block button in the app 500s, which is a
 guaranteed rejection because a reviewer *will* press them.
+
+Without 0019 and 0020 nothing breaks — but nothing is recorded either, silently,
+and the privacy policy would be describing collection that isn't happening.
+Check `SUPABASE_SERVICE_ROLE_KEY` is set in Vercel at the same time; without it
+analytics is a no-op that reports no error. See [`ANALYTICS.md` §7](ANALYTICS.md).
 
 Verify afterwards:
 
@@ -162,6 +185,82 @@ rest of §5 onward can be done while it processes.
 
 Once approved, in Xcode: **Settings → Accounts → +** and sign in with that Apple
 ID, so the team appears in the signing dropdown.
+
+### 4.1 Current state — enrolment submitted, identity verification pending
+
+**As of 2026-08-23 this is where the project is, and it is the only thing on the
+critical path to the App Store.** Nothing in the repo is waiting on anything;
+§5 onward is blocked purely on Apple.
+
+Two things worth knowing while it sits there:
+
+- **Identity verification is normal and it is not a queue you can jump.** For an
+  Individual enrolment Apple is matching the name and address you gave against
+  your government ID, sometimes automatically and sometimes by a person. 24–48
+  hours is typical; a week is not alarming. If it passes 48 hours, phoning
+  Developer Support genuinely does move it, because the usual hold-up is a
+  verbal confirmation nobody has asked you for yet.
+- **Do not start a second enrolment**, and do not change the name or address on
+  the first one while it is being checked. Both reset the review.
+
+**If it passes a few days, in order of how well it works.** Reports through
+early 2026 include waits of several weeks, so a stall is not evidence you did
+anything wrong — but these are the levers that exist:
+
+1. **Redo the verification in the Apple Developer app on iPhone.** Apple's own
+   [identity-verification page](https://developer.apple.com/help/account/membership/identity-verification/)
+   names the app as the *recommended* method, and it is a different pipeline
+   from the web flow — a web submission that has stalled can sometimes be
+   completed there in minutes.
+2. **Phone Developer Support** rather than emailing —
+   [developer.apple.com/contact](https://developer.apple.com/contact/) →
+   Membership and Account. The usual hold-up is a verbal confirmation nobody has
+   asked you for, and a call resolves in minutes what email takes days to.
+3. **Post in the [Apple Developer Forums](https://developer.apple.com/forums/tags/developer-program)
+   with your case number.** Non-obvious, but Apple staff are demonstrably more
+   responsive there than through the support queue, and it is where stalled
+   enrolments in 2026 have actually been unstuck.
+4. **Re-check the three things that must match your photo ID exactly**: legal
+   name (no nicknames, no dropped middle name), address (**P.O. boxes are
+   rejected**) and phone. Apple's page is explicit that entering the legal name
+   incorrectly causes delays. Do not *edit* them while the check is running —
+   note any mismatch and raise it on the call instead.
+
+### 4.2 What to do while it processes
+
+The useful reordering: **the loop does not actually need the App Store**, and as
+of 2026-08-23 it does not need TestFlight either to be *measured*. See
+[`GTM.md` §3](GTM.md) — the whole share loop can run through the website today,
+filming with the stock Camera app.
+
+In priority order, none of it needing an Apple account:
+
+1. **Deploy the web app and run migrations 0019 + 0020.** This has to happen
+   before submission regardless, because review opens `/privacy` before it has
+   an account and the updated policy has to be live. Doing it now also starts
+   the analytics collecting.
+2. **Run Phase 0 through the website** with a handful of players. This is the
+   part that was previously assumed to be gated on TestFlight and isn't.
+3. **Fix blocker #2** (the sign-in wall on shared links). It is web-only, it is
+   the largest known conversion loss, and it is now measurable before and after
+   — `metrics_share_conversion.hit_sign_in_wall`.
+4. **The Search Console / Bing / structured-data chores** in `GTM.md` §5. An
+   hour of clicking, no code, and they compound slowly so earlier is better.
+5. **Have a solicitor read `/privacy` and `/terms`** (§3.4). Worth doing against
+   the *updated* privacy policy, which now covers usage data.
+
+**Screenshots are already done** and do *not* need a signed build — a Debug
+build on the Simulator is unsigned and captures at full App Store resolution.
+Four 1320×2868 PNGs were taken on 2026-08-20 against real production data and
+are in `~/Desktop/Ojo App Store Screenshots/`, numbered in upload order. The
+only shot still missing is the Record screen, which genuinely does need a
+device, because the Simulator has no camera — and it is optional, since Apple's
+minimum is three.
+
+Worth redoing before submission only if the matches get renamed: three of them
+read "Untitled match" in the library shot, which is honest but not flattering.
+
+The listing copy (§6) is written and needs nothing further.
 
 ---
 
@@ -287,21 +386,30 @@ two is something reviewers do check.
 Apple asks three things about every data type you tick: **what it's used for**,
 **whether it's linked to the user's identity**, and **whether it's used for
 tracking**. For this app the last two are the same every time — linked **Yes**
-(it all hangs off an account), tracking **No** — and the purpose is always **App
-Functionality** alone. Do not tick Analytics or Product Personalisation: there
-is no analytics SDK in either client, so ticking it would be a false statement
-on the label.
+(it all hangs off an account), tracking **No**.
 
-**Tick these five. Purpose: App Functionality. Linked: Yes. Tracking: No.**
+> **Changed on 2026-08-23.** Until then this section said to leave Usage Data
+> unticked because there was no analytics in either client. That is no longer
+> true: `ios/Ojo/Ojo/Analytics.swift` sends product events to our own
+> `/api/events`, and the web app does the same. **One extra row now has to be
+> ticked, with a second purpose.** If a build was already submitted under the
+> old answers, update the label before the build containing `Analytics.swift`
+> goes out — the label applies to the version being reviewed, and a mismatch
+> between it and `/privacy` is exactly the kind of thing review checks.
 
-| Apple's category | Data type | What it actually is |
-|---|---|---|
-| Contact Info | **Name** | The name on the profile, shown to other players |
-| Contact Info | **Email Address** | Sign-in identity; also how an invite is addressed |
-| User Content | **Photos or Videos** | The match recording, and its thumbnail frame |
-| User Content | **Audio Data** | Match audio — the recording captures the microphone |
-| User Content | **Other User Content** | Comments, match titles, participant names, report details |
-| Identifiers | **User ID** | The Supabase account id |
+**Tick these seven.**
+
+| Apple's category | Data type | Purpose | What it actually is |
+|---|---|---|---|
+| Contact Info | **Name** | App Functionality | The name on the profile, shown to other players |
+| Contact Info | **Email Address** | App Functionality | Sign-in identity; also how an invite is addressed |
+| User Content | **Photos or Videos** | App Functionality | The match recording, and its thumbnail frame |
+| User Content | **Audio Data** | App Functionality | Match audio — the recording captures the microphone |
+| User Content | **Other User Content** | App Functionality | Comments, match titles, participant names, report details |
+| Identifiers | **User ID** | App Functionality | The Supabase account id |
+| Usage Data | **Product Interaction** | **Analytics** | Which actions were taken: a recording finished, an upload started/finished/failed, a match was shared, a link was opened, playback started. See §8.1 |
+
+All seven: **Linked to the user: Yes. Used for tracking: No.**
 
 **Audio Data is the one most people miss.** It looks like it's covered by
 "Photos or Videos", but the app asks for microphone permission and records
@@ -313,17 +421,43 @@ strings, which is the kind of thing review does notice.
 
 | Not collected | Why it's safe to say no |
 |---|---|
-| Usage Data, Analytics | No analytics SDK anywhere — verified in both clients |
-| Diagnostics / Crash Data | No crash reporter. `UploadLog` writes to the device's own log and a capped local file, and never transmits |
-| Device ID, Advertising Data | No ad SDK, no IDFA, no `AdSupport` |
+| Usage Data → **Other Usage Data** | Only Product Interaction is collected; nothing beyond the named event list |
+| Diagnostics / Crash Data | No crash reporter. `UploadLog` writes to the device's own log and a capped local file, and never transmits. `Analytics.swift` sends only the events in its `Event` enum — no stack traces, no logs |
+| Device ID, Advertising Data | No ad SDK, no IDFA, no `AdSupport`. `Analytics.swift` mints its session and anonymous ids **in memory only**, regenerated every 30 minutes, never written to the device — so there is no persistent identifier to declare |
 | Location | Never requested |
 | Search History | People-search queries are sent to be answered and not stored |
 | Health & Fitness | It is a tennis app, but it records no health data |
 | Purchases, Financial Info | Nothing is sold in the app |
 
-**"Do you or your third-party partners use data for tracking?" → No.** No ad
-SDK and no cross-app tracking, so you do not need App Tracking Transparency and
-should not add the prompt.
+**"Do you or your third-party partners use data for tracking?" → Still No.**
+Apple defines tracking as linking data with data from other companies'
+apps/sites for advertising or measurement, or sharing it with a data broker.
+The analytics here are first-party, go to our own Supabase project, and are
+shared with nobody. So there is still no App Tracking Transparency prompt and
+you should still not add one.
+
+### 8.1 What the analytics row actually covers
+
+Worth being able to answer precisely, because "you collect usage data" is a
+question a reviewer or a user may follow up on.
+
+- **The event list is `web/lib/analytics/events.ts`**, mirrored by the `Event`
+  enum in `ios/Ojo/Ojo/Analytics.swift`. `/api/events` allow-lists against it and
+  drops anything else, so the list is the whole truth and not a sample of it.
+- **What is never sent**: any part of a video or a frame of one, comment text,
+  search queries, contacts, location, or any advertising/device identifier.
+- **Where it goes**: our own Supabase project (EU), table `events`, RLS on with
+  no policies — meaning no signed-in user, including the person the row is
+  about, can read the table through the API. Writes come only from the server.
+- **How long**: twelve months, then deleted by a scheduled job
+  (`0020_schedule_events_retention.sql`). Deleting an account deletes that
+  account's rows immediately, by foreign key.
+- **The opt-out**: **Settings → Privacy → Share usage data** in the app, and the
+  equivalent on the web profile. Guideline-wise this is not required — it is
+  required by UK GDPR Article 21, because `/privacy` claims legitimate interests
+  as the basis. Reviewers do sometimes look for a claim in a privacy policy and
+  check the app actually honours it, so it is also the cheap way to pass that
+  check.
 
 **A judgement call, so you can decide it rather than discover it.** Your host
 (Vercel) writes ordinary server logs containing IP addresses, and the privacy
@@ -334,11 +468,16 @@ judgement, not a certainty, and the policy already discloses it in plain words,
 which is what actually matters legally.
 
 **Third parties who receive this data** (worth having straight, because it is
-the question that follows a privacy complaint): Supabase holds the account and
-metadata; AWS S3/CloudFront holds the video; Vercel serves the app; Resend
-sends invite email; Google is the OAuth provider if the user chooses it; and
-**TwelveLabs receives the video itself** when an AI breakdown is run. That last
-one is the most sensitive relationship you have, and `/privacy` names it.
+the question that follows a privacy complaint): Supabase holds the account,
+metadata and the analytics events; AWS S3/CloudFront holds the video; Vercel
+serves the app and counts anonymous web page views; Resend sends invite email;
+Google is the OAuth provider if the user chooses it; and **TwelveLabs receives
+the video itself** when an AI breakdown is run. That last one is the most
+sensitive relationship you have, and `/privacy` names it.
+
+Note Vercel Web Analytics runs on the **website only** — it is not in the iOS
+app and has nothing to declare on the label. It is in `/privacy` because the
+website needs it disclosed there.
 
 ---
 

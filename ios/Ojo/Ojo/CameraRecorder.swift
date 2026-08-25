@@ -238,6 +238,18 @@ extension CameraRecorder: AVCaptureFileOutputRecordingDelegate {
                     + "Everything up to that point was saved — upload it to free the space back up."
             }
             self.lastFileURL = outputFileURL
+
+            // The top of the funnel, and the one step that only ever happens on
+            // a phone. Recorded against uploads to answer the question the
+            // upload numbers can't: how many matches get filmed and then never
+            // sent anywhere.
+            let bytes = (try? FileManager.default
+                .attributesOfItem(atPath: outputFileURL.path)[.size] as? Int) ?? nil
+            Analytics.track(.recordingFinished, props: [
+                "durationS": .double(self.lastDuration),
+                "sizeBytes": .int(bytes ?? 0),
+                "stoppedEarly": .bool(ns != nil),
+            ])
         }
     }
 }

@@ -1,3 +1,4 @@
+import { track } from "@/lib/analytics/server";
 import { socialForRequest, storeForRequest } from "@/lib/request";
 import { json, notFound } from "@/lib/util";
 
@@ -11,7 +12,13 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const video = await store.get(id);
   if (!video) return notFound("Video not found");
 
-  const { social } = await socialForRequest();
+  const { social, userId } = await socialForRequest();
   await social.saveToLibrary(id);
+
+  // The same act as `/add`, reached from the feed or a match someone can
+  // already see rather than through a share token. Distinguished by `via` so
+  // share conversion stays honest about which route it came down.
+  track("library_add", { userId, videoId: id, props: { via: "save" } });
+
   return json({ saved: true });
 }

@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { GoogleButton, OrDivider } from "../GoogleButton";
+import { track } from "@/lib/analytics/client";
 import { friendlyAuthError } from "@/lib/authErrors";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
@@ -36,6 +37,20 @@ export default function SignUpPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Where the form was reached from separates the two funnels that matter: a
+  // recipient arriving off a share link or an invite, versus someone who found
+  // the landing page. They convert very differently and the difference is the
+  // whole argument in docs/GTM.md §2.
+  useEffect(() => {
+    const next = new URLSearchParams(window.location.search).get("next") ?? "";
+    const from = next.startsWith("/watch/")
+      ? "share_link"
+      : next.startsWith("/invite/")
+        ? "invite"
+        : "direct";
+    track("signup_started", { from });
+  }, []);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -60,10 +75,16 @@ export default function SignUpPage() {
     // Email confirmation disabled → we get a live session. Otherwise there's no
     // session yet and the profile fills in from metadata on first sign-in.
     if (!data.session) {
+      // The account exists; it just can't be used until the email is confirmed.
+      // Counted as a signup either way, or the conversion numbers would depend
+      // on a Supabase setting rather than on anything a person did.
+      track("signup_completed", { method: "password", confirmationPending: true }, { now: true });
       setNotice("Account created. Check your email to confirm, then sign in.");
       setBusy(false);
       return;
     }
+
+    track("signup_completed", { method: "password", confirmationPending: false }, { now: true });
 
     // Belt-and-suspenders: ensure the profile carries the details even if the
     // trigger hasn't been updated yet (RLS allows managing your own row).

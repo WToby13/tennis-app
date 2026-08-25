@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { track } from "@/lib/analytics/server";
 import { getSupabaseServer } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -42,6 +43,20 @@ export async function GET(request: NextRequest) {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
+      // Google and magic-link arrivals only — the password form signs in through
+      // the browser client and reports itself, so the two paths never
+      // double-count. "New" is judged from the account's age rather than from
+      // the profile row, which the handle_new_user trigger has already written
+      // by the time we get here.
+      if (user) {
+        const ageMs = Date.now() - Date.parse(user.created_at);
+        track(Number.isFinite(ageMs) && ageMs < 120_000 ? "signup_completed" : "sign_in", {
+          userId: user.id,
+          props: { method: "oauth", landedOn: next },
+        });
+      }
+
       let dest = next;
       if (user && next === "/") {
         const { data: profile } = await supabase

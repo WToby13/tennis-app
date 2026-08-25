@@ -75,6 +75,10 @@ struct LoginView: View {
                 isSignUp.toggle()
                 auth.error = nil
                 auth.notice = nil
+                // Paired with signup_completed, this is the drop-off on the form
+                // itself — the one part of the funnel neither the server nor the
+                // web app can see, because iOS sign-up never touches our API.
+                if isSignUp { Analytics.track(.signupStarted, props: ["from": "ios_login"]) }
             }
             .font(.footnote)
 

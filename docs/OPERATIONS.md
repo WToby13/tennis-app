@@ -280,6 +280,8 @@ work that's:
 supabase/migrations/0011_analysis_proxy.sql
 supabase/migrations/0013_analysis_windows.sql
 supabase/migrations/0017_notifications.sql
+supabase/migrations/0019_events.sql
+supabase/migrations/0020_schedule_events_retention.sql
 ```
 
 **0013 must be applied before the deploy that ships windowed analysis**, not
@@ -296,6 +298,21 @@ additive and safe to run early — against the current code it just starts filli
 a table nothing reads yet. Verify it locally first with
 `supabase/tests/run.sh`, which now includes a `notifications` suite covering who
 the fan-out reaches and who it must not.
+
+**0019 and 0020 are the analytics tables** (see [`ANALYTICS.md`](ANALYTICS.md)).
+Unlike 0013 and 0017 nothing breaks if they lag the deploy — every write goes
+through one route that fails soft — but nothing is *recorded* either, silently,
+which is a bad thing to discover in a month. Run them with the deploy.
+
+Two things to check afterwards, because both fail quietly rather than loudly:
+
+- **`SUPABASE_SERVICE_ROLE_KEY` is set in Vercel.** Without it `analyticsEnabled()`
+  is false and every event is dropped with no error. It is already needed for the
+  analysis cron sweep, so a correct environment has it — worth confirming rather
+  than assuming.
+- **The retention job is scheduled.** `select * from cron.job where jobname =
+  'ojo-prune-events';` should return a row. `/privacy` commits to a twelve-month
+  window, and 0020 is what makes that true rather than aspirational.
 
 ### 2. Infrastructure
 ```bash

@@ -1,3 +1,4 @@
+import { track } from "@/lib/analytics/server";
 import { needsAnalysisProxy } from "@/lib/analysisProxy";
 import {
   advanceAnalysis,
@@ -20,6 +21,8 @@ import {
   RALLY_KIND,
   SERVE_BOTTOM,
   SERVE_TOP,
+  SWAP_NO,
+  SWAP_YES,
 } from "@/lib/twelvelabs/rally";
 import { planWindows } from "@/lib/twelvelabs/windows";
 import { type AnalysisTask, normalizeSegments } from "@/lib/twelvelabs/types";
@@ -79,7 +82,7 @@ function stubSegments(): Omit<VideoSegment, "id">[] {
   const games = [
     { near: NEAR_SAME, serve: SERVE_BOTTOM, base: 4 }, // game 1: near player serves
     { near: NEAR_SAME, serve: SERVE_TOP, base: 130 }, // game 2: far end serves, near unchanged
-    { near: NEAR_OTHER, serve: SERVE_TOP, base: 260 }, // game 3: ends changed → the other is near
+    { near: NEAR_OTHER, serve: SERVE_TOP, base: 260, swapped: true }, // game 3: ends changed
   ];
   const rally: Record<string, unknown>[] = [];
   let idx = 0;
@@ -93,6 +96,8 @@ function stubSegments(): Omit<VideoSegment, "id">[] {
         metadata: {
           what_you_see: `Point ${idx + 1}: near player ${g.serve === SERVE_BOTTOM ? "serves" : "returns"}.`,
           serve_came_from: idx === 2 ? NEAR_UNCLEAR : g.serve, // noise: one unclear serve
+          // The changeover is reported on the FIRST point after it, and nowhere else.
+          players_swapped_ends_before: g.swapped && p === 0 ? SWAP_YES : SWAP_NO,
           near_player_identity: idx === 5 ? NEAR_UNCLEAR : g.near, // noise: one unclear identity
           times_ball_was_hit: 2 + (p % 3), // deliberately low → exercises the shot floor
         },
@@ -125,7 +130,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const owned = await ownedVideo(id);
   if (!owned) return notFound("Video not found");
-  const { store, video } = owned;
+  const { store, userId, video } = owned;
 
   if (video.status !== "ready") return badRequest("This match isn't ready to analyze yet.");
 
@@ -148,6 +153,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (video.durationS && video.durationS > MAX_ANALYSIS_SECONDS) {
     const msg = `This match is too long for AI analysis (${hhmm(video.durationS)}, max ${hhmm(MAX_ANALYSIS_SECONDS)}).`;
     await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null, analysisWindows: null });
+    track("analysis_failed", {
+      userId, videoId: id,
+      props: { reason: "too_long", durationS: video.durationS, started: false },
+    });
     return json({ analysisStatus: "failed", error: msg }, { status: 400 });
   }
 
@@ -164,6 +173,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (!transcodeEnabled()) {
       const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}). Automatic compression isn't set up yet.`;
       await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null, analysisWindows: null });
+      track("analysis_failed", {
+        userId, videoId: id,
+        props: { reason: "transcode_unavailable", sizeBytes: video.sizeBytes, started: false },
+      });
       return json({ analysisStatus: "failed", error: msg }, { status: 503 });
     }
     try {
@@ -180,11 +193,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         analysisError: null,
         ...playersPatch,
       });
+      track("analysis_started", {
+        userId, videoId: id,
+        props: { stage: "compressing", sizeBytes: video.sizeBytes, durationS: video.durationS },
+      });
       return json({ analysisStatus: "processing", stage: "compressing" });
     } catch (err) {
       const msg = "Couldn't start compressing this match. Please try again.";
       console.error("[analyze] transcode start failed", err);
       await store.update(id, { analysisStatus: "failed", analysisError: msg });
+      track("analysis_failed", {
+        userId, videoId: id, props: { reason: "transcode_start_failed", started: false },
+      });
       return json({ analysisStatus: "failed", error: msg }, { status: 502 });
     }
   }
@@ -196,6 +216,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!hasProxy && video.sizeBytes && video.sizeBytes > MAX_ANALYSIS_BYTES) {
     const msg = `This match is too large for AI analysis (${gb(video.sizeBytes)}, max ${gb(MAX_ANALYSIS_BYTES)}).`;
     await store.update(id, { analysisStatus: "failed", analysisError: msg, analysisTaskId: null, analysisWindows: null });
+    track("analysis_failed", {
+      userId, videoId: id,
+      props: { reason: "too_large", sizeBytes: video.sizeBytes, started: false },
+    });
     return json({ analysisStatus: "failed", error: msg }, { status: 400 });
   }
 
@@ -223,6 +247,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const windows = planWindows(video.durationS, startTimeSec);
     if (players) await store.update(id, playersPatch);
     await startWindows(store, video, url, windows);
+    track("analysis_started", {
+      userId, videoId: id,
+      props: {
+        stage: "analysing",
+        windows: windows.length,
+        usedProxy: hasProxy,
+        durationS: video.durationS,
+      },
+    });
     return json({ analysisStatus: "processing", windows: windows.length });
   } catch (err) {
     if (err instanceof TwelveLabsNotConfiguredError) {
@@ -231,6 +264,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     const code = err instanceof TwelveLabsApiError ? err.code : undefined;
     const message = friendlyAnalyzeError(code, err instanceof Error ? err.message : "");
     await store.update(id, { analysisStatus: "failed", analysisError: message });
+    track("analysis_failed", {
+      userId, videoId: id, props: { reason: code ?? "start_failed", started: false },
+    });
     return json({ analysisStatus: "failed", error: message }, { status: 502 });
   }
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { track } from "@/lib/analytics/server";
 import { config, partSizeFor } from "@/lib/config";
 import { cleanParticipants, saveParticipants } from "@/lib/participants";
 import { storeForRequest } from "@/lib/request";
@@ -77,6 +78,20 @@ export async function POST(req: Request) {
       console.error("[initiate] saving participants failed", err);
     }
   }
+
+  // The denominator for upload reliability. Recorded from here rather than from
+  // the client so it means "a multipart upload was genuinely created", which is
+  // the thing `upload_completed` is measured against.
+  track("upload_started", {
+    userId,
+    videoId: video.id,
+    props: {
+      sizeBytes: body.sizeBytes,
+      partSizeBytes,
+      parts: Math.ceil(body.sizeBytes / partSizeBytes),
+      contentType: String(body.contentType),
+    },
+  });
 
   return json({
     videoId: video.id,

@@ -18,6 +18,7 @@ import {
   PrevFrameIcon,
   ShareIcon,
 } from "../../icons";
+import { track } from "@/lib/analytics/client";
 import { formatDate, formatDuration, formatSize } from "@/lib/matchFormat";
 
 interface Author {
@@ -226,6 +227,63 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     },
     [id],
   );
+
+  /**
+   * Somebody followed a shared link.
+   *
+   * The denominator for share conversion (docs/GTM.md §6), and the only place it
+   * can be counted: minting a link says nothing about whether it was ever
+   * pasted anywhere. Note this fires for the *token* case only — the owner
+   * opening their own match from the library is not a share being received.
+   *
+   * Today a signed-out recipient is redirected to /sign-in before reaching this
+   * component at all, which is exactly why `sign_in_wall_hit` is recorded there
+   * too. Once GTM blocker #2 is fixed and anonymous viewing works, this event
+   * starts firing for them and the two together tell the whole story.
+   */
+  useEffect(() => {
+    const token = shareToken();
+    if (!token) return;
+    track("share_link_opened", { via: "share_token" }, { videoId: id, now: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  /**
+   * Playback actually started, and roughly how much of it was watched.
+   *
+   * `watch_started` fires on the first play of the page, not on load — a page
+   * view is not a watch, and counting it as one would make the second-watch
+   * rate meaningless. `watch_ended` goes out on the way off the page, so
+   * `watchedSeconds` is the honest answer to "did they stay".
+   */
+  const watchedFrom = useRef<number | null>(null);
+  const startedRef = useRef(false);
+  useEffect(() => {
+    // Reset on the way *in*, not only on the way out. The app router can reuse
+    // this component when only the [id] param changes, in which case the refs
+    // survive — and a stale `startedRef` would swallow the next match's
+    // watch_started entirely, which is the event the second-watch rate is built
+    // on. Cheap to do, invisible when it isn't needed.
+    startedRef.current = false;
+    watchedFrom.current = null;
+
+    return () => {
+      if (watchedFrom.current === null) return;
+      const watchedSeconds = Math.round((Date.now() - watchedFrom.current) / 1000);
+      watchedFrom.current = null;
+      if (watchedSeconds < 1) return;
+      track("watch_ended", { watchedSeconds }, { videoId: id, now: true });
+    };
+  }, [id]);
+
+  const onPlay = useCallback(() => {
+    setPaused(false);
+    if (watchedFrom.current === null) watchedFrom.current = Date.now();
+    if (startedRef.current) return;
+    startedRef.current = true;
+    track("watch_started", { isOwner, viaShareToken: Boolean(shareToken()) }, { videoId: id });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isOwner]);
 
   // Load metadata; poll while still processing (relevant to the S3 faststart step).
   useEffect(() => {
@@ -489,7 +547,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
               poster={thumbnailUrl ?? undefined}
               controls
               preload="metadata"
-              onPlay={() => setPaused(false)}
+              onPlay={onPlay}
               onPause={() => setPaused(true)}
               onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
               onSeeked={(e) => setCurrentTime(e.currentTarget.currentTime)}

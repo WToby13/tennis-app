@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
+import { track } from "@/lib/analytics/client";
 
 interface Invite {
   videoId: string;
@@ -56,6 +57,14 @@ export default function InvitePage({ params }: { params: Promise<{ token: string
         if (cancelled) return;
         setInvite(data.invite);
         setSignedIn(Boolean(data.signedIn));
+        // The other half of the share funnel. An emailed invite and a pasted
+        // /watch link are the same event with a different `via`, so they land in
+        // the same conversion view rather than needing their own.
+        track(
+          "share_link_opened",
+          { via: "invite", signedIn: Boolean(data.signedIn) },
+          { videoId: data.invite?.videoId ?? null, now: true },
+        );
         // Already signed in — nothing to ask, just put the match in their library
         // and show it.
         if (data.signedIn) await claim();

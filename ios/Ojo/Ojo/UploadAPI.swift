@@ -405,10 +405,17 @@ struct UploadAPI {
         _ = try await perform(try await makeRequest("/api/uploads/\(videoId)/abort", method: "POST", body: nil))
     }
 
-    func complete(videoId: String, parts: [UploadedPart], durationS: Double) async throws {
+    /// `partRetries` is analytics-only and optional server-side: how many part
+    /// PUTs had to be retried is the clearest measure of whether a long upload
+    /// on club Wi-Fi actually works now, and the phone is the only thing that
+    /// can count it. See `metrics_upload_reliability` in 0017_events.sql.
+    func complete(videoId: String, parts: [UploadedPart], durationS: Double,
+                  partRetries: Int = 0) async throws {
         let body = try JSONSerialization.data(withJSONObject: [
             "parts": parts.map { ["partNumber": $0.partNumber, "etag": $0.etag, "size": $0.size] },
             "durationS": durationS,
+            "partRetries": partRetries,
+            "platform": "ios",
         ])
         _ = try await perform(try await makeRequest("/api/uploads/\(videoId)/complete", method: "POST", body: body))
     }

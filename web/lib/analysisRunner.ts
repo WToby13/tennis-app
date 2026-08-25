@@ -1,3 +1,4 @@
+import { track } from "./analytics/server";
 import { config } from "./config";
 import type { MetadataStore, Video, VideoSegment } from "./metadata/types";
 import { storage } from "./storage";
@@ -365,6 +366,36 @@ async function advanceWindowed(
  * needing to know anything about local mode.
  */
 export async function advanceAnalysis(
+  store: MetadataStore,
+  video: Video,
+  opts?: { stubTaskId?: string; onStub?: () => Omit<VideoSegment, "id">[] },
+): Promise<Video> {
+  const after = await advanceOneStep(store, video, opts);
+
+  // A run finishes on whichever poll happens to catch it, and that is as likely
+  // to be the cron sweep as the owner's open tab — so the outcome is recorded
+  // here, at the one point both callers share, rather than in either route.
+  // Only on the transition: the watch page polls every few seconds and would
+  // otherwise write a row per poll for the rest of time.
+  if (video.analysisStatus === "processing" && after.analysisStatus !== "processing") {
+    if (after.analysisStatus === "ready") {
+      track("analysis_ready", {
+        userId: after.ownerId,
+        videoId: after.id,
+        props: { durationS: after.durationS, sizeBytes: after.sizeBytes },
+      });
+    } else if (after.analysisStatus === "failed") {
+      track("analysis_failed", {
+        userId: after.ownerId,
+        videoId: after.id,
+        props: { reason: after.analysisError?.slice(0, 200) ?? "unknown", started: true },
+      });
+    }
+  }
+  return after;
+}
+
+async function advanceOneStep(
   store: MetadataStore,
   video: Video,
   opts?: { stubTaskId?: string; onStub?: () => Omit<VideoSegment, "id">[] },

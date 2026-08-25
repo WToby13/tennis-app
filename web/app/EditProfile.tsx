@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CloseIcon } from "./icons";
+import { hasOptedOut, setOptedOut } from "@/lib/analytics/client";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 
 type Hand = "left" | "right";
@@ -40,6 +41,10 @@ export function EditProfile({
   // second modal on top of this one.
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Read after mount, not during render: it comes from localStorage, which the
+  // server has no view of, and reading it inline would mismatch on hydration.
+  const [analytics, setAnalytics] = useState(true);
+  useEffect(() => setAnalytics(!hasOptedOut()), []);
 
   const save = useCallback(
     async (e: React.FormEvent) => {
@@ -159,6 +164,26 @@ export function EditProfile({
                 </label>
               ))}
             </div>
+          </div>
+
+          <div className="field">
+            <span className="lbl">Usage data</span>
+            <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 14 }}>
+              <input
+                type="checkbox"
+                checked={analytics}
+                onChange={(e) => {
+                  setAnalytics(e.target.checked);
+                  setOptedOut(!e.target.checked);
+                }}
+                style={{ marginTop: 3 }}
+              />
+              <span className="muted">
+                Help improve Ojo by sharing which features you use — uploads, shares and
+                playback. Never your video, never sold, never used for ads. Turning this
+                off stops it immediately.
+              </span>
+            </label>
           </div>
 
           {error && <p style={{ color: "var(--danger)", fontSize: 14 }}>{error}</p>}

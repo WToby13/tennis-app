@@ -683,6 +683,18 @@ final class BackgroundUploader: NSObject {
 
     private func fail(_ id: UUID, _ message: String) {
         UploadLog.error("upload for \(id) gave up: \(message)")
+        // The upload that didn't make it. `upload_started` and `upload_completed`
+        // are written server-side from the routes themselves, but a give-up
+        // never reaches the server by definition — so this is the only way the
+        // failure rate is ever visible.
+        let job = loadJob(id)
+        Analytics.track(.uploadFailed, videoId: job?.videoId, props: [
+            "reason": .string(String(message.prefix(200))),
+            "partRetries": .int(job?.parts.reduce(0) { $0 + ($1.attempts ?? 0) } ?? 0),
+            "partsDone": .int(job?.parts.filter { $0.etag != nil }.count ?? 0),
+            "partsTotal": .int(job?.parts.count ?? 0),
+            "sizeBytes": .int(job?.size ?? 0),
+        ])
         cancelTasks(for: id)
         // The job stays on disk on purpose: it names the multipart upload and the
         // parts storage already holds, which is exactly what Retry needs to pick
@@ -843,7 +855,8 @@ final class BackgroundUploader: NSObject {
 
         for attempt in 1...Self.maxCompleteAttempts {
             do {
-                try await api.complete(videoId: job.videoId, parts: parts, durationS: job.durationS)
+                try await api.complete(videoId: job.videoId, parts: parts, durationS: job.durationS,
+                                       partRetries: job.parts.reduce(0) { $0 + ($1.attempts ?? 0) })
                 UploadLog.info("upload \(job.videoId) complete (\(job.parts.count) parts)")
                 await markUploaded(job)
                 return

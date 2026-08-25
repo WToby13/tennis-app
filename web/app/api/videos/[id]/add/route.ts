@@ -1,3 +1,4 @@
+import { track } from "@/lib/analytics/server";
 import { storeForRequest } from "@/lib/request";
 import { badRequest, json } from "@/lib/util";
 
@@ -13,9 +14,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const token = body?.token;
   if (typeof token !== "string" || !token) return badRequest("token is required");
 
-  const { store } = await storeForRequest();
+  const { store, userId } = await storeForRequest();
   const video = await store.addToLibrary(token);
   if (!video || video.id !== id) return badRequest("invalid or expired share link");
+
+  // The end of the loop: someone who was sent a match kept it. The strongest
+  // single signal that a share converted.
+  track("library_add", { userId, videoId: id, props: { via: "share_token" } });
 
   return json({ ok: true, video });
 }

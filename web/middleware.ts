@@ -77,6 +77,13 @@ export async function middleware(request: NextRequest) {
     "/invite",
     "/api/invites",
     "/api/cron",
+    // Product events. Public because the row that matters most in the funnel is
+    // written by someone with no account: the recipient who just opened a share
+    // link. The session is still read when there is one (the middleware sets the
+    // verified-user header above regardless of whether the path is public), so a
+    // signed-in caller's events are attributed correctly and an anonymous one's
+    // are not attributed at all. The route validates everything else itself.
+    "/api/events",
     // Resend's inbound webhook. Arrives with no session, so it has to be
     // public; the route authenticates it by signature instead.
     "/api/inbound",

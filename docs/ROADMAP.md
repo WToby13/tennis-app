@@ -12,6 +12,37 @@ doing them separately means building the same thing twice.
 | 3 | iOS: merged Matches + Profile, "Upload & AI Analyse" | built — needs a device test |
 | 4 | Remaining UX (fullscreen, login, caching, SSR) | done |
 | 5 | Media pipeline: faststart + analysis proxy | todo |
+| 6 | Product analytics | done 2026-08-23 — [`ANALYTICS.md`](ANALYTICS.md) |
+
+---
+
+## Where this stands, 2026-08-23
+
+**The critical path is Apple, not code.** Developer Program enrolment is in
+identity verification ([`APPSTORE.md` §4.1](APPSTORE.md)); the app itself is
+submission-ready and nothing in the repo is waiting on anything.
+
+So the build queue is now ordered by *what can be learned while blocked*, not by
+what is next in the table above:
+
+1. **Deploy the web app + migrations 0019/0020.** Required before submission
+   anyway (review reads `/privacy`), and starts the analytics collecting.
+2. **Blocker #2 — the sign-in wall on shared links.** Web-only, the biggest
+   known conversion loss, and now measurable either side of the change
+   (`metrics_share_conversion.hit_sign_in_wall`). This is the highest-value
+   *code* item on the board and it is not phase 5.
+3. **Phase 0 with real players, through the website** — see [`GTM.md` §3](GTM.md).
+   It turns out not to need the App Store.
+4. **Phase 5** (faststart + analysis proxy) after that, with its open question
+   unchanged: check whether scrubbing is actually broken on real matches before
+   building the pipeline, because if browsers cope with the trailing `moov` atom
+   via range requests, this phase shrinks to just the analysis proxy.
+5. **Phase 3's device test** the moment TestFlight is reachable. The Simulator
+   cannot exercise a background `URLSession` across suspension and relaunch,
+   which is exactly what changed.
+
+The one thing worth not doing: more instrumentation. The four numbers exist;
+what they need now is traffic, not more events.
 
 ## Why these groupings
 
