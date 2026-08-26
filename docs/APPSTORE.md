@@ -572,9 +572,9 @@ Information**:
   > Ojo Tennis records a tennis match on an iPhone and lets you review it in
   > slow motion and share it with the person you played.
   >
-  > The demo account has three matches already uploaded, including one with a
-  > completed AI rally breakdown, so nothing has to be recorded or uploaded to
-  > see the app working.
+  > The demo account has three matches in its library, each with a completed AI
+  > rally breakdown, so nothing has to be recorded or uploaded to see the app
+  > working. Its Home feed also carries matches from the account it follows.
   >
   > User-generated content (Guideline 1.2): matches can be posted to followers
   > and commented on. Reporting is on the ⋯ menu of every feed card, on the
@@ -586,7 +586,7 @@ Information**:
   > Blocking is thorough rather than cosmetic: a blocked account disappears from
   > the feed, from comments, and from people search (the magnifying glass beside
   > the Home title) in both directions — the blocked person cannot find the
-  > blocker either. The second demo account below can be used to try this.
+  > blocker either. The account the demo follows can be used to try this.
   >
   > Accepting the terms and the zero-tolerance policy is part of creating an
   > account — the text is on the sign-up screen above the Create account button.
