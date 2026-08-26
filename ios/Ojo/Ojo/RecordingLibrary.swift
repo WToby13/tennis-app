@@ -27,9 +27,41 @@ final class RecordingLibrary: ObservableObject {
 
     private let api = UploadAPI()
 
-    /// The full list to show: local recordings + cloud-only matches, newest first.
+    /// The full list to show: this account's local recordings + its cloud-only
+    /// matches, newest first.
+    ///
+    /// The filter is the account boundary. `recordings` is the on-disk index for
+    /// the *phone*, not for a user, so after a sign-out it still holds whatever
+    /// the previous account recorded here — and showing that to whoever signs in
+    /// next leaks their match titles, thumbnails and dates. `cloudStatus` is the
+    /// server's answer to "what can this account see", so an already-uploaded
+    /// recording is shown only when the server agrees it belongs to this account.
+    /// A recording that has never been uploaded has no owner on the server yet
+    /// and is genuinely this device's, so it stays.
     var displayed: [Recording] {
-        (recordings + cloud).sorted { $0.createdAt > $1.createdAt }
+        (mineOnThisPhone + cloud).sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// Local recordings this account is entitled to see.
+    private var mineOnThisPhone: [Recording] {
+        recordings.filter { r in
+            guard let remoteId = r.remoteVideoId else { return true }  // never uploaded — this phone's
+            return cloudStatus[remoteId] != nil                        // uploaded — only if the server shows it to us
+        }
+    }
+
+    /// Forget everything belonging to the account that just signed out.
+    ///
+    /// This object is a `@StateObject` on `RootView`, which stays mounted across
+    /// sign-out, so without this the next account inherits the last one's cloud
+    /// list — and `refreshFromCloud`'s TTL means it would not even re-fetch for a
+    /// minute. The on-disk recordings are left alone: they are the phone's, and
+    /// `displayed` is what decides who may see them.
+    func clearForSignOut() {
+        cloud = []
+        cloudStatus = [:]
+        lastCloudRefresh = nil
+        lastError = nil
     }
 
     /// Whether a recording's video file is present on this phone (vs. cloud-only).
@@ -199,7 +231,7 @@ final class RecordingLibrary: ObservableObject {
         // cloud's view of analysis and sharing.
         cloudStatus = videos.reduce(into: [:]) { map, v in map[v.id] = v.matchStatus }
 
-        let localRemoteIds = Set(recordings.compactMap { $0.remoteVideoId })
+        let localRemoteIds = Set(mineOnThisPhone.compactMap { $0.remoteVideoId })
         cloud = videos.compactMap { v in
             guard !localRemoteIds.contains(v.id) else { return nil }  // already shown from local index
             guard let uuid = UUID(uuidString: v.id) else { return nil }

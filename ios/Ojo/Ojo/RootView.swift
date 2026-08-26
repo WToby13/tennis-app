@@ -16,5 +16,14 @@ struct RootView: View {
         }
         .tint(Theme.accent)
         .preferredColorScheme(.dark)
+        // Drop the previous account's matches the moment the session ends.
+        //
+        // `library` is a @StateObject here, so it outlives the signed-in screen
+        // and would otherwise hand the next account the last one's cloud list.
+        // Keyed on `isSignedIn` rather than called from `signOut()` so an expired
+        // or revoked session clears it too, not only an explicit sign-out.
+        .onChange(of: auth.isSignedIn) { _, signedIn in
+            if !signedIn { library.clearForSignOut() }
+        }
     }
 }
