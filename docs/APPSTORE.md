@@ -148,7 +148,11 @@ Six steps, about fifteen minutes: **[`docs/EMAIL.md`](EMAIL.md) → Receiving ma
 `/privacy` and `/terms` are written to be accurate about what this app actually
 does, and they satisfy Apple's structural requirements. They are not legal
 advice and I am not a lawyer. You are storing video of identifiable people under
-UK GDPR — an hour of a solicitor's time before launch is cheap insurance.
+the EU GDPR, as a sole trader established in Denmark distributing across the EU
+— an hour of a solicitor's time before launch is cheap insurance. Worth putting
+to them specifically: whether trading as a natural person rather than an ApS
+changes anything, and whether the DSA trader details published on the App Store
+listing need to match the operator named in `/privacy`.
 
 ### 3.5 Deploy
 
