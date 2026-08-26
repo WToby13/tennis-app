@@ -454,8 +454,9 @@ question a reviewer or a user may follow up on.
   account's rows immediately, by foreign key.
 - **The opt-out**: **Settings → Privacy → Share usage data** in the app, and the
   equivalent on the web profile. Guideline-wise this is not required — it is
-  required by UK GDPR Article 21, because `/privacy` claims legitimate interests
-  as the basis. Reviewers do sometimes look for a claim in a privacy policy and
+  required by **EU GDPR Article 21**, because `/privacy` claims legitimate
+  interests as the basis — EU, not UK, since the operator is established in
+  Denmark (see the operator section of `/privacy`). Reviewers do sometimes look for a claim in a privacy policy and
   check the app actually honours it, so it is also the cheap way to pass that
   check.
 
