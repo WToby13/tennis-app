@@ -13,10 +13,10 @@ const CONTACT = "support@ojotennis.com";
 
 export default function TermsPage() {
   return (
-    <LegalShell title="Terms of Service" updated="2026-08-18">
+    <LegalShell title="Terms of Service" updated="2026-08-25">
       <p>
-        These terms are the agreement between you and Toby Keating, a sole trader based in the
-        United Kingdom (&ldquo;we&rdquo;, &ldquo;us&rdquo;), covering the Ojo Tennis iPhone app and
+        These terms are the agreement between you and Toby Keating, a sole trader based in
+        Denmark (&ldquo;we&rdquo;, &ldquo;us&rdquo;), covering the Ojo Tennis iPhone app and
         ojotennis.com. By creating an account you accept them. They are also the end-user licence
         agreement for the app.
       </p>
@@ -150,9 +150,9 @@ export default function TermsPage() {
 
       <h2>11. Law</h2>
       <p>
-        These terms are governed by the law of England and Wales, and its courts have jurisdiction.
-        If you are a consumer resident elsewhere in the UK or EU, you keep the protection of your
-        local mandatory law.
+        These terms are governed by Danish law, and the Danish courts have jurisdiction. If you
+        are a consumer resident in another country, you keep the protection of the mandatory
+        consumer-protection rules of the country where you live.
       </p>
 
       <h2>12. Contact</h2>

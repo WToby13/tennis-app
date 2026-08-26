@@ -14,15 +14,16 @@ const CONTACT = "privacy@ojotennis.com";
 
 export default function PrivacyPage() {
   return (
-    <LegalShell title="Privacy Policy" updated="2026-08-23">
+    <LegalShell title="Privacy Policy" updated="2026-08-25">
       <p>
         Ojo Tennis is a service for recording, reviewing and sharing your own tennis matches. This
         policy explains what we hold about you, why, and what you can do about it. It covers the Ojo
         iPhone app and ojotennis.com, which are the same service.
       </p>
       <p>
-        Ojo Tennis is operated by Toby Keating, a sole trader based in the United Kingdom, who is
-        the data controller for the purposes of UK GDPR. Contact: <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.
+        Ojo Tennis is operated by Toby Keating, a sole trader based in Denmark, who is the data
+        controller for the purposes of the EU General Data Protection Regulation (GDPR). Contact:{" "}
+        <a href={`mailto:${CONTACT}`}>{CONTACT}</a>.
       </p>
 
       <h2>What we collect</h2>
@@ -210,17 +211,17 @@ export default function PrivacyPage() {
 
       <h2>Your rights</h2>
       <p>
-        Under UK GDPR you can ask us for a copy of your data, ask us to correct it, ask us to delete
+        Under the GDPR you can ask us for a copy of your data, ask us to correct it, ask us to delete
         it, ask us to restrict or stop a particular use, object to any use we make on the basis of
         our legitimate interests, and ask for it in a portable format. The one use that rests on
         legitimate interests is the usage record described above, and you can stop it yourself with
         the setting rather than having to ask us. For anything else, email{" "}
         <a href={`mailto:${CONTACT}`}>{CONTACT}</a> and we will respond within one month. If you are
-        not satisfied, you can complain to the Information Commissioner&rsquo;s Office at{" "}
-        <a href="https://ico.org.uk" rel="noopener noreferrer" target="_blank">
-          ico.org.uk
+        not satisfied, you can complain to Datatilsynet, the Danish Data Protection Agency, at{" "}
+        <a href="https://www.datatilsynet.dk" rel="noopener noreferrer" target="_blank">
+          datatilsynet.dk
         </a>
-        .
+        &nbsp;&mdash; or to the supervisory authority in the EU country where you live.
       </p>
 
       <h2>Children</h2>
