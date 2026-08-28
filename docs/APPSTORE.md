@@ -610,6 +610,52 @@ hours.
 
 ---
 
+## 11.1 The Guideline 2.1 "Information Needed" reply
+
+**Ojo hit this on the first submission, 2026-08-27.** It is not a defect finding
+— Apple sends this template to most new apps and asks for a demo video plus
+context. The reply below was sent; keep it in the **Notes** field of App Review
+Information so the next submission carries it and does not get asked again.
+
+### What Apple asks for, and what to answer
+
+| # | Asked | Answer |
+|---|---|---|
+| 1 | Screen recording on a physical device | See the shot list below — must be recorded, cannot be written |
+| 2 | Devices and OS tested | iPhone 12 mini (iPhone13,1), iOS 26.6 (23G71); iPhone 17 Pro Max simulator, iOS 26.5; deployment target 17.0 |
+| 3 | Functions and target audience | Club players 25–55; the two-hour unwatchable file is the problem — see `GTM.md` §1 |
+| 4 | Setup and access | Demo account; three matches already analysed; new accounts need no email confirmation |
+| 5 | External services | Supabase, AWS S3/CloudFront, Vercel, Resend, Google OAuth, TwelveLabs. No payment processor, no third-party analytics SDK |
+| 6 | Regional differences | None — identical everywhere, free, English only |
+| 7 | Regulated industry / third-party material | Neither. All video is self-recorded; terms require consent of anyone filmed |
+
+The full prose reply is in the commit that added this section, and in the Notes
+field in App Store Connect.
+
+### The recording, shot by shot
+
+Record on the physical device, from the home screen, 3–5 minutes. QuickTime →
+New Movie Recording → select the iPhone gives a better file than Control Centre
+and lands it straight on the Mac.
+
+1. Tap the app icon — Apple asks that it begin with launch
+2. Create a **throwaway** account (registration flow)
+3. Tap Record — camera and microphone permission prompts, Allow
+4. Record ~10 seconds, stop
+5. You tab — the recording appears
+6. Sign out, sign in as the demo account (login flow)
+7. Home → open a match → scroll through the AI breakdown
+8. ⋯ on a feed card → Report → reason → submit
+9. ⋯ → Block → confirm → the feed loses that account's cards
+10. You → Settings → Blocked accounts → unblock
+11. Sign in as the **throwaway** account → Settings → Delete account → complete it
+
+**Delete the throwaway, never the demo account.** Deleting
+`appletest@ojotennis.com` on camera invalidates the credentials in App Review
+Information and earns a second rejection for an unrelated reason.
+
+---
+
 ## 12. If it comes back rejected
 
 Rejection on a first submission is normal, not a verdict. Reply in Resolution
