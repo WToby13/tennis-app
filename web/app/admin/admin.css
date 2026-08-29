@@ -1,0 +1,64 @@
+/* The dashboard is dense on purpose: it is read by one person looking for an
+   anomaly, so rows are tight and numbers are monospaced to line up. It borrows
+   the app's tokens so it doesn't feel like a different product. */
+
+.admin { max-width: 1180px; margin: 0 auto; padding: 24px 20px 64px; }
+
+.admin-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.admin-brand { font-family: var(--font-display); font-size: 22px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); text-decoration: none; }
+.admin-brand span { color: var(--accent); }
+.admin-who { font-size: 13px; margin: 2px 0 0; }
+
+.admin-nav { display: flex; gap: 4px; margin: 18px 0 22px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+.admin-tab { padding: 9px 14px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; white-space: nowrap; }
+.admin-tab:hover { color: var(--text); }
+.admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.admin-warn { background: rgba(229, 105, 91, 0.12); border: 1px solid var(--danger); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 14px; margin-bottom: 20px; }
+
+.admin-main { display: grid; gap: 26px; }
+
+/* Stat tiles */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.stat-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 6px; }
+.stat-value { font-family: var(--font-display); font-size: 26px; font-weight: 700; line-height: 1.1; margin: 0; letter-spacing: -0.02em; }
+.stat-sub { font-size: 12px; color: var(--muted); margin: 5px 0 0; }
+.stat.alert .stat-value { color: var(--danger); }
+.stat.good .stat-value { color: var(--sage); }
+
+.admin-section > h2 { font-family: var(--font-display); font-size: 17px; margin: 0 0 4px; letter-spacing: -0.01em; }
+.admin-section > .muted { font-size: 13px; margin: 0 0 12px; }
+
+/* Tables */
+.admin-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+table.admin-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.admin-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.admin-table td { padding: 10px 14px; border-bottom: 1px solid rgba(51, 44, 34, 0.55); vertical-align: middle; }
+.admin-table tr:last-child td { border-bottom: none; }
+.admin-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+.admin-table a { color: var(--text); text-decoration: none; font-weight: 600; }
+.admin-table a:hover { color: var(--accent); }
+.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.admin-empty { padding: 26px 16px; text-align: center; color: var(--muted); font-size: 14px; }
+
+/* Status pills */
+.pill { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.pill.ok { color: var(--sage); border-color: rgba(143, 179, 136, 0.4); background: rgba(143, 179, 136, 0.1); }
+.pill.warn { color: var(--accent-dim); border-color: rgba(231, 122, 66, 0.4); background: rgba(231, 122, 66, 0.1); }
+.pill.bad { color: var(--danger); border-color: rgba(229, 105, 91, 0.4); background: rgba(229, 105, 91, 0.1); }
+
+/* Sparkline-ish daily bars */
+.spark { display: flex; align-items: flex-end; gap: 3px; height: 56px; }
+.spark-bar { flex: 1; background: var(--accent); border-radius: 2px 2px 0 0; min-height: 2px; opacity: 0.85; }
+.spark-bar:hover { opacity: 1; }
+
+.report-body { font-size: 13px; color: var(--muted); max-width: 380px; }
+.mono-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted); }
+
+.admin-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+
+@media (max-width: 640px) {
+  .admin { padding: 16px 12px 48px; }
+  .stat-value { font-size: 22px; }
+}

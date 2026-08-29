@@ -3,8 +3,14 @@
 import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 
-/** Paths that render without the app chrome (marketing + auth). */
-const PUBLIC_PREFIXES = [
+/**
+ * Paths that render without the app chrome.
+ *
+ * Not the same as "public" — /admin is the most private route in the app and is
+ * still here, because what this list actually decides is whether the sidebar and
+ * content column are drawn, not who may see the page.
+ */
+const NO_CHROME_PREFIXES = [
   "/landing",
   "/sign-in",
   "/sign-up",
@@ -15,6 +21,9 @@ const PUBLIC_PREFIXES = [
   // is allowed through the middleware, so without it here the recipient gets
   // the signed-in app's sidebar wrapped around a sign-up card.
   "/invite",
+  // The dashboard is its own full-width layout with its own nav; the app
+  // sidebar would squeeze its tables and offer navigation to a different app.
+  "/admin",
 ];
 
 /**
@@ -24,9 +33,9 @@ const PUBLIC_PREFIXES = [
  */
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  const isBare = NO_CHROME_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  if (isPublic) return <main className="public-main">{children}</main>;
+  if (isBare) return <main className="public-main">{children}</main>;
 
   // The watch page is full-bleed (theater video), so it opts out of the
   // centered, padded content column and manages its own layout.
