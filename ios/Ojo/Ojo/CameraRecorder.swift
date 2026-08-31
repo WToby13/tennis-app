@@ -18,6 +18,9 @@ final class CameraRecorder: NSObject, ObservableObject {
     /// Set only when the finished file is actually usable — a recording that
     /// failed outright must not be filed into the library as a broken match.
     @Published var lastFileURL: URL?
+    /// The identity capture was journalled under, so the finished match is filed
+    /// as the same recording the crash-recovery sweep would have adopted.
+    @Published var lastRecordingId: UUID?
     @Published var lastDuration: Double = 0
     /// Something the user needs to know: not enough space to start, or a recording
     /// that iOS stopped early because the disk filled. Cleared when dismissed.
@@ -177,8 +180,20 @@ final class CameraRecorder: NSObject, ObservableObject {
                 Self.log.info("starting recording with room for ~\(seconds / 60) min")
             }
 
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent("match-\(Int(Date().timeIntervalSince1970)).mov")
+            // Record straight into Documents under the name the library will use.
+            //
+            // Capture used to write to `tmp`, which is wrong twice over: iOS purges
+            // that directory whenever it wants the space — with a 4 GB match in it —
+            // and a recording interrupted before the finish callback was stranded
+            // somewhere the library never looks. Writing to the final destination
+            // means an interrupted match is already exactly where it belongs, and
+            // the journal below is what tells the next launch to go and find it.
+            let id = UUID()
+            let fileName = "\(id.uuidString).mov"
+            let url = RecordingStore.documentsURL.appendingPathComponent(fileName)
+            RecordingStore.beginRecording(
+                .init(id: id, fileName: fileName, startedAt: Date()))
+            DispatchQueue.main.async { self.lastRecordingId = id }
             self.movieOutput.startRecording(to: url, recordingDelegate: self)
         }
     }
@@ -229,10 +244,16 @@ extension CameraRecorder: AVCaptureFileOutputRecordingDelegate {
             self.lastDuration = started.map { Date().timeIntervalSince($0) } ?? 0
 
             guard usable else {
+                // Nothing to recover, so retract the journal too — otherwise the
+                // next launch would try to adopt a file that isn't there.
+                RecordingStore.clearInProgress()
                 try? FileManager.default.removeItem(at: outputFileURL)
                 self.alert = "The recording couldn't be saved: \(ns?.localizedDescription ?? "unknown error")"
                 return
             }
+            // Finished cleanly: the library takes it from here, so the interrupted-
+            // recording note has done its job.
+            RecordingStore.clearInProgress()
             if ns != nil {
                 self.alert = "The phone ran out of storage, so recording stopped early. "
                     + "Everything up to that point was saved — upload it to free the space back up."

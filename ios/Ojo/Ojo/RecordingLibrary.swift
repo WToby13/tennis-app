@@ -1,3 +1,4 @@
+import AVFoundation
 import Combine
 import Foundation
 
@@ -13,6 +14,9 @@ final class RecordingLibrary: ObservableObject {
     /// phone). Fetched from the web, merged into the list for display.
     @Published private(set) var cloud: [Recording] = []
     @Published var lastError: String?
+    /// Set when a match the app never finished filing has been restored, so the
+    /// library can tell you rather than silently growing an entry.
+    @Published var recoveredNotice: String?
 
     /// Server-derived status per uploaded match, keyed by remote video id. Kept
     /// out of `Recording` (and so out of the on-disk index) because it's a live
@@ -102,6 +106,9 @@ final class RecordingLibrary: ObservableObject {
         }
 
         BackgroundUploader.shared.resume()
+
+        // Pick up anything a crash, a kill or a dead battery left behind.
+        Task { await recoverInterrupted() }
     }
 
     deinit {
@@ -112,9 +119,41 @@ final class RecordingLibrary: ObservableObject {
         Self.documentsURL.appendingPathComponent(recording.fileName)
     }
 
-    /// Move a freshly recorded temp file into the library as a pending upload.
+    /// File a recording whose video is already sitting in Documents.
+    ///
+    /// Capture writes straight to its final path now, so there is nothing to move
+    /// — which is the point: an interrupted match is already where it belongs and
+    /// only needs indexing. Returns the existing entry if it has already been
+    /// filed, so recovery and the normal finish path can't produce duplicates.
     @discardableResult
-    func add(tempFileURL: URL, title: String, durationS: Double) -> Recording {
+    func adopt(id: UUID, fileName: String, title: String,
+               durationS: Double, createdAt: Date = Date()) -> Recording? {
+        if let existing = recordings.first(where: { $0.id == id }) { return existing }
+        let url = Self.documentsURL.appendingPathComponent(fileName)
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        let size = (attrs?[.size] as? Int) ?? 0
+        guard size > 0 else { return nil }
+
+        let recording = Recording(
+            id: id,
+            title: title.isEmpty ? "Untitled match" : title,
+            fileName: fileName,
+            createdAt: createdAt,
+            durationS: durationS,
+            sizeBytes: size
+        )
+        recordings.insert(recording, at: 0)
+        recordings.sort { $0.createdAt > $1.createdAt }
+        RecordingStore.save(recordings)
+        return recording
+    }
+
+    /// Move a file into the library as a pending upload. Only the recovery path
+    /// needs this now — for a stray `match-*.mov` left in `tmp` by a build that
+    /// recorded there.
+    @discardableResult
+    func add(tempFileURL: URL, title: String, durationS: Double) -> Recording? {
         let id = UUID()
         let fileName = "\(id.uuidString).mov"
         let dest = Self.documentsURL.appendingPathComponent(fileName)
@@ -126,19 +165,75 @@ final class RecordingLibrary: ObservableObject {
         } catch {
             try? FileManager.default.copyItem(at: tempFileURL, to: dest)
         }
-        let attrs = try? FileManager.default.attributesOfItem(atPath: dest.path)
-        let size = (attrs?[.size] as? Int) ?? 0
-        let recording = Recording(
-            id: id,
-            title: title.isEmpty ? "Untitled match" : title,
-            fileName: fileName,
-            createdAt: Date(),
-            durationS: durationS,
-            sizeBytes: size
-        )
-        recordings.insert(recording, at: 0)
-        RecordingStore.save(recordings)
-        return recording
+        let created = (try? tempFileURL.resourceValues(forKeys: [.creationDateKey]))?.creationDate
+        return adopt(id: id, fileName: fileName, title: title,
+                     durationS: durationS, createdAt: created ?? Date())
+    }
+
+    // MARK: - Crash recovery
+
+    /// Adopt any recording the app never got to file.
+    ///
+    /// Three sources, in order of how much we know about them:
+    ///   1. the in-progress note, written when capture began — the phone died
+    ///      mid-match, and this says exactly which file and when it started;
+    ///   2. `match-*.mov` in `tmp`, left by a build that recorded there;
+    ///   3. any `<uuid>.mov` in Documents that the index doesn't mention, which
+    ///      catches anything the first two miss.
+    ///
+    /// Duration comes from the file itself, never from wall-clock: for a match cut
+    /// short by a dead battery there is no record of when it stopped.
+    /// `AVCaptureMovieFileOutput` writes movie fragments as it goes (every 10 s by
+    /// default) precisely so an interrupted file stays readable, so this generally
+    /// recovers everything up to the last fragment.
+    func recoverInterrupted() async {
+        var recovered: [Recording] = []
+
+        if let note = RecordingStore.inProgressRecording() {
+            let url = Self.documentsURL.appendingPathComponent(note.fileName)
+            let seconds = await Self.durationOf(url)
+            if let rec = adopt(id: note.id, fileName: note.fileName, title: "",
+                               durationS: seconds, createdAt: note.startedAt) {
+                recovered.append(rec)
+            }
+            RecordingStore.clearInProgress()
+        }
+
+        let tmp = FileManager.default.temporaryDirectory
+        for url in (try? FileManager.default.contentsOfDirectory(at: tmp, includingPropertiesForKeys: nil)) ?? []
+        where url.pathExtension.lowercased() == "mov" && url.lastPathComponent.hasPrefix("match-") {
+            let seconds = await Self.durationOf(url)
+            if let rec = add(tempFileURL: url, title: "", durationS: seconds) {
+                recovered.append(rec)
+            }
+        }
+
+        let known = Set(recordings.map { $0.fileName })
+        for url in (try? FileManager.default.contentsOfDirectory(at: Self.documentsURL, includingPropertiesForKeys: nil)) ?? []
+        where url.pathExtension.lowercased() == "mov" && !known.contains(url.lastPathComponent) {
+            guard let id = UUID(uuidString: url.deletingPathExtension().lastPathComponent) else { continue }
+            let seconds = await Self.durationOf(url)
+            let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate
+            if let rec = adopt(id: id, fileName: url.lastPathComponent, title: "",
+                               durationS: seconds, createdAt: created ?? Date()) {
+                recovered.append(rec)
+            }
+        }
+
+        guard !recovered.isEmpty else { return }
+        let total = recovered.reduce(0) { $0 + $1.sizeBytes }
+        UploadLog.info("recovered \(recovered.count) interrupted recording(s), \(total) bytes")
+        recoveredNotice = recovered.count == 1
+            ? "A recording that was interrupted has been restored to your matches. Upload it when you're ready."
+            : "\(recovered.count) interrupted recordings have been restored to your matches."
+    }
+
+    /// The real duration of a file on disk, or 0 if it can't be read.
+    private static func durationOf(_ url: URL) async -> Double {
+        let asset = AVURLAsset(url: url)
+        guard let duration = try? await asset.load(.duration) else { return 0 }
+        let seconds = CMTimeGetSeconds(duration)
+        return seconds.isFinite && seconds > 0 ? seconds : 0
     }
 
     /// Rename a recording (empty → "Untitled match").

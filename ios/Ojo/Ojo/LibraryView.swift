@@ -38,6 +38,21 @@ struct LibraryView: View {
         .background(Theme.bg)
         .navigationTitle("You")
         .navigationBarTitleDisplayMode(.inline)
+        // A match restored after the app never got to file it — a dead battery
+        // mid-recording, or iOS killing us. Worth saying out loud: it appears in
+        // the list on its own, and an entry you don't remember making is
+        // unsettling in a way that a sentence of explanation fixes.
+        .alert(
+            "Recording restored",
+            isPresented: Binding(
+                get: { library.recoveredNotice != nil },
+                set: { if !$0 { library.recoveredNotice = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { library.recoveredNotice = nil }
+        } message: {
+            Text(library.recoveredNotice ?? "")
+        }
         .toolbar {
             // The only way into Settings, and therefore the only way to reach
             // "Delete account" and the blocked-accounts list. This tab renders

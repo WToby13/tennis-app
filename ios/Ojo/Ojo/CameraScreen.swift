@@ -80,8 +80,16 @@ struct CameraScreen: View {
         // When a recording finishes, file it and jump straight to its Watch screen
         // (where you review the footage, name it, tag players and share).
         .onChange(of: recorder.lastFileURL) { _, newURL in
-            guard let url = newURL else { return }
-            let recording = library.add(tempFileURL: url, title: "", durationS: recorder.lastDuration)
+            // The file is already in Documents under the id capture journalled, so
+            // this only indexes it — and adopting by that id means a recording the
+            // crash sweep got to first is reused rather than duplicated.
+            guard newURL != nil, let id = recorder.lastRecordingId else { return }
+            guard let recording = library.adopt(
+                id: id,
+                fileName: "\(id.uuidString).mov",
+                title: "",
+                durationS: recorder.lastDuration
+            ) else { return }
             onFinished(recording)
         }
         // Storage problems the recorder can't resolve on its own: no room to
