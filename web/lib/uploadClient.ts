@@ -67,6 +67,43 @@ async function captureThumbnail(file: File): Promise<Blob | null> {
 }
 
 /**
+ * How long the file runs, in seconds, read from its metadata alone.
+ *
+ * The browser already loads this file to grab a poster frame, but that happens
+ * AFTER the upload completes, so the duration was being read a step too late to
+ * send and was simply dropped. `initiate` seeds the row with null and `complete`
+ * only overwrites it if a number arrives, so every match uploaded through the
+ * browser has been stored with no duration at all.
+ *
+ * That is not a cosmetic gap. A null duration told the analysis planner it did
+ * not know how long the match was, and it answered by sending the whole thing to
+ * TwelveLabs in one call: an 86-minute match came back with a second half of 325
+ * identical five-second rallies. The planner no longer trusts a null, but the
+ * real number is far better than the estimate standing in for it.
+ *
+ * `preload="metadata"` reads the header rather than the file, so this costs a
+ * moment even on a 5 GB recording. Null if the browser cannot decode it, which
+ * is not fatal — the server falls back to estimating from the byte count.
+ */
+async function readDurationS(file: File): Promise<number | null> {
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.src = objectUrl;
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => resolve();
+      video.onerror = () => reject(new Error("video decode failed"));
+    });
+    return Number.isFinite(video.duration) && video.duration > 0 ? video.duration : null;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/**
  * Best-effort poster thumbnail upload — presign a direct PUT and send the JPEG,
  * the same path the iOS recorder uses. Swallows all errors: the video is already
  * stored, so a thumbnail failure must not fail the upload.
@@ -89,6 +126,9 @@ export async function uploadFile(
   opts: { title: string; onProgress?: (fraction: number) => void },
 ): Promise<UploadHandle> {
   const contentType = file.type || "video/mp4";
+  // Read before uploading: it is needed by `complete` at the end, and reading it
+  // from the file we still have in hand is the only chance to get it right.
+  const durationS = await readDurationS(file);
 
   // 1. Initiate
   const initRes = await fetch("/api/uploads/initiate", {
@@ -131,7 +171,7 @@ export async function uploadFile(
   const completeRes = await fetch(`/api/uploads/${videoId}/complete`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ parts }),
+    body: JSON.stringify({ parts, durationS, platform: "web" }),
   });
   if (!completeRes.ok) throw new Error(`complete failed: ${await completeRes.text()}`);
 
