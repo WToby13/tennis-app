@@ -91,11 +91,22 @@ export interface AnalysisWindow {
  * The windows to analyse for a match of `durationS`, optionally skipping the
  * first `startAtS` seconds of warm-up. A short match yields exactly one window
  * covering the whole thing, so callers have a single code path.
+ *
+ * `durationS` must be a real number of seconds. It used to accept null and
+ * answer with a single open-ended window, which reads like a sensible fallback
+ * and is in fact the worst outcome available: it sends the entire match as one
+ * call, which is precisely what this module exists to stop. A real 86-minute
+ * match arrived with a null duration and came back with 325 consecutive rallies
+ * of five seconds each. Callers pass `assumedDurationS(...)` so a missing
+ * duration becomes an estimate rather than a hole; the last window runs `toEnd`
+ * regardless, so an estimate that falls short still covers the tail.
  */
-export function planWindows(durationS: number | null, startAtS = 0): AnalysisWindow[] {
+export function planWindows(durationS: number, startAtS = 0): AnalysisWindow[] {
   const start = Math.max(0, Math.floor(startAtS));
   if (!durationS || !Number.isFinite(durationS) || durationS <= start) {
-    return [{ startS: start, endS: 0 }]; // unknown duration → one open-ended window
+    // Nothing usable at all — a single window, but flagged to run to the end of
+    // the file rather than to a computed timestamp.
+    return [{ startS: start, endS: 0, toEnd: true }];
   }
   const end = Math.floor(durationS);
   const total = end - start;

@@ -1,4 +1,5 @@
 import { track } from "./analytics/server";
+import { assumedDurationS } from "./analysisProxy";
 import { config } from "./config";
 import type { MetadataStore, Video, VideoSegment } from "./metadata/types";
 import { storage } from "./storage";
@@ -422,7 +423,7 @@ async function advanceOneStep(
       // the owner asked for. Re-planning here would silently analyse from 0:00.
       const planned = video.analysisWindows?.length
         ? video.analysisWindows
-        : planWindows(video.durationS);
+        : planWindows(assumedDurationS(video.durationS, video.sizeBytes));
       return await startWindows(store, video, url, planned);
     } catch (err) {
       const code = err instanceof TwelveLabsApiError ? err.code : undefined;

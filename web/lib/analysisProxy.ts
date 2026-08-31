@@ -22,6 +22,28 @@
 const MIB = 1024 * 1024;
 
 /**
+ * Roughly how long a match runs, for the times the recorded duration is missing.
+ *
+ * Tracks `CameraRecorder.videoBitRate` (8 Mbps) plus audio and container
+ * overhead. It is an estimate and will be out by a few percent either way, which
+ * is fine for both things that use it: sizing a transcode, and deciding how to
+ * cut a match into analysis windows.
+ *
+ * It exists because "the clients always send a duration" turned out not to be
+ * true. A real 86-minute match arrived with `duration_s` null, and the analysis
+ * planner read that as "unknown" and sent the whole 86 minutes to TwelveLabs as
+ * a single call — the exact thing windowing exists to prevent. The second half
+ * came back as 325 consecutive rallies of 5 seconds each, one second apart.
+ * Guessing the length is far better than treating it as unknown.
+ */
+const RECORDER_BITS_PER_SECOND = 8_800_000;
+
+export function assumedDurationS(durationS: number | null, sizeBytes: number): number {
+  if (durationS && durationS > 0 && Number.isFinite(durationS)) return durationS;
+  return (sizeBytes * 8) / RECORDER_BITS_PER_SECOND;
+}
+
+/**
  * The size budget a proxy has to stay inside.
  *
  * TwelveLabs' own docs disagree with themselves — the Pegasus model page says

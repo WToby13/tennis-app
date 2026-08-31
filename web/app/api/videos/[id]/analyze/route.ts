@@ -1,5 +1,5 @@
 import { track } from "@/lib/analytics/server";
-import { needsAnalysisProxy } from "@/lib/analysisProxy";
+import { assumedDurationS, needsAnalysisProxy } from "@/lib/analysisProxy";
 import {
   advanceAnalysis,
   proxyIsAvailable,
@@ -189,7 +189,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // eventually starts the analysis runs minutes later with nothing but the
         // row. Storing it as a plan (windows with no taskId yet) rather than a
         // bare offset also pins the exact slices a retry will use.
-        analysisWindows: planWindows(video.durationS, startTimeSec),
+        analysisWindows: planWindows(assumedDurationS(video.durationS, video.sizeBytes), startTimeSec),
         analysisError: null,
         ...playersPatch,
       });
@@ -244,7 +244,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       : await storage().getPlaybackUrl(video.id, video.key);
     // Long matches go out as several short windows, run concurrently; short ones
     // come back as a single window and take the plain single-task path.
-    const windows = planWindows(video.durationS, startTimeSec);
+    const windows = planWindows(assumedDurationS(video.durationS, video.sizeBytes), startTimeSec);
     if (players) await store.update(id, playersPatch);
     await startWindows(store, video, url, windows);
     track("analysis_started", {

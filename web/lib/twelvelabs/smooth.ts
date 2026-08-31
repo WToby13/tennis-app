@@ -268,6 +268,23 @@ export function assessRaw(segments: Seg[]): RawQuality {
 }
 
 /**
+ * How many rallies in a row must share a duration and a gap before the stretch
+ * is called generated rather than watched.
+ *
+ * Measured on every run available — ten matches across four versions of the
+ * definition. The longest constant run in each, sorted:
+ *
+ *   2  2  2  2  3  3  |  8  9  10  15
+ *
+ * Nothing sits between 3 and 8. Real play produces runs of two and three by
+ * coincidence and then stops; the four on the right are all stretches the eye
+ * picks out as wrong, including the 4-second-on, 6-second-off metronome that ran
+ * for nearly three minutes of a 70-minute match. Six sits in the empty band with
+ * two to spare on either side.
+ */
+const GRID_RUN = 6;
+
+/**
  * Long enough for a constant enum to be impossible rather than merely unusual.
  *
  * Subtler than it looks, and an earlier version of this got it wrong. Ends
@@ -292,6 +309,14 @@ const LONG_ENOUGH_TO_JUDGE_FIELDS = 32;
  *  - No timing structure: a real changeover is 60-90s against a 15-25s
  *    inter-point gap, so the longest gap should dwarf the median. When the
  *    longest is barely twice the median, the timings were invented.
+ * The grid test is shared with `degenerateWindow` and has to be here too, which
+ * a windowed run makes easy to forget: a single-call run never reaches that
+ * guard at all. A match that arrived with no duration was analysed in one call
+ * for exactly that reason, came back with 325 consecutive rallies of five
+ * seconds each, and passed every test above — the role and identity fields were
+ * varied enough, and the timings had a wide enough spread, because only the
+ * SECOND HALF was a metronome. Run length is the one measure that sees it.
+ *
  * There WAS a fourth test here, on recycled prose: the same failure showed 12
  * distinct `what_you_see` strings across 95 points. It went when its threshold
  * stopped meaning anything — the field was rewritten to ask for a category
@@ -302,7 +327,7 @@ export function degenerateMatch(q: RawQuality): boolean {
   const constantRole = q.points >= LONG_ENOUGH_TO_JUDGE_FIELDS && q.roleUniformity >= 0.98;
   const constantIdentity = q.points >= LONG_ENOUGH_TO_JUDGE_FIELDS && q.identityUniformity >= 0.98;
   const noTimingStructure = q.points >= 12 && q.gapSpread < 2.5;
-  return constantRole || constantIdentity || noTimingStructure;
+  return constantRole || constantIdentity || noTimingStructure || q.longestConstantRun >= GRID_RUN;
 }
 
 /**
@@ -312,23 +337,6 @@ export function degenerateMatch(q: RawQuality): boolean {
  * short, unremarkable stretch of play.
  */
 const WINDOW_MIN_POINTS_TO_JUDGE = 8;
-
-/**
- * How many rallies in a row must share a duration and a gap before the stretch
- * is called generated rather than watched.
- *
- * Measured on every run available — ten matches across four versions of the
- * definition. The longest constant run in each, sorted:
- *
- *   2  2  2  2  3  3  |  8  9  10  15
- *
- * Nothing sits between 3 and 8. Real play produces runs of two and three by
- * coincidence and then stops; the four on the right are all stretches the eye
- * picks out as wrong, including the 4-second-on, 6-second-off metronome that ran
- * for nearly three minutes of a 70-minute match. Six sits in the empty band with
- * two to spare on either side.
- */
-const GRID_RUN = 6;
 
 /**
  * Whether ONE window's raw output is a template.
