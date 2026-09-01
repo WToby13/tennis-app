@@ -107,6 +107,67 @@ final class AuthModel: ObservableObject {
         busy = false
     }
 
+    /// Sign in with Apple — the Guideline 4.8 "equivalent login option".
+    ///
+    /// Native, not a web redirect: Apple returns a signed identity token and
+    /// Supabase verifies it directly, so there is no browser hop and nothing to
+    /// allow-list in the Supabase URL configuration.
+    ///
+    /// Apple sends the person's name **only on the first authorisation** for an
+    /// Apple ID and never again, so it is written into the profile immediately.
+    /// Miss it and there is no second chance short of the user revoking the app
+    /// in iOS Settings.
+    func signInWithApple() async {
+        busy = true; error = nil; notice = nil
+        do {
+            let apple = try await AppleSignIn.run()
+            let session = try await Supa.client.auth.signInWithIdToken(
+                credentials: .init(provider: .apple, idToken: apple.idToken, nonce: apple.rawNonce)
+            )
+            accountEmail = session.user.email
+            isSignedIn = true
+
+            let isNew = Date().timeIntervalSince(session.user.createdAt) < 120
+            if isNew { await seedProfile(from: apple, userId: session.user.id.uuidString.lowercased()) }
+            Analytics.track(isNew ? .signupCompleted : .signIn, props: ["method": "apple"])
+            if isNew { Analytics.flush() }
+        } catch AppleSignIn.Failure.cancelled {
+            // Backing out of the sheet is not a failure to report.
+        } catch {
+            self.error = error.localizedDescription
+        }
+        busy = false
+    }
+
+    /// Put Apple's one-time name on the profile row.
+    ///
+    /// `handle_new_user` fills the row from sign-up metadata, which an Apple
+    /// sign-in has none of — so without this the person is "Ojo player" forever,
+    /// and their name is the thing other players see on a shared match.
+    private func seedProfile(from apple: AppleSignIn.Result, userId: String) async {
+        let first = apple.fullName?.givenName ?? ""
+        let last = apple.fullName?.familyName ?? ""
+        let display = "\(first) \(last)".trimmingCharacters(in: .whitespaces)
+        guard !display.isEmpty else { return }
+
+        struct ProfileSeed: Encodable {
+            let display_name: String
+            let first_name: String
+            let last_name: String
+        }
+        // Best effort: a name that fails to save is not worth blocking a
+        // successful sign-in over, and the person can set it in Edit profile.
+        do {
+            try await Supa.client
+                .from("profiles")
+                .update(ProfileSeed(display_name: display, first_name: first, last_name: last))
+                .eq("id", value: userId)
+                .execute()
+        } catch {
+            print("[auth] could not seed profile from Apple name: \(error)")
+        }
+    }
+
     func signOut() async {
         try? await Supa.client.auth.signOut()
         accountEmail = nil

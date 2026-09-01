@@ -19,6 +19,21 @@ struct LoginView: View {
             Text(isSignUp ? "Create an account." : "Sign in to your account.")
                 .font(.subheadline).foregroundStyle(.secondary)
 
+            // Sign in with Apple first: Guideline 4.8 requires an equivalent
+            // login option alongside Google, and Apple's is the one that lets
+            // someone keep their address private. Top of the list because on
+            // iOS it is also the fastest way in — one tap, no typing.
+            Button {
+                Task { await auth.signInWithApple() }
+            } label: {
+                Label("Continue with Apple", systemImage: "apple.logo")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.white)
+            .foregroundStyle(.black)
+            .disabled(auth.busy)
+
             // Google — same provider as the web app.
             Button {
                 Task { await auth.signInWithGoogle() }
@@ -82,16 +97,19 @@ struct LoginView: View {
             }
             .font(.footnote)
 
-            // Guideline 1.2 wants the EULA reachable at the point of sign-up, not
-            // only from Settings — this is where someone agrees to it.
-            if isSignUp {
-                Text("By creating an account you agree to our [Terms](https://ojotennis.com/terms) and [Privacy Policy](https://ojotennis.com/privacy). We remove objectionable content and the accounts that post it.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .tint(Theme.accent)
-                    .padding(.top, 2)
-            }
+            // Guideline 1.2 wants the EULA in front of someone "before registering
+            // or logging in" — both, which is why this is not inside `if isSignUp`.
+            // It used to be, and the screen opens in sign-in state, so anyone who
+            // signed in with an existing account never saw it at all. That is what
+            // a reviewer does with a demo account, and it cost a rejection.
+            Text(isSignUp
+                 ? "By creating an account you agree to our [Terms](https://ojotennis.com/terms) and [Privacy Policy](https://ojotennis.com/privacy). We remove objectionable content and the accounts that post it."
+                 : "By signing in you agree to our [Terms](https://ojotennis.com/terms) and [Privacy Policy](https://ojotennis.com/privacy). We remove objectionable content and the accounts that post it.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .tint(Theme.accent)
+                .padding(.top, 2)
 
             if let notice = auth.notice {
                 Text(notice).font(.caption).foregroundStyle(.green).multilineTextAlignment(.center)

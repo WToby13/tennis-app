@@ -203,6 +203,14 @@ export default function SignUpPage() {
       <p className="auth-alt muted">
         Already have an account? <Link href="/sign-in">Sign in</Link>
       </p>
+
+      {/* Guideline 1.2 wants the EULA in front of someone before registering or
+          logging in — both, not only at sign-up. */}
+      <p className="muted" style={{ fontSize: 12, textAlign: "center", marginTop: 4 }}>
+        By creating an account you agree to our <Link href="/terms">Terms</Link> and{" "}
+        <Link href="/privacy">Privacy Policy</Link>. We remove objectionable content and the
+        accounts that post it.
+      </p>
     </div>
   );
 }
