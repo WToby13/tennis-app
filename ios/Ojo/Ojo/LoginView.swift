@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 struct LoginView: View {
@@ -23,15 +24,20 @@ struct LoginView: View {
             // login option alongside Google, and Apple's is the one that lets
             // someone keep their address private. Top of the list because on
             // iOS it is also the fastest way in — one tap, no typing.
-            Button {
-                Task { await auth.signInWithApple() }
-            } label: {
-                Label("Continue with Apple", systemImage: "apple.logo")
-                    .frame(maxWidth: .infinity)
+            //
+            // Apple's own button, not a Label with the apple.logo symbol. The
+            // Sign in with Apple guidelines are specific about how the button may
+            // look and what it may say, and a hand-rolled one is its own
+            // rejection — which would be a poor way to lose a review cycle when
+            // the button is there to answer 4.8 in the first place.
+            SignInWithAppleButton(.continue) { request in
+                request.requestedScopes = [.fullName, .email]
+                request.nonce = AppleSignIn.beginRequestNonce()
+            } onCompletion: { result in
+                Task { await auth.signInWithApple(result) }
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.white)
-            .foregroundStyle(.black)
+            .signInWithAppleButtonStyle(.white)
+            .frame(height: 44)
             .disabled(auth.busy)
 
             // Google — same provider as the web app.

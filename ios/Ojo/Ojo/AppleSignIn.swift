@@ -2,7 +2,7 @@ import AuthenticationServices
 import CryptoKit
 import Foundation
 
-/// Sign in with Apple, as Guideline 4.8 requires.
+/// Nonce handling for Sign in with Apple, as Guideline 4.8 requires.
 ///
 /// The guideline asks that an app offering a third-party login (Google, here)
 /// also offer one that limits collection to name and email, lets the person keep
@@ -10,78 +10,43 @@ import Foundation
 /// password cannot satisfy the middle requirement — collecting the address *is*
 /// the mechanism — so Sign in with Apple is the option that does.
 ///
-/// The flow is native rather than a web redirect: Apple hands back a signed
-/// identity token, which Supabase verifies itself via `signInWithIdToken`. No
-/// browser hop, and nothing to allow-list in the Supabase URL configuration.
+/// The button itself is SwiftUI's `SignInWithAppleButton`, which owns the
+/// request and the callback. All that is left here is the nonce, which has to
+/// survive between the two: Apple hashes it into the identity token, and
+/// Supabase re-hashes the raw value to compare. That comparison is what stops a
+/// token being replayed, so the raw value must be the one that produced the hash
+/// Apple was given.
 @MainActor
 enum AppleSignIn {
 
-    struct Result {
-        /// The signed JWT from Apple. Supabase verifies this against Apple's keys.
-        let idToken: String
-        /// The un-hashed nonce. Apple embeds its SHA-256 in the token; Supabase
-        /// re-hashes this and compares, which is what stops a token being replayed.
-        let rawNonce: String
-        /// Apple sends the name **only on the very first authorisation** for an
-        /// Apple ID, and never again. Captured here so the profile can be seeded.
-        let fullName: PersonNameComponents?
-        /// Either the real address or a private relay one, depending on what the
-        /// person chose. Both are addresses we can mail; neither is guaranteed to
-        /// match an address they were invited by, which is precisely why invites
-        /// are claimed by token rather than by address (see 0015_invites.sql).
-        let email: String?
+    /// The raw nonce for the request currently in flight.
+    ///
+    /// Single-valued because the button cannot start a second authorisation
+    /// while one is on screen. Cleared once consumed, so a stale nonce can never
+    /// be paired with a later token.
+    private static var pendingRawNonce: String?
+
+    /// Make a nonce, stash the raw value, and return the SHA-256 for the request.
+    static func beginRequestNonce() -> String {
+        let raw = randomNonce()
+        pendingRawNonce = raw
+        return sha256(raw)
     }
 
-    enum Failure: Error {
-        case cancelled
-        case noIdentityToken
-        case underlying(Error)
+    /// The raw nonce for the completed request, consumed on read.
+    static func takeRawNonce() -> String? {
+        defer { pendingRawNonce = nil }
+        return pendingRawNonce
     }
 
-    /// Present the system sheet and return what Apple gives back.
-    static func run() async throws -> Result {
-        let rawNonce = randomNonce()
-        let request = ASAuthorizationAppleIDProvider().createRequest()
-        request.requestedScopes = [.fullName, .email]
-        // Apple hashes the nonce into the token; we keep the raw one to hand to
-        // Supabase, which is how the token is bound to this specific request.
-        request.nonce = sha256(rawNonce)
-
-        let delegate = Delegate()
-        let controller = ASAuthorizationController(authorizationRequests: [request])
-        controller.delegate = delegate
-        controller.presentationContextProvider = delegate
-
-        let credential = try await withCheckedThrowingContinuation { continuation in
-            delegate.continuation = continuation
-            controller.performRequests()
-        }
-        // Held until the callback fires — ASAuthorizationController keeps only a
-        // weak reference to its delegate, so without this it deallocates and
-        // nothing is ever called back.
-        _ = delegate
-
-        guard let tokenData = credential.identityToken,
-              let idToken = String(data: tokenData, encoding: .utf8) else {
-            throw Failure.noIdentityToken
-        }
-
-        return Result(
-            idToken: idToken,
-            rawNonce: rawNonce,
-            fullName: credential.fullName,
-            email: credential.email
-        )
-    }
-
-    // MARK: - Nonce
+    // MARK: - Nonce generation
 
     private static func randomNonce(length: Int = 32) -> String {
         var bytes = [UInt8](repeating: 0, count: length)
         let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
         if status != errSecSuccess {
-            // Never observed in practice; falling back to a UUID pair keeps the
-            // flow alive rather than trapping on the user's only way in.
+            // Never observed in practice; falling back keeps the flow alive
+            // rather than trapping on someone's only way into the app.
             return UUID().uuidString + UUID().uuidString
         }
         // Base64url without padding: the nonce travels in a JWT claim.
@@ -95,40 +60,5 @@ enum AppleSignIn {
         SHA256.hash(data: Data(input.utf8))
             .map { String(format: "%02x", $0) }
             .joined()
-    }
-
-    // MARK: - Delegate
-
-    private final class Delegate: NSObject, ASAuthorizationControllerDelegate,
-                                  ASAuthorizationControllerPresentationContextProviding {
-        var continuation: CheckedContinuation<ASAuthorizationAppleIDCredential, Error>?
-
-        func authorizationController(controller: ASAuthorizationController,
-                                     didCompleteWithAuthorization authorization: ASAuthorization) {
-            guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
-                continuation?.resume(throwing: Failure.noIdentityToken)
-                continuation = nil
-                return
-            }
-            continuation?.resume(returning: credential)
-            continuation = nil
-        }
-
-        func authorizationController(controller: ASAuthorizationController,
-                                     didCompleteWithError error: Error) {
-            // Dismissing the sheet is a normal thing to do, not an error worth
-            // showing in red under the button.
-            let failure: Failure = (error as? ASAuthorizationError)?.code == .canceled
-                ? .cancelled
-                : .underlying(error)
-            continuation?.resume(throwing: failure)
-            continuation = nil
-        }
-
-        func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
-            UIApplication.shared.connectedScenes
-                .compactMap { ($0 as? UIWindowScene)?.keyWindow }
-                .first ?? ASPresentationAnchor()
-        }
     }
 }
