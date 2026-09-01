@@ -172,6 +172,12 @@ export interface MetadataStore {
   hasActiveShareLink(videoId: string): Promise<boolean>;
   /** Add a shared video to the caller's library via a valid token. */
   addToLibrary(token: string): Promise<Video | null>;
+  /**
+   * Whether the match is in the caller's own library — the "add to profile"
+   * state. Deliberately not "can the caller see it": a public match is readable
+   * by everyone but is in nobody's library until they add it.
+   */
+  isInLibrary(videoId: string): Promise<boolean>;
   /** Remove a video from the caller's own library (does not delete the video). */
   removeFromLibrary(videoId: string, userId: string | null): Promise<void>;
 

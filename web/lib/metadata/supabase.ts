@@ -271,6 +271,19 @@ export class SupabaseMetadataStore implements MetadataStore {
     return toVideo(data as Row);
   }
 
+  async isInLibrary(videoId: string): Promise<boolean> {
+    // No caller (service role) has no library.
+    if (!this.userId) return false;
+    const { data, error } = await this.supabase
+      .from("library_items")
+      .select("video_id")
+      .eq("video_id", videoId)
+      .eq("user_id", this.userId) // RLS also scopes to the caller
+      .maybeSingle();
+    if (error) throw new Error(`library lookup failed: ${error.message}`);
+    return data !== null;
+  }
+
   async removeFromLibrary(videoId: string, userId: string | null): Promise<void> {
     let q = this.supabase.from("library_items").delete().eq("video_id", videoId);
     if (userId) q = q.eq("user_id", userId); // RLS also scopes to the caller

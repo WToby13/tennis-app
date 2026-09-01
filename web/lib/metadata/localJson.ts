@@ -168,6 +168,10 @@ export class LocalJsonMetadataStore implements MetadataStore {
     return this.get(token); // already "yours" — nothing to add
   }
 
+  async isInLibrary(): Promise<boolean> {
+    return true; // single-user local mode: every match is already yours
+  }
+
   removeFromLibrary(videoId: string): Promise<void> {
     return this.softDelete(videoId);
   }

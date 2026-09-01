@@ -32,19 +32,34 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
  * Access: the caller sees it if they own it / have it in their library / it's
  * public (all via `store.get`), OR they arrived with a valid `?s=<token>` share
  * link. `canAdd` tells the UI to offer "Add to my account".
+ *
+ * Two different questions, which this route used to answer with one value:
+ *
+ *  - `inLibrary` — did `store.get` return a row, i.e. can the caller *see* it.
+ *    Kept exactly as it was because the shipped iOS build reads this field. The
+ *    name is a misnomer; `inMyLibrary` is the honest answer.
+ *  - `inMyLibrary` — a real `library_items` lookup. The videos SELECT policy
+ *    also passes for a *public* match, so read access is not membership, and
+ *    conflating them hid the add button from everyone a public match was shared
+ *    with — the one case where the recipient most needs it. `canAdd` is built on
+ *    this one.
+ *
+ * Additive on purpose (same reasoning as `matchStatus` below): a client in App
+ * Store review can't be re-released to match a wire change.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { store, userId } = await storeForRequest();
 
   const token = new URL(req.url).searchParams.get("s");
-  let video = await store.get(id);
-  const inLibrary = video !== null; // get() only returns it if the caller already has access
-
-  if (!video && token) {
-    const shared = await store.getByShareToken(token);
-    if (shared && shared.id === id) video = shared;
-  }
+  // A token is resolved whether or not `store.get` already succeeded — it's what
+  // makes adding possible, and a public match is readable without being anyone's.
+  const [owned, shared] = await Promise.all([
+    store.get(id),
+    token ? store.getByShareToken(token) : Promise.resolve(null),
+  ]);
+  const tokenGrantsThis = shared !== null && shared.id === id;
+  const video = owned ?? (tokenGrantsThis ? shared : null);
   if (!video) return notFound("Video not found");
 
   // Social state for the watch page (like/follow/share).
@@ -61,6 +76,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     sharedToFollowers,
     summary,
     hasActiveShareLink,
+    inMyLibrary,
   ] = await Promise.all([
     store.getParticipants(video.id).catch(() => []),
     store.getSegments(video.id).catch(() => []),
@@ -72,6 +88,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     social.isSharedToFollowers(video.id),
     video.ownerId ? social.profileSummary(video.ownerId) : null,
     store.hasActiveShareLink(video.id).catch(() => false),
+    store.isInLibrary(video.id).catch(() => false),
   ]);
 
   const isOwner = Boolean(userId && video.ownerId && video.ownerId === userId);
@@ -85,8 +102,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     thumbnailUrl,
     isOwner,
     canEdit,
-    inLibrary,
-    canAdd: !inLibrary,
+    // Legacy field: read access, not membership. Frozen until the iOS build
+    // that reads it (WatchView) has shipped and can move to `inMyLibrary`.
+    inLibrary: owned !== null,
+    inMyLibrary,
+    // Adding runs through the share token (`add_shared_video`), so an offer to
+    // add without one would be a dead button.
+    canAdd: !inMyLibrary && tokenGrantsThis,
     participants,
     likeCount: like.count,
     likedByMe: like.likedByMe,
