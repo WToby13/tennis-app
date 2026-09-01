@@ -2,6 +2,9 @@ import AuthenticationServices
 import SwiftUI
 
 struct LoginView: View {
+    /// Shared by the Apple and Google buttons so the pair line up exactly.
+    private static let providerButtonHeight: CGFloat = 48
+
     @ObservedObject var auth: AuthModel
     @State private var isSignUp = false
 
@@ -37,17 +40,32 @@ struct LoginView: View {
                 Task { await auth.signInWithApple(result) }
             }
             .signInWithAppleButtonStyle(.white)
-            .frame(height: 44)
+            .frame(height: Self.providerButtonHeight)
+            // Apple's guidelines permit setting the corner radius, and matching
+            // it to Google's keeps the two reading as one pair of choices rather
+            // than two unrelated controls.
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusSmall, style: .continuous))
             .disabled(auth.busy)
 
-            // Google — same provider as the web app.
+            // Google — same provider as the web app. Sized and shaped to match
+            // the Apple button above it: 4.8 asks for an *equivalent* option, and
+            // one of the two looking like the afterthought is the wrong signal
+            // to send about which is meant to be used.
             Button {
                 Task { await auth.signInWithGoogle() }
             } label: {
                 Label("Continue with Google", systemImage: "g.circle")
-                    .frame(maxWidth: .infinity)
+                    .font(.body.weight(.medium))
+                    .frame(maxWidth: .infinity, minHeight: Self.providerButtonHeight)
+                    .foregroundStyle(Theme.accent)
+                    .background(Theme.surface2,
+                                in: RoundedRectangle(cornerRadius: Theme.radiusSmall, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.radiusSmall, style: .continuous)
+                            .stroke(Theme.accent.opacity(0.6), lineWidth: 1)
+                    )
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             .disabled(auth.busy)
 
             HStack {
