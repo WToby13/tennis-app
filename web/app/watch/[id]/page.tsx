@@ -2,22 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommentSection } from "../../CommentSection";
 import { EditDetails, type EditableParticipant } from "../../EditDetails";
 import { FollowButton } from "../../FollowButton";
 import { LikeButton } from "../../LikeButton";
 import { RallySegments } from "../../RallySegments";
-import {
-  CloseIcon,
-  CommentIcon,
-  EditIcon,
-  NextFrameIcon,
-  PauseIcon,
-  PlayIcon,
-  PrevFrameIcon,
-  ShareIcon,
-} from "../../icons";
+import { VideoPlayer } from "../../VideoPlayer";
+import { CloseIcon, CommentIcon, EditIcon, ShareIcon } from "../../icons";
 import { track } from "@/lib/analytics/client";
 import { formatDate, formatDuration, formatSize } from "@/lib/matchFormat";
 
@@ -55,7 +47,6 @@ interface Segment {
 
 type AnalysisStatus = "none" | "processing" | "ready" | "failed";
 
-const SPEEDS = [0.25, 0.5, 1, 1.5, 2];
 const ASSUMED_FPS = 30; // frame-step granularity until we read real fps (post-MVP)
 
 export default function WatchPage({ params }: { params: Promise<{ id: string }> }) {
@@ -377,18 +368,48 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     [seekTo],
   );
 
+  /** Start of the earliest rally, or null when there's no breakdown to go on. */
+  const firstRallyStart = useMemo(() => {
+    let first: number | null = null;
+    for (const s of segments) {
+      if (s.startS == null) continue;
+      if (first === null || s.startS < first) first = s.startS;
+    }
+    return first;
+  }, [segments]);
+
   /**
-   * `?t=` on the URL: where a timestamp links to from a feed card or the inbox,
-   * which have no player of their own. Applied once, on metadata, because
-   * setting currentTime before the asset has a duration is silently dropped.
+   * Where the match opens.
+   *
+   * `?t=` wins — that's a link to a named moment, from a feed card or the inbox,
+   * neither of which has a player of its own. Otherwise, if the breakdown knows
+   * where the first rally is, open there: everything before it is warm-up and
+   * walking about, and nobody sits through that twice.
+   *
+   * Can only run once the asset has a duration (setting currentTime earlier is
+   * silently dropped), and the segments can land either side of that, so it's an
+   * effect over both rather than a metadata handler. Applied once, and never on
+   * top of someone who has already started watching.
    */
+  const [metadataReady, setMetadataReady] = useState(false);
   const appliedStartTime = useRef(false);
-  const applyStartTime = useCallback(() => {
-    if (appliedStartTime.current) return;
-    appliedStartTime.current = true;
+  // The router reuses this component when only [id] changes, so the ref has to
+  // be cleared explicitly or the next match opens wherever this one left off.
+  useEffect(() => {
+    appliedStartTime.current = false;
+    setMetadataReady(false);
+  }, [id]);
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el || !metadataReady || appliedStartTime.current) return;
     const t = Number(new URLSearchParams(window.location.search).get("t"));
-    if (Number.isFinite(t) && t > 0) seekTo(t);
-  }, [seekTo]);
+    const target = Number.isFinite(t) && t > 0 ? t : firstRallyStart;
+    if (target == null || target <= 0) return; // nothing to jump to — leave it at 0
+    appliedStartTime.current = true;
+    if (!el.paused || el.currentTime > 0.5) return; // they're already watching
+    el.currentTime = target;
+    setCurrentTime(target);
+  }, [metadataReady, firstRallyStart]);
 
   const togglePlay = useCallback(() => {
     const el = videoRef.current;
@@ -405,8 +426,9 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   /**
    * Fullscreen the whole review area, not the <video>.
    *
-   * Native video fullscreen drops you into a bare player — no frame-step, no
-   * speed, no rally timeline — which is the entire reason to be on this page.
+   * Fullscreening the <video> shows the element and nothing else: our overlay is
+   * a sibling of it, and the rally timeline a floor above that, so both would be
+   * left behind — and they are the entire reason to be on this page.
    * Fullscreening the container keeps the review tooling with the video.
    */
   const toggleFullscreen = useCallback(() => {
@@ -423,7 +445,8 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   }, []);
 
   // Keyboard: , / . step one frame; j / l / arrows jump 5s; k or space toggles
-  // play; f toggles fullscreen.
+  // play; f toggles fullscreen; n jumps to the next rally; m mutes. Every one of
+  // these is printed on the chip it belongs to, in the overlay over the video.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const el = videoRef.current;
@@ -447,7 +470,10 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       else if (e.key === "k" || e.key === " ") el.paused ? el.play() : el.pause();
       else if (e.key === "f") toggleFullscreen();
       else if (e.key === "n") nextRally();
-      else return;
+      else if (e.key === "m") {
+        el.muted = !el.muted;
+        if (!el.muted && el.volume === 0) el.volume = 1;
+      } else return;
       e.preventDefault();
     }
     window.addEventListener("keydown", onKey);
@@ -541,21 +567,29 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       <div className={`theater ${isFullscreen ? "is-fullscreen" : ""}`} ref={theaterRef}>
         <div className="watch-stage">
           {ready ? (
-            <video
-              ref={videoRef}
+            <VideoPlayer
               src={playbackUrl!}
               poster={thumbnailUrl ?? undefined}
-              controls
-              preload="metadata"
+              videoRef={videoRef}
+              currentTime={currentTime}
+              paused={paused}
+              speed={speed}
+              showNextRally={segments.length > 0}
+              hasNextRally={hasNextRally}
+              isFullscreen={isFullscreen}
+              onSpeedChange={changeSpeed}
+              onStepFrames={stepFrames}
+              onSeekBy={seek}
+              onTogglePlay={togglePlay}
+              onNextRally={nextRally}
+              onToggleFullscreen={toggleFullscreen}
               onPlay={onPlay}
               onPause={() => setPaused(true)}
-              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-              onSeeked={(e) => setCurrentTime(e.currentTarget.currentTime)}
-              onLoadedMetadata={(e) => {
-                setCurrentTime(e.currentTarget.currentTime);
-                applyStartTime();
+              onTimeChange={setCurrentTime}
+              onLoadedMetadata={(el) => {
+                setCurrentTime(el.currentTime);
+                setMetadataReady(true);
               }}
-              onDoubleClick={toggleFullscreen}
             />
           ) : (
             <div className="placeholder">
@@ -571,65 +605,8 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
           )}
         </div>
 
-        {ready && (
-          <div className="controls">
-              <div className="group" aria-label="Playback speed">
-                {SPEEDS.map((s) => (
-                  <button
-                    key={s}
-                    className={`chip ${speed === s ? "active" : ""}`}
-                    onClick={() => changeSpeed(s)}
-                  >
-                    {s}×
-                  </button>
-                ))}
-              </div>
-              <div className="group" aria-label="Frame step">
-                <button className="chip chip-icon" onClick={() => stepFrames(-1)} title="Previous frame">
-                  <PrevFrameIcon size={16} /> <span className="kbd">,</span>
-                </button>
-                <button className="chip chip-icon" onClick={() => stepFrames(1)} title="Next frame">
-                  <span className="kbd">.</span> <NextFrameIcon size={16} />
-                </button>
-              </div>
-              <div className="group" aria-label="Skip and play">
-                <button className="chip" onClick={() => seek(-10)}>−10s</button>
-                <button className="chip" onClick={() => seek(-5)}>
-                  −5s <span className="kbd">j</span>
-                </button>
-                <button className="chip chip-icon" onClick={togglePlay} title={paused ? "Play" : "Pause"}>
-                  {paused ? <PlayIcon size={16} /> : <PauseIcon size={16} />} <span className="kbd">k</span>
-                </button>
-                <button className="chip" onClick={() => seek(5)}>
-                  +5s <span className="kbd">l</span>
-                </button>
-                <button className="chip" onClick={() => seek(10)}>+10s</button>
-              </div>
-              {segments.length > 0 && (
-                <div className="group" aria-label="Rallies">
-                  <button
-                    className="chip"
-                    onClick={nextRally}
-                    disabled={!hasNextRally}
-                    title="Skip to the start of the next rally"
-                  >
-                    Next rally <span className="kbd">n</span>
-                  </button>
-                </div>
-              )}
-              <div className="group" aria-label="View">
-                <button
-                  className="chip"
-                  onClick={toggleFullscreen}
-                  title={isFullscreen ? "Exit fullscreen" : "Fullscreen (keeps these controls)"}
-                >
-                  {isFullscreen ? "Exit fullscreen" : "Fullscreen"}{" "}
-                  <span className="kbd">f</span>
-                </button>
-              </div>
-            </div>
-        )}
-
+        {/* Straight under the video: with the controls now over the picture,
+            the breakdown is the first thing below it. */}
         {ready && (
           <RallySegments
             videoId={id}

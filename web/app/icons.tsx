@@ -86,3 +86,56 @@ export const BellIcon = ({ size = 24 }: P) =>
 
 export const ProfileIcon = ({ size = 24 }: P) =>
   svg(size, <><circle cx="12" cy="8" r="3.6" /><path d="M4.5 20c0-3.6 3.4-6 7.5-6s7.5 2.4 7.5 6" /></>);
+
+/* ---- video player overlay ---- */
+
+export const VolumeIcon = ({ size = 24 }: P) =>
+  svg(
+    size,
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z" fill="currentColor" stroke="currentColor" />
+      <path d="M15.5 9.5a3.5 3.5 0 0 1 0 5" />
+      <path d="M18 7a7 7 0 0 1 0 10" />
+    </>,
+  );
+export const MuteIcon = ({ size = 24 }: P) =>
+  svg(
+    size,
+    <>
+      <path d="M4 9.5h3.5L12 5.5v13L7.5 14.5H4z" fill="currentColor" stroke="currentColor" />
+      <path d="M16 10l4 4" />
+      <path d="M20 10l-4 4" />
+    </>,
+  );
+
+/** Four corner brackets pointing outward / inward. */
+export const FullscreenIcon = ({ size = 24 }: P) =>
+  svg(
+    size,
+    <>
+      <path d="M4 9V4h5" />
+      <path d="M20 9V4h-5" />
+      <path d="M4 15v5h5" />
+      <path d="M20 15v5h-5" />
+    </>,
+  );
+export const ExitFullscreenIcon = ({ size = 24 }: P) =>
+  svg(
+    size,
+    <>
+      <path d="M9 4v5H4" />
+      <path d="M15 4v5h5" />
+      <path d="M9 20v-5H4" />
+      <path d="M15 20v-5h5" />
+    </>,
+  );
+
+/** Skip to the next rally: a play triangle running into a bar. */
+export const NextRallyIcon = ({ size = 24 }: P) =>
+  svg(
+    size,
+    <>
+      <path d="M5 6v12l8-6z" fill="currentColor" stroke="currentColor" />
+      <path d="M13 6v12l6-6z" fill="currentColor" stroke="currentColor" />
+    </>,
+  );

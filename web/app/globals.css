@@ -375,15 +375,11 @@ a:hover {
 }
 
 /* ---- chips ---- */
-.controls {
+/* A pill holding a set of related chips. Lives in the player overlay (see .pv
+   further down, which restyles it for sitting over the picture). */
+.group {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
-  margin-top: 12px;
-}
-.controls .group {
-  display: flex;
   gap: 4px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -1141,14 +1137,13 @@ video {
   align-items: center;
   justify-content: center;
 }
-/* Opening a match should be the video, big, with its navigation under it —
-   nothing else competing. The breakdown is below the fold on purpose: it's for
-   review, not for landing. (An earlier version reserved room to fit all three on
-   one screen, which cost the video half its height for a panel most first views
-   never look at.) */
+/* Opening a match should be the video, big. Its navigation is drawn over the
+   picture (see .pv below) rather than under it, which buys back the strip the
+   control chips used to take — so the top of the breakdown lands on the first
+   screen without the video giving up much height. */
 .watch-stage video {
   width: 100%;
-  max-height: 85vh;
+  max-height: 72vh;
   object-fit: contain;
   background: #000;
   border-radius: 0;
@@ -1200,6 +1195,12 @@ video {
   align-items: center;
   gap: 8px;
 }
+.segments-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
 .seg-count {
   font-size: 12px;
   font-weight: 600;
@@ -1214,15 +1215,26 @@ video {
   margin: 0 0 8px;
 }
 
-/* The running commentary under the heading: what the playhead is sitting on
-   right now. One line, so it survives on a phone and in fullscreen. */
+/* Who's playing, then what the playhead is sitting on right now — one row while
+   there's width for it, wrapping to two when there isn't. The two are read
+   together, so stacking them by default only pushed the lanes down the page. */
+.seg-status {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-bottom: 10px;
+}
+
+/* The running commentary: what the playhead is sitting on right now. One line,
+   so it survives on a phone and in fullscreen. */
 .seg-now {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
   gap: 4px 8px;
   font-size: 13px;
-  margin: 0 0 10px;
+  margin: 0;
   min-height: 18px;
 }
 .seg-now-dot {
@@ -1288,7 +1300,6 @@ video {
   display: flex;
   flex-wrap: wrap;
   gap: 18px;
-  margin-bottom: 12px;
   font-size: 13px;
 }
 .player-tag {
@@ -1817,14 +1828,11 @@ video {
   justify-content: center;
 }
 
-/* ---- theater: video + review controls as one fullscreen unit -------------- */
+/* ---- theater: video + rally breakdown as one fullscreen unit -------------- */
 
-/* Fullscreening the <video> itself gives a bare player — no frame-step, no
-   speed, no rally timeline — which is the whole reason to be on this page. The
-   container goes fullscreen instead, so the review tooling comes along. */
-.theater > .controls {
-  padding: 14px 26px 0;
-}
+/* Fullscreening the <video> itself gives a bare player — no rally timeline,
+   and none of our own overlay — which is the whole reason to be on this page.
+   The container goes fullscreen instead, so the breakdown comes along. */
 .theater.is-fullscreen {
   background: #000;
   height: 100%;
@@ -1835,17 +1843,13 @@ video {
   flex: 1;
   min-height: 0;
 }
+.theater.is-fullscreen .pv,
 .theater.is-fullscreen .watch-stage video {
   max-height: 100%;
   height: 100%;
 }
-/* Controls sit on the black, pinned under the video. */
-.theater.is-fullscreen > .controls {
-  flex: 0 0 auto;
-  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
-  background: rgba(0, 0, 0, 0.85);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  justify-content: center;
+.theater.is-fullscreen .pv {
+  align-self: stretch;
 }
 
 /* ---- skeletons ----------------------------------------------------------- */
@@ -1943,17 +1947,16 @@ video {
 }
 
 /* ---- timeline scrubber + playhead ---------------------------------------- */
-/* The breakdown is inside the theater (so fullscreen keeps it) but sits AFTER
-   the controls in the DOM, which is the reading order for the normal view. It
-   has to bring its own horizontal padding here, matching .theater > .controls. */
+/* The breakdown is inside the theater (so fullscreen keeps it) and, now that the
+   navigation lives over the picture, it is the first thing under the video. The
+   stage is full-bleed, so the breakdown brings its own horizontal padding. */
 .theater > .segments {
   margin-top: 0;
-  padding: 18px 26px 0;
+  padding: 14px 26px 0;
 }
-/* The breakdown now lives inside the theater, between the video and the
-   controls: service games above the scrubber, rallies below it, navigation
-   underneath. All three share one % coordinate system over the match duration,
-   so a single playhead can cross the whole stack. */
+/* Service games above the scrubber, rallies below it, all sharing one %
+   coordinate system over the match duration, so a single playhead can cross the
+   whole stack. */
 .tl-stack {
   position: relative;
 }
@@ -2021,23 +2024,281 @@ video {
   border-radius: 4px;
 }
 
-/* In fullscreen the stack sits on black with the controls. The theater is a
-   flex column there, so `order` restores video → lanes → controls without
-   touching the DOM order the normal view needs. */
-.theater.is-fullscreen .watch-stage {
-  order: 0;
-}
+/* In fullscreen the stack sits on black under the video, pinned to the bottom
+   edge — the navigation is already on the picture, so this strip is the lanes
+   and nothing else. */
 .theater.is-fullscreen .segments {
-  order: 1;
   flex: 0 0 auto;
-  padding: 8px 20px 0;
+  padding: 8px 20px calc(6px + env(safe-area-inset-bottom));
   background: rgba(0, 0, 0, 0.85);
-}
-.theater.is-fullscreen > .controls {
-  order: 2;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 .theater.is-fullscreen .segments-head,
 .theater.is-fullscreen .seg-hint,
 .theater.is-fullscreen .tl-axis {
   display: none; /* keep the lanes; drop the chrome that costs vertical space */
+}
+
+/* ---- the player overlay -------------------------------------------------- */
+
+/* Every review control — speed, frame step, ±5s, next rally, volume,
+   fullscreen — is drawn over the bottom of the picture and appears on hover,
+   rather than sitting in a strip below the video. Two reasons: the strip cost a
+   band of vertical space on every screen whether or not anyone touched it, and
+   the AI breakdown wants that band so it lands directly under the video. The
+   keyboard shortcut for each control is printed on its own chip. */
+.pv {
+  position: relative;
+  width: 100%;
+  line-height: 0; /* no inline-descender gap under the video */
+}
+/* While a rally is playing and the mouse is still, nothing should be on top of
+   the court — not the controls and not the cursor. */
+.pv:not(.pv-awake) {
+  cursor: none;
+}
+
+.pv-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  z-index: 2;
+  padding: 40px 14px 12px;
+  line-height: normal;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.88) 0%,
+    rgba(0, 0, 0, 0.6) 48%,
+    transparent 100%
+  );
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+/* Faded out rather than hidden, so the chips stay in the tab order: a keyboard
+   user tabbing into them is what brings the bar back (`:focus-within`), which
+   `visibility: hidden` would have made impossible — nothing inside it can take
+   focus, so nothing can ever reveal it. */
+.pv-awake .pv-overlay,
+.pv-overlay:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pv-overlay {
+    transition: opacity 0.18s ease;
+    transform: none;
+  }
+}
+
+/* A paused match is being looked at, not watched: one big target in the middle
+   of the poster frame beats hunting for the play chip. */
+.pv-center-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  width: 74px;
+  height: 74px;
+  padding-left: 5px; /* optical centre for the triangle */
+  border: none;
+  border-radius: 50%;
+  background: rgba(217, 102, 44, 0.92);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.pv-center-play:hover {
+  background: var(--accent-dim);
+  transform: translate(-50%, -50%) scale(1.06);
+}
+
+/* ---- overlay scrub bar ---- */
+.pv-scrub {
+  position: relative;
+  height: 18px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none; /* we handle the drag ourselves */
+}
+.pv-scrub-track {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.22);
+  overflow: hidden;
+  transition: height 0.12s ease;
+}
+.pv-scrub:hover .pv-scrub-track {
+  height: 8px;
+}
+/* How much has actually downloaded — on a 40-minute match from CloudFront that
+   is the difference between "seek is instant" and "seek will stall". */
+.pv-scrub-buffered {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(255, 255, 255, 0.3);
+}
+.pv-scrub-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+}
+.pv-scrub-handle {
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.pv-scrub:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ---- overlay control bar ---- */
+.pv-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.pv-bar-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto; /* speed / rally / volume / fullscreen hug the right edge */
+}
+/* The chips keep the app's shape but go translucent, so they read as glass over
+   the court rather than as a panel bolted onto the video. */
+.pv-bar .group {
+  background: rgba(16, 13, 10, 0.72);
+  border-color: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 3px;
+  gap: 2px;
+}
+.pv-bar .chip {
+  padding: 6px 10px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.pv-bar .chip:hover:not(.active):not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+.pv-bar .chip .kbd {
+  background: rgba(255, 255, 255, 0.16);
+}
+.pv-clock {
+  font-size: 12.5px;
+  color: rgba(244, 238, 228, 0.92);
+  white-space: nowrap;
+  padding: 0 2px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.pv-clock-sep {
+  opacity: 0.5;
+  margin: 0 1px;
+}
+
+/* Volume opens out of the mute button on hover; a permanent slider would take
+   the width the speed chips need. */
+.pv-volume-slider {
+  width: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+  transition: width 0.16s ease, opacity 0.16s ease, margin 0.16s ease;
+}
+.pv-volume:hover .pv-volume-slider,
+.pv-volume:focus-within .pv-volume-slider {
+  width: 62px;
+  margin: 0 8px 0 2px;
+  opacity: 1;
+}
+
+/* Narrow screens: the shortcut hints are for a keyboard that isn't there, and
+   the bar needs the width back for the controls themselves. */
+@media (max-width: 760px) {
+  .pv-bar .kbd {
+    display: none;
+  }
+  .pv-bar {
+    gap: 6px;
+  }
+  .pv-bar-right {
+    margin-left: 0;
+    gap: 6px;
+  }
+  .pv-bar .chip {
+    padding: 6px 8px;
+  }
+  .pv-overlay {
+    padding: 32px 10px 10px;
+  }
+}
+
+/* On a phone the video is only ~210px tall, so an overlay that wrapped to four
+   rows covered the match it was meant to control. Everything that has a near
+   equivalent goes: ±10s (±5s is next to it, and the rally timeline is right
+   below), and the volume slider (the mute button stays). */
+@media (max-width: 640px) {
+  .pv-wide-only {
+    display: none;
+  }
+  .pv-volume-slider {
+    display: none;
+  }
+  /* Let the right-hand cluster's chips wrap against the bar itself rather than
+     as one block — nested, it broke onto a third row holding two chips. */
+  .pv-bar-right {
+    display: contents;
+  }
+  .pv-bar {
+    gap: 5px;
+  }
+  .pv-bar .chip {
+    padding: 5px 6px;
+    font-size: 11.5px;
+  }
+  .pv-bar .group {
+    padding: 2px;
+    gap: 1px;
+  }
+  /* The clock moves onto the scrub row, where there's dead space to the right of
+     the bar — in the chip rows it was the 60px that pushed fullscreen onto a
+     row of its own. */
+  .pv-clock {
+    position: absolute;
+    top: 27px;
+    right: 10px;
+    font-size: 11.5px;
+  }
+  .pv-scrub {
+    margin-right: 76px;
+  }
+  .pv-overlay {
+    padding: 26px 8px 8px;
+  }
+  .pv-center-play {
+    width: 58px;
+    height: 58px;
+  }
 }

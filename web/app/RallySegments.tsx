@@ -478,16 +478,30 @@ export function RallySegments({
             </span>
           )}
         </h3>
-        {button}
+        <div className="segments-actions">
+          {/* Relabelling moved up here so the status row below is just the two
+              players and the live line, uninterrupted. */}
+          {canRun && segments.length > 0 && status !== "processing" && (
+            <>
+              {/* The model decides which player is "near at the start"; when it
+                  gets that backwards every name on the timeline is wrong, and
+                  the fix is a relabel, not another analysis run. */}
+              <button
+                className="player-edit"
+                onClick={swapSaved}
+                disabled={busy}
+                title="Swap the two names — no re-analysis needed"
+              >
+                Swap names
+              </button>
+              <button className="player-edit" onClick={openSetup}>
+                Edit players
+              </button>
+            </>
+          )}
+          {button}
+        </div>
       </div>
-
-      {nowPlaying && status !== "processing" && (
-        <p className={`seg-now ${nowPlaying.live ? "is-live" : ""}`}>
-          <span className="seg-now-dot" aria-hidden="true" />
-          <span className="seg-now-headline">{nowPlaying.headline}</span>
-          <span className="seg-now-detail">{nowPlaying.detail}</span>
-        </p>
-      )}
 
       {canRun && status === "none" && segments.length === 0 && (
         <p className="muted seg-hint">Break this match into rallies with AI.</p>
@@ -524,35 +538,29 @@ export function RallySegments({
           above stand in for them until the new result lands. */}
       {segments.length > 0 && status !== "processing" && (
         <div className="timeline">
-          {/* Players + serve summary */}
-          <div className="players-legend">
-            {(["player_1", "player_2"] as const).map((p) => (
-              <span key={p} className="player-tag">
-                <span className={`player-dot ${p}`} />
-                {nameOf(p)}
-                <span className="muted">
-                  {" · "}
-                  {serveCounts[p]} service {serveCounts[p] === 1 ? "game" : "games"}
+          {/* Who's playing and what's on screen right now, sharing one row when
+              the window is wide enough for both — they're read together, and two
+              stacked lines pushed the lanes further from the video for nothing.
+              Wraps to two lines on a narrow screen. */}
+          <div className="seg-status">
+            <div className="players-legend">
+              {(["player_1", "player_2"] as const).map((p) => (
+                <span key={p} className="player-tag">
+                  <span className={`player-dot ${p}`} />
+                  {nameOf(p)}
+                  <span className="muted">
+                    {" · "}
+                    {serveCounts[p]} service {serveCounts[p] === 1 ? "game" : "games"}
+                  </span>
                 </span>
-              </span>
-            ))}
-            {canRun && (
-              <>
-                {/* The model decides which player is "near at the start"; when it
-                    gets that backwards every name on the timeline is wrong, and
-                    the fix is a relabel, not another analysis run. */}
-                <button
-                  className="player-edit"
-                  onClick={swapSaved}
-                  disabled={busy}
-                  title="Swap the two names — no re-analysis needed"
-                >
-                  Swap names
-                </button>
-                <button className="player-edit" onClick={openSetup}>
-                  Edit players
-                </button>
-              </>
+              ))}
+            </div>
+            {nowPlaying && (
+              <p className={`seg-now ${nowPlaying.live ? "is-live" : ""}`}>
+                <span className="seg-now-dot" aria-hidden="true" />
+                <span className="seg-now-headline">{nowPlaying.headline}</span>
+                <span className="seg-now-detail">{nowPlaying.detail}</span>
+              </p>
             )}
           </div>
 
