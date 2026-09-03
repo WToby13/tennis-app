@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloseIcon } from "./icons";
+import {
+  applyCorrections,
+  countCorrections,
+  type RallyCorrections,
+  type ServerSlot,
+} from "@/lib/rallyEdits";
 
 type Status = "none" | "processing" | "ready" | "failed";
 type Slot = "player_1" | "player_2";
@@ -23,7 +29,8 @@ interface ServiceGame {
   server: string | null; // player_1 | player_2 | null (from the smoother)
   startS: number;
   endS: number;
-  points: number; // rallies in this service game
+  /** The points themselves, so the editor and the lane group identically. */
+  rallies: Segment[];
 }
 
 function fmtTime(s: number | null): string {
@@ -52,9 +59,9 @@ function buildServiceGames(segs: Segment[]): ServiceGame[] {
     const cur = games[games.length - 1];
     if (cur && g != null && cur.game === g) {
       cur.endS = Math.max(cur.endS, end);
-      cur.points++;
+      cur.rallies.push(s);
     } else {
-      games.push({ game: g ?? games.length + 1, server, startS: start, endS: end, points: 1 });
+      games.push({ game: g ?? games.length + 1, server, startS: start, endS: end, rallies: [s] });
     }
   }
   return games;
@@ -130,6 +137,12 @@ export function RallySegments({
   const [trim, setTrim] = useState("");
   const [p1Name, setP1Name] = useState("");
   const [p2Name, setP2Name] = useState("");
+  // Edit mode: pending corrections keyed by rally index, plus its own error line
+  // (the one above belongs to the analysis run, not to a save).
+  const [editing, setEditing] = useState(false);
+  const [serverEdits, setServerEdits] = useState<Record<number, ServerSlot>>({});
+  const [deleted, setDeleted] = useState<number[]>([]);
+  const [editError, setEditError] = useState<string | null>(null);
   const active = useRef(true);
 
   /** Names offered as prefills and datalist options, de-duplicated. */
@@ -228,6 +241,11 @@ export function RallySegments({
         onPlayersNamed?.([nextPlayers.player_1, nextPlayers.player_2].filter((n): n is string => !!n));
         setStatus(data.analysisStatus ?? "processing");
         setSetupOpen(false);
+        // A fresh run replaces every rally, so any pending correction is about
+        // to be about segments that no longer exist.
+        setServerEdits({});
+        setDeleted([]);
+        setEditing(false);
       } else {
         setStatus("failed");
         setError(data.error ?? "Couldn't start analysis.");
@@ -291,7 +309,104 @@ export function RallySegments({
     }
   }, [videoId, players]);
 
-  const games = useMemo(() => buildServiceGames(segments), [segments]);
+  const corrections: RallyCorrections = useMemo(
+    () => ({ servers: serverEdits, deleted }),
+    [serverEdits, deleted],
+  );
+  const changeCount = countCorrections(corrections);
+  const dirty = changeCount > 0;
+
+  /**
+   * The breakdown as corrected so far — what every lane, the legend and the live
+   * line are drawn from, so the service games visibly regroup under the edit
+   * before it's saved. Identical to `segments` while nothing is pending.
+   */
+  const view = useMemo(() => applyCorrections(segments, corrections), [segments, corrections]);
+
+  /**
+   * Every rally as the lane draws it: the corrected ones, plus the deleted ones
+   * kept in place as ghosts. A delete is one click on a bar a few pixels wide,
+   * so it has to be as easy to take back — and a rally that has vanished
+   * entirely gives you nothing to take it back from.
+   */
+  const laneRallies = useMemo(() => {
+    const live = new Map(view.map((s) => [s.idx, s]));
+    return segments.map((s) => ({ seg: live.get(s.idx) ?? s, deleted: !live.has(s.idx) }));
+  }, [segments, view]);
+
+  /**
+   * Correct who served one rally. Setting it back to what the model said drops
+   * the edit rather than recording a no-op, so "Save" stays honest about whether
+   * there is anything to save.
+   */
+  const setRallyServer = useCallback(
+    (idx: number, server: ServerSlot) => {
+      setEditError(null);
+      setServerEdits((prev) => {
+        const next = { ...prev };
+        if (asStr(segments.find((s) => s.idx === idx)?.metadata.server) === server) delete next[idx];
+        else next[idx] = server;
+        return next;
+      });
+    },
+    [segments],
+  );
+
+  const toggleRallyDeleted = useCallback((idx: number) => {
+    setEditError(null);
+    setDeleted((prev) => (prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]));
+  }, []);
+
+  /** Leave edit mode. Corrections are hand-made, one rally at a time, so a
+   *  mis-aimed click here shouldn't be able to throw away twenty of them. */
+  const cancelEdit = useCallback(() => {
+    if (
+      changeCount > 0 &&
+      !window.confirm(
+        `Discard ${changeCount} unsaved ${changeCount === 1 ? "correction" : "corrections"}?`,
+      )
+    ) {
+      return;
+    }
+    setServerEdits({});
+    setDeleted([]);
+    setEditError(null);
+    setEditing(false);
+  }, [changeCount]);
+
+  /**
+   * Persist the corrections. Only the servers and the deletions go over the wire
+   * — the route re-derives the receiver, the serving side, the game numbers and
+   * the ordering from the stored segments, so the timings can't be touched from
+   * here. The saved rows come back with new ids (a replace is a delete +
+   * insert), so they replace the list wholesale rather than being merged in.
+   */
+  const saveRallies = useCallback(async () => {
+    setBusy(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/videos/${videoId}/segments`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ servers: serverEdits, deleted }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setSegments(data.segments ?? []);
+        setServerEdits({});
+        setDeleted([]);
+        setEditing(false);
+      } else {
+        setEditError(data.error ?? "Couldn't save your corrections.");
+      }
+    } catch {
+      setEditError("Couldn't save your corrections.");
+    } finally {
+      setBusy(false);
+    }
+  }, [videoId, serverEdits, deleted]);
+
+  const games = useMemo(() => buildServiceGames(view), [view]);
 
   const serveCounts = useMemo(() => {
     const c: Record<string, number> = { player_1: 0, player_2: 0 };
@@ -391,12 +506,12 @@ export function RallySegments({
    * when nothing is being played.
    */
   const nowPlaying = useMemo(() => {
-    if (segments.length === 0) return null;
+    if (view.length === 0) return null;
     const t = currentTime;
 
-    const idx = segments.findIndex((s) => (s.startS ?? 0) <= t && t <= (s.endS ?? s.startS ?? 0));
+    const idx = view.findIndex((s) => (s.startS ?? 0) <= t && t <= (s.endS ?? s.startS ?? 0));
     if (idx >= 0) {
-      const s = segments[idx];
+      const s = view[idx];
       const server = asStr(s.metadata.server);
       const receiver = asStr(s.metadata.receiver);
       const shots = asNum(s.metadata.shots);
@@ -408,7 +523,7 @@ export function RallySegments({
           : "Rally in play",
         detail: [
           game != null ? `Game ${game}` : null,
-          `Rally ${idx + 1} of ${segments.length}`,
+          `Rally ${idx + 1} of ${view.length}`,
           shots != null ? `${shots} ${shots === 1 ? "hit" : "hits"}` : null,
           `${fmtTime(t - (s.startS ?? 0))} in`,
         ]
@@ -418,23 +533,23 @@ export function RallySegments({
     }
 
     let next: Segment | null = null;
-    for (const s of segments) {
+    for (const s of view) {
       if (s.startS == null || s.startS <= t) continue;
       if (!next || s.startS < (next.startS ?? 0)) next = s;
     }
     if (!next) {
-      const lastEnd = segments.reduce((m, s) => Math.max(m, s.endS ?? 0), 0);
+      const lastEnd = view.reduce((m, s) => Math.max(m, s.endS ?? 0), 0);
       return {
         live: false,
         headline: "After the last rally",
-        detail: `${segments.length} ${segments.length === 1 ? "rally" : "rallies"} · play ended ${fmtTime(lastEnd)}`,
+        detail: `${view.length} ${view.length === 1 ? "rally" : "rallies"} · play ended ${fmtTime(lastEnd)}`,
       };
     }
     const away = Math.max(0, Math.ceil((next.startS ?? 0) - t));
     const nextServer = asStr(next.metadata.server);
     return {
       live: false,
-      headline: next === segments[0] ? "Warm-up — before the first rally" : "Between points",
+      headline: next === view[0] ? "Warm-up — before the first rally" : "Between points",
       detail: [
         `next rally at ${fmtTime(next.startS)}`,
         away <= 90 ? `${away}s away` : null,
@@ -443,7 +558,7 @@ export function RallySegments({
         .filter(Boolean)
         .join(" · "),
     };
-  }, [segments, currentTime, displayPlayer]);
+  }, [view, currentTime, displayPlayer]);
 
   if (!canRun && segments.length === 0) return null;
 
@@ -467,8 +582,12 @@ export function RallySegments({
     )
   ) : null;
 
+  // A finished breakdown is the only thing there is to correct; anything else
+  // still wants its own call to action (run it, retry it, wait for it).
+  const canEditBreakdown = canRun && status === "ready" && segments.length > 0;
+
   return (
-    <section className="segments">
+    <section className={`segments ${editing ? "is-editing" : ""}`}>
       <div className="segments-head">
         <h3>
           AI breakdown
@@ -479,27 +598,29 @@ export function RallySegments({
           )}
         </h3>
         <div className="segments-actions">
-          {/* Relabelling moved up here so the status row below is just the two
-              players and the live line, uninterrupted. */}
-          {canRun && segments.length > 0 && status !== "processing" && (
+          {editing ? (
             <>
-              {/* The model decides which player is "near at the start"; when it
-                  gets that backwards every name on the timeline is wrong, and
-                  the fix is a relabel, not another analysis run. */}
-              <button
-                className="player-edit"
-                onClick={swapSaved}
-                disabled={busy}
-                title="Swap the two names — no re-analysis needed"
-              >
-                Swap names
+              <button className="btn secondary btn-sm" onClick={cancelEdit} disabled={busy}>
+                Cancel
               </button>
-              <button className="player-edit" onClick={openSetup}>
-                Edit players
+              <button className="btn btn-sm" onClick={saveRallies} disabled={busy || !dirty}>
+                {busy
+                  ? "Saving…"
+                  : dirty
+                    ? `Save ${changeCount} ${changeCount === 1 ? "change" : "changes"}`
+                    : "Save"}
               </button>
             </>
+          ) : canEditBreakdown ? (
+            /* One door to everything that changes a finished breakdown: the
+               names, a re-run, and who served which rally. They used to be
+               three loose links competing with the heading. */
+            <button className="btn secondary btn-sm" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          ) : (
+            button
           )}
-          {button}
         </div>
       </div>
 
@@ -590,7 +711,8 @@ export function RallySegments({
                   <span className={`tl-tip ${tipClass(g.startS)}`}>
                     <span className="tl-tip-strong">{displayPlayer(g.server)} serving</span>
                     <span className="tl-tip-meta">
-                      Game {g.game} · {g.points} {g.points === 1 ? "point" : "points"}
+                      Game {g.game} · {g.rallies.length}{" "}
+                      {g.rallies.length === 1 ? "point" : "points"}
                     </span>
                   </span>
                 </button>
@@ -631,7 +753,7 @@ export function RallySegments({
           <div className="tl-row">
             <div className="tl-row-label">Rallies</div>
             <div className="tl-lane tl-lane-rallies" ref={laneRef} onClick={seekFromPointer}>
-              {segments.map((s) => {
+              {laneRallies.map(({ seg: s, deleted: isDeleted }) => {
                 const start = s.startS ?? 0;
                 const end = s.endS ?? start;
                 const server = asStr(s.metadata.server);
@@ -648,31 +770,97 @@ export function RallySegments({
                 ]
                   .filter(Boolean)
                   .join(" · ");
-                return (
-                  <button
-                    key={s.id}
-                    className="tl-bar tl-bar-rally"
-                    style={{ left: pct(start), width: spanPct(start, end) }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onSeek(start);
-                    }}
-                    title={`${fmtTime(start)}–${fmtTime(end)}`}
-                  >
-                    {shots != null && shotsLabelFits(shots, ((end - start) / total) * laneWidth) && (
-                      <span className="tl-bar-shots">{shots}</span>
-                    )}
+                const seek = (e: React.MouseEvent) => {
+                  // A bar means "the start of this rally", not "wherever I
+                  // clicked", so the lane's own seek handler doesn't run too.
+                  e.stopPropagation();
+                  onSeek(start);
+                };
+                const body = (
+                  <>
+                    {!isDeleted &&
+                      shots != null &&
+                      shotsLabelFits(shots, ((end - start) / total) * laneWidth) && (
+                        <span className="tl-bar-shots">{shots}</span>
+                      )}
                     <span className={`tl-tip ${tipClass(start)}`}>
                       <span className="tl-tip-strong">
                         {fmtTime(start)}–{fmtTime(end)}
                       </span>
-                      {roles && <span className="tl-tip-meta">{roles}</span>}
-                      {detail && <span className="tl-tip-meta">{detail}</span>}
-                      {what && <span className="tl-tip-what">{what}</span>}
+                      {isDeleted ? (
+                        <span className="tl-tip-meta">Will be removed when you save.</span>
+                      ) : (
+                        <>
+                          {roles && <span className="tl-tip-meta">{roles}</span>}
+                          {detail && <span className="tl-tip-meta">{detail}</span>}
+                          {what && <span className="tl-tip-what">{what}</span>}
+                        </>
+                      )}
+                      {editing && (
+                        <span className="tl-tip-edit">
+                          {!isDeleted && (
+                            <>
+                              <span className="tl-tip-edit-label">Serving</span>
+                              <span className="tl-serve-toggle">
+                                {(["player_1", "player_2"] as const).map((slot) => (
+                                  <button
+                                    key={slot}
+                                    type="button"
+                                    className={`chip ${server === slot ? `active ${slot}` : ""}`}
+                                    aria-pressed={server === slot}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setRallyServer(s.idx, slot);
+                                    }}
+                                  >
+                                    <span className={`player-dot ${slot}`} />
+                                    {nameOf(slot)}
+                                  </button>
+                                ))}
+                              </span>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            className={`tl-tip-delete ${isDeleted ? "is-restore" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleRallyDeleted(s.idx);
+                            }}
+                          >
+                            {isDeleted ? "Restore rally" : "Delete rally"}
+                          </button>
+                        </span>
+                      )}
                     </span>
+                  </>
+                );
+
+                const className = `tl-bar tl-bar-rally ${
+                  isDeleted ? "is-deleted" : serverEdits[s.idx] !== undefined ? "is-edited" : ""
+                }`;
+                const style = { left: pct(start), width: spanPct(start, end) };
+
+                // While editing, the popup holds real buttons — which can't live
+                // inside another button — so the bar becomes a plain element and
+                // gives up its own keyboard role. Outside edit mode it stays the
+                // button it has always been.
+                return editing ? (
+                  <div key={s.id} className={className} style={style} onClick={seek}>
+                    {body}
+                  </div>
+                ) : (
+                  <button
+                    key={s.id}
+                    className={className}
+                    style={style}
+                    onClick={seek}
+                    title={`${fmtTime(start)}–${fmtTime(end)}`}
+                  >
+                    {body}
                   </button>
                 );
-              })}
+                            })}
             </div>
           </div>
 
@@ -685,6 +873,38 @@ export function RallySegments({
             ))}
           </div>
           </div>
+        </div>
+      )}
+
+      {/* The edit tray. The rally corrections themselves happen on the timeline
+          above — hover a bar and the popup grows a Serving toggle and a delete —
+          so what's left here is the match-wide stuff, and the line that tells
+          you the hover is there at all. */}
+      {editing && (
+        <div className="seg-editor">
+          <div className="seg-editor-actions">
+            <button
+              className="btn secondary btn-sm"
+              onClick={swapSaved}
+              disabled={busy}
+              title="Swap the two names — no re-analysis needed"
+            >
+              Swap names
+            </button>
+            <button className="btn secondary btn-sm" onClick={openSetup} disabled={busy}>
+              Edit players
+            </button>
+            <button className="btn secondary btn-sm" onClick={openSetup} disabled={busy}>
+              Re-analyse
+            </button>
+          </div>
+          <p className="muted seg-hint">
+            Hover a rally on the timeline to set who served it, or delete it — move the mouse up
+            into the popup to switch between the two players. Service games regroup as you go,
+            since the serve alternates every game. The timings aren’t editable: the model gets
+            those right far more often than it gets the server right.
+          </p>
+          {editError && <p className="seg-editor-error">{editError}</p>}
         </div>
       )}
 

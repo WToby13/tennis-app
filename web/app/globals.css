@@ -2302,3 +2302,131 @@ video {
     height: 58px;
   }
 }
+
+/* ---- AI breakdown: editing a finished breakdown -------------------------- */
+
+/* Everything that changes a finished breakdown lives behind one "Edit" button.
+   The match-wide actions are in this tray; the per-rally ones are on the
+   timeline itself, in the hover popup. */
+.seg-editor {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.seg-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.seg-editor-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0 0 8px;
+}
+
+/* The hover popup becomes a control surface while editing.
+   It is a CHILD of the bar, so the bar stays :hover the whole time the pointer
+   is inside it — which is what lets you move the mouse up off a 3px rally and
+   click the toggle. Two things were in the way: the popup didn't take the
+   pointer at all, and it floats 8px clear of the bar, so crossing that gap
+   dropped the hover and the popup with it. `::before` bridges the gap. */
+.segments.is-editing .tl-lane-rallies .tl-tip {
+  pointer-events: auto;
+}
+.segments.is-editing .tl-lane-rallies .tl-tip::before {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 9px; /* the 8px offset, plus 1px so there is no sub-pixel seam */
+}
+.tl-tip-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 7px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.tl-tip-edit-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tl-serve-toggle {
+  display: flex;
+  gap: 4px;
+}
+.tl-serve-toggle .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  justify-content: center;
+  padding: 6px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.tl-serve-toggle .chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.tl-serve-toggle .chip.active.player_2 {
+  background: var(--sage);
+  border-color: var(--sage);
+  color: var(--ink);
+}
+/* The fill already says which player; recolour the dot rather than hide it, so
+   the chip doesn't change width as it's toggled. */
+.tl-serve-toggle .chip.active .player-dot {
+  background: currentColor;
+}
+.tl-tip-delete {
+  align-self: flex-start;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  color: var(--danger);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tl-tip-delete:hover {
+  text-decoration: underline;
+}
+.tl-tip-delete.is-restore {
+  color: var(--accent);
+}
+
+/* A rally with an unsaved correction, and one marked for deletion. A delete is
+   one click on a bar a few pixels wide, so the bar stays in place as a ghost —
+   there has to be something left to hover to take it back. */
+.tl-bar-rally.is-edited {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--text);
+}
+.tl-bar-rally.is-deleted {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--danger);
+  opacity: 0.5;
+}
+.tl-lane-rallies:hover .tl-bar-rally.is-deleted {
+  opacity: 0.28;
+}
+.tl-lane-rallies .tl-bar-rally.is-deleted:hover {
+  background: transparent;
+  opacity: 1;
+}
+
+/* Fullscreen keeps the lanes and drops the chrome; the tray is chrome, and
+   Save/Cancel live in the head, which is hidden there too. */
+.theater.is-fullscreen .seg-editor {
+  display: none;
+}
