@@ -25,6 +25,25 @@ final class AuthModel: ObservableObject {
     /// and be allow-listed in Supabase → Auth → URL Configuration.
     private let oauthRedirect = URL(string: "ojo://auth-callback")!
 
+    /// The typed address with surrounding whitespace removed.
+    ///
+    /// An address that arrives by paste rather than by typing very often brings a
+    /// space or a newline with it — from the clipboard, from the QuickType bar, or
+    /// from whatever the address was copied out of. GoTrue does not trim before it
+    /// compares, so a single trailing space comes back as "Invalid login
+    /// credentials", which reads to the person as a wrong password and gives them
+    /// no way to see the real problem. Verified against the live project: the exact
+    /// address succeeds, the same address with one trailing space fails.
+    ///
+    /// Case needs no handling — GoTrue lowercases the address server-side.
+    ///
+    /// The password is deliberately left alone. Leading and trailing spaces are
+    /// legal in a password and belong to whoever chose it; silently trimming would
+    /// lock out an account whose password genuinely ends in one.
+    private var trimmedEmail: String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     init() {
         Task { await refresh() }
     }
@@ -39,7 +58,7 @@ final class AuthModel: ObservableObject {
     func signIn() async {
         busy = true; error = nil; notice = nil
         do {
-            let session = try await Supa.client.auth.signIn(email: email, password: password)
+            let session = try await Supa.client.auth.signIn(email: trimmedEmail, password: password)
             accountEmail = session.user.email
             isSignedIn = true
             Analytics.track(.signIn, props: ["method": "password"])
@@ -54,7 +73,7 @@ final class AuthModel: ObservableObject {
         let displayName = "\(firstName) \(lastName)".trimmingCharacters(in: .whitespaces)
         do {
             let response = try await Supa.client.auth.signUp(
-                email: email,
+                email: trimmedEmail,
                 password: password,
                 // Read by the handle_new_user trigger to populate the profile row.
                 data: [
