@@ -290,6 +290,11 @@ struct AnalysisResponse: Decodable {
 enum UploadError: LocalizedError {
     case notSignedIn
     case server(status: Int, message: String)
+    /// The request was fine; the content in it was refused by the moderation
+    /// filter (Guideline 1.2). Carries the server's sentence unchanged, because
+    /// it is written for the person who typed it and is the only thing worth
+    /// showing them — not a status code and not the word "error".
+    case rejected(message: String)
     case badResponse
 
     var errorDescription: String? {
@@ -298,6 +303,8 @@ enum UploadError: LocalizedError {
             return "You're signed out. Sign in and try again."
         case let .server(status, message):
             return "Server error (\(status)): \(message)"
+        case let .rejected(message):
+            return message
         case .badResponse:
             return "Unexpected response from the server."
         }
@@ -330,6 +337,12 @@ struct UploadAPI {
         guard (200..<300).contains(http.statusCode) else {
             let serverMessage = (try? JSONDecoder().decode([String: String].self, from: data))?["error"]
             let raw = String(data: data, encoding: .utf8)?.prefix(200).trimmingCharacters(in: .whitespacesAndNewlines)
+            // 422 is the content filter refusing what was written. The server
+            // sends a sentence meant for the person, so it is passed through
+            // rather than wrapped in a status code.
+            if http.statusCode == 422, let serverMessage {
+                throw UploadError.rejected(message: serverMessage)
+            }
             throw UploadError.server(status: http.statusCode, message: serverMessage ?? raw ?? "request failed")
         }
         return data

@@ -18,6 +18,9 @@ struct CommentSection: View {
     @State private var myId: String?
     /// A tapped @tag, pushed as a profile.
     @State private var openProfile: ProfileTarget?
+    /// Why the last comment was not posted — in practice, the content filter
+    /// refusing it. Shown under the composer and cleared on the next attempt.
+    @State private var postError: String?
 
     private let api = UploadAPI()
 
@@ -47,6 +50,17 @@ struct CommentSection: View {
             CommentComposer(posting: posting) { body in
                 await post(body)
             }
+
+            // The filter's own sentence, not a generic failure. Someone whose
+            // comment was refused needs to know it was refused and why — the
+            // composer silently doing nothing reads as a bug in the app.
+            if let postError {
+                Text(postError)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            }
         }
         .padding(.horizontal, 16)
         .navigationDestination(item: $openProfile) { target in
@@ -73,12 +87,18 @@ struct CommentSection: View {
         onCountChange?(comments.count)
     }
 
-    private func post(_ body: String) async {
+    /// Returns whether it was accepted, so the composer knows whether to clear.
+    private func post(_ body: String) async -> Bool {
         posting = true
+        postError = nil
         defer { posting = false }
-        if let updated = try? await api.addComment(videoId: videoId, body: body) {
-            comments = updated
+        do {
+            comments = try await api.addComment(videoId: videoId, body: body)
             onCountChange?(comments.count)
+            return true
+        } catch {
+            postError = error.localizedDescription
+            return false
         }
     }
 
@@ -101,7 +121,10 @@ struct CommentSection: View {
 /// stops being a mention.
 private struct CommentComposer: View {
     let posting: Bool
-    let onPost: (String) async -> Void
+    /// Returns whether the comment was accepted. A refused one leaves the draft
+    /// where it is: the filter is asking for a rewrite, and clearing the field
+    /// would throw away the thing being rewritten.
+    let onPost: (String) async -> Bool
 
     @State private var draft = ""
     @State private var picked: [UserResult] = []
@@ -251,7 +274,7 @@ private struct CommentComposer: View {
     private func submit() async {
         let body = markup()
         guard !body.isEmpty else { return }
-        await onPost(body)
+        guard await onPost(body) else { return }
         draft = ""
         picked = []
         suggestions = []

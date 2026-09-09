@@ -1,3 +1,4 @@
+import { screen } from "@/lib/moderation/filter";
 import { cleanParticipants, saveParticipants } from "@/lib/participants";
 import { storeForRequest } from "@/lib/request";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -30,6 +31,17 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const body = await req.json().catch(() => null);
   const clean = cleanParticipants(body?.participants);
+
+  // A participant name is typed by one player and shown to everyone the match
+  // reaches, including people with no account who open a share link — so it is
+  // filtered on the same terms as a comment (Guideline 1.2).
+  for (const p of clean) {
+    const verdict = screen(p.displayName);
+    if (!verdict.ok) {
+      console.warn(`[moderation] blocked a ${verdict.category} participant name on video ${id}`);
+      return json({ error: verdict.message, category: verdict.category }, { status: 422 });
+    }
+  }
 
   const before = await store.getParticipants(id);
   const canEdit = !userId || video.ownerId === userId || before.some((p) => p.userId === userId);

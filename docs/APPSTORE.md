@@ -23,7 +23,7 @@ else while it processes.
 | App Store name | **Ojo Tennis** |
 | Home-screen name | **Ojo** |
 | Bundle id | **`com.ojotennis.app`** — permanent once published, cannot ever be changed |
-| Version / build | 1.0 (1) |
+| Version / build | 1.0 (5) |
 | Minimum iOS | 17.0 |
 | Devices | iPhone only |
 | Xcode project | `ios/Ojo/Ojo.xcodeproj` |
@@ -55,6 +55,21 @@ one project now, and it is the one that was called "Ojo Dev".
 - **Report and block** — on feed cards, the watch screen, every comment and
   every profile; plus a blocked-accounts list you can undo from. Backed by
   migration `0014_moderation.sql`. Required by Guideline 1.2.
+- **Content filter and moderation actions** — added after the 8 Sep 2026
+  rejection, which found the app had two of the four precautions Guideline 1.2
+  asks for and not the other two. The four, and where each one now lives:
+
+  | Precaution | Where |
+  |---|---|
+  | Filter objectionable content | `web/lib/moderation/filter.ts` on every API write, plus triggers from `0021_content_filter.sql` for the paths that write to Supabase directly |
+  | Users can flag content | `ModerationMenu` → Report, on cards, the watch screen and every comment |
+  | Users can block, developer notified, content gone at once | `ModerationMenu` → Block; `notifyBlock()` emails the operator; `is_blocked()` drops them from the feed on the next read |
+  | Developer removes content and ejects the user within 24h | `/admin/reports` → Remove / Eject, in `web/lib/admin/moderation.ts` |
+
+  The filter is a term list rather than a model: it runs in-process, gives the
+  same answer every time, and can be demonstrated in a screen recording with no
+  network. It is a floor, not a ceiling — the report queue is what catches what
+  it misses, which is why both exist.
 - **Privacy Policy** (`/privacy`) and **Terms/EULA** (`/terms`), public, linked
   from the landing footer, the iOS sign-up screen and iOS Settings. The terms
   carry the seven Apple-required clauses and the zero-tolerance section 1.2

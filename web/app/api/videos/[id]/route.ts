@@ -1,6 +1,7 @@
 import { deriveMatchStatus } from "@/lib/matchStatus";
 import { socialForRequest, storeForRequest } from "@/lib/request";
 import { storage } from "@/lib/storage";
+import { screen } from "@/lib/moderation/filter";
 import { badRequest, json, notFound, sanitizePlayers } from "@/lib/util";
 
 export const runtime = "nodejs";
@@ -149,6 +150,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     body?.visibility === "private" || body?.visibility === "public" ? body.visibility : null;
   const hasPlayers = body?.players !== undefined && body?.players !== null;
   if (!title && !visibility && !hasPlayers) return badRequest("nothing to update");
+
+  // A match title is shown on every feed card that carries the match, so it is
+  // user-generated content in the same sense a comment is (Guideline 1.2).
+  if (title) {
+    const verdict = screen(title);
+    if (!verdict.ok) {
+      console.warn(`[moderation] blocked a ${verdict.category} title on video ${id}`);
+      return json({ error: verdict.message, category: verdict.category }, { status: 422 });
+    }
+  }
 
   const participants = await store.getParticipants(id).catch(() => []);
   const isOwner = !userId || video.ownerId === userId;

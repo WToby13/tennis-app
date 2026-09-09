@@ -3,7 +3,7 @@ import Link from "next/link";
 import { whenExact } from "@/lib/admin/format";
 import { adminDataAvailable, reports } from "@/lib/admin/queries";
 
-import { ResolveButton } from "./ResolveButton";
+import { ReportActions } from "./ResolveButton";
 
 /**
  * The moderation queue. Open reports first, oldest at the top, because the App
@@ -13,6 +13,10 @@ import { ResolveButton } from "./ResolveButton";
  * Resolving does not delete anything. A report is the record of a decision, and
  * "looked at it, nothing to do" is a legitimate outcome that should still leave
  * a trace — which is also why reopening is possible.
+ *
+ * Removing the content and ejecting the account are the other two outcomes, and
+ * the ones Guideline 1.2 requires be possible within 24 hours of a report. Both
+ * resolve the report as they go; see `lib/admin/moderation.ts`.
  */
 export default async function ReportsPage() {
   if (!adminDataAvailable()) return null;
@@ -102,7 +106,13 @@ function ReportTable({
               <td className="muted">{r.reporterName}</td>
               <td className="muted">{r.resolvedAt ? whenExact(r.resolvedAt) : "—"}</td>
               <td>
-                <ResolveButton id={r.id} resolved={Boolean(r.resolvedAt)} />
+                <ReportActions
+                  id={r.id}
+                  resolved={Boolean(r.resolvedAt)}
+                  reportedName={r.reportedName}
+                  targetKind={r.targetKind}
+                  canEject={Boolean(r.reportedUserId)}
+                />
               </td>
             </tr>
           ))}
