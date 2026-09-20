@@ -364,6 +364,39 @@ players who follow you, or share nothing. Links can be revoked.
 Free to use.
 ```
 
+### Ready for 1.0.1 — the two fields that actually drive search
+
+1.0 shipped with the subtitle and keywords below unchanged. They are the only
+listing fields Apple indexes for App Store search (the description and the
+promotional text are not indexed at all), so they are the highest-value thing
+left to change, and changing them needs a version submission.
+
+Two problems with what is live:
+
+- **"tennis" is in the keywords and in the app name.** The name is already
+  indexed, so those seven characters buy nothing.
+- **"slow motion" is one phrase.** Apple recombines keywords automatically, so
+  `slow,motion` as two words matches more queries and costs a character less.
+
+Replacements, both inside their limits and with no term repeated between them:
+
+    Subtitle (30):  Record, replay and share match
+    Keywords (97):  video,rally,serve,slow,motion,coach,footage,court,club,analysis,review,camera,doubles,point,stats
+
+`doubles` is a real search term the app is currently invisible for. Do not add
+`pickleball` or `padel` — the app is tennis only and it risks a metadata
+rejection.
+
+### Also worth a look one day
+
+The App Store shows the seller as **WILLIAM TOBIAS HJORTH KEATING**, because an
+individual Apple Developer account publishes under the holder's legal name.
+Showing "Ojo" instead means moving to an organisation account, which needs a
+registered company and a D-U-N-S number. Not urgent, and not free — but it is
+the reason the listing carries a personal name rather than a brand.
+
+---
+
 ### Keywords (100 characters, comma-separated, no spaces)
 > `tennis,match,video,record,coaching,review,slow motion,rally,serve,analysis,club,court,footage`
 
