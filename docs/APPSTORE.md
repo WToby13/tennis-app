@@ -308,8 +308,17 @@ cannot use it. Fallbacks that keep the brand: `Ojo Tennis — Match Video`,
 > `Watch your match back`
 
 ### Promotional text (170 chars, changeable without a new build)
-> Record your whole match from the back of the court, then watch every point
-> back in slow motion — and send it to whoever you played.
+
+**Live as of 20 Sep 2026** (127 chars). This is the only listing field that can
+be changed without a new review, so it is the one to test copy in.
+
+> Record your whole match from behind the court and get an AI rally breakdown —
+> every point, ready to replay, analyse and share.
+
+Worth knowing when editing it: **Apple does not index promotional text or the
+description for App Store search.** Only the app name, subtitle and keywords
+field feed search results, so this field is pure conversion copy — spend it on
+the hook, not on keywords that are already earning their keep in the subtitle.
 
 ### Description
 Lead with the definitional sentence; it's what search and AI summaries lift.
