@@ -1,3 +1,4 @@
+import type { CourtCalibration } from "../court/solve";
 import type { AnalysisWindow } from "../twelvelabs/windows";
 
 export type VideoStatus = "uploading" | "processing" | "ready" | "failed";
@@ -65,6 +66,12 @@ export interface Video {
    * finishes. See lib/analysisProxy.ts.
    */
   hasAnalysisProxy: boolean;
+  /**
+   * Where the camera was relative to the court, solved from landmarks the owner
+   * placed on one frame. Null until someone calibrates. See lib/court/solve.ts
+   * and docs/3D_REPLAY.md.
+   */
+  courtCalibration: CourtCalibration | null;
 }
 
 /** One AI-produced segment of a match (e.g. a rally), with custom fields in `metadata`. */

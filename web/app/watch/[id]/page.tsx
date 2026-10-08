@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CommentSection } from "../../CommentSection";
+import { CourtCalibration } from "../../CourtCalibration";
 import { EditDetails, type EditableParticipant } from "../../EditDetails";
 import { FollowButton } from "../../FollowButton";
 import { LikeButton } from "../../LikeButton";
@@ -11,6 +12,7 @@ import { RallySegments } from "../../RallySegments";
 import { VideoPlayer } from "../../VideoPlayer";
 import { CloseIcon, CommentIcon, EditIcon, ShareIcon } from "../../icons";
 import { track } from "@/lib/analytics/client";
+import type { CourtCalibration as Calibration } from "@/lib/court/solve";
 import { formatDate, formatDuration, formatSize } from "@/lib/matchFormat";
 
 interface Author {
@@ -92,6 +94,11 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     player_1: string | null;
     player_2: string | null;
   } | null>(null);
+  // Court calibration — the first input to the 3D replay (docs/3D_REPLAY.md).
+  const [courtCalibration, setCourtCalibration] = useState<Calibration | null>(null);
+  const [canCalibrate, setCanCalibrate] = useState(false);
+  const [calibrating, setCalibrating] = useState(false);
+  const [calibrateFromS, setCalibrateFromS] = useState(0);
 
   const shareToken = () =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
@@ -303,6 +310,8 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       setAnalysisError(data.analysisError ?? null);
       setCanAnalyze(Boolean(data.canAnalyze));
       setAnalysisPlayers(data.analysisPlayers ?? null);
+      setCourtCalibration(data.courtCalibration ?? null);
+      setCanCalibrate(Boolean(data.canCalibrate));
       if (data.video.status === "processing") setTimeout(load, 2000);
     }
     load();
@@ -450,7 +459,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const el = videoRef.current;
-      if (!el || editing) return;
+      if (!el || editing || calibrating) return;
       // Don't steal keys from whatever the user is typing into (the comment box
       // is right below the player, and "k" used to toggle playback mid-sentence).
       const target = e.target as HTMLElement | null;
@@ -478,7 +487,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stepFrames, editing, toggleFullscreen, nextRally]);
+  }, [stepFrames, editing, calibrating, toggleFullscreen, nextRally]);
 
   if (!video) {
     return (
@@ -555,6 +564,20 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             <ShareIcon size={17} />
             {copied ? "Copied" : "Share"}
           </button>
+          {canCalibrate && ready && (
+            <button
+              className={`btn secondary calib-open ${courtCalibration ? "on" : ""}`}
+              onClick={() => {
+                const el = videoRef.current;
+                el?.pause();
+                setCalibrateFromS(el?.currentTime ?? 0);
+                setCalibrating(true);
+              }}
+              title="Mark the court lines so the match can be rebuilt in 3D"
+            >
+              {courtCalibration ? "Court calibrated" : "Calibrate court"}
+            </button>
+          )}
           {canEdit && (
             <button className="btn secondary" onClick={openEdit}>
               <EditIcon size={17} />
@@ -633,6 +656,17 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       <div className="watch-below">
         <CommentSection videoId={id} onSeek={seekFromComment} />
       </div>
+
+      {calibrating && playbackUrl && (
+        <CourtCalibration
+          videoId={id}
+          src={playbackUrl}
+          startS={calibrateFromS}
+          initial={courtCalibration}
+          onClose={() => setCalibrating(false)}
+          onSaved={setCourtCalibration}
+        />
+      )}
 
       {editing && (
         <div className="modal-overlay" onClick={closeModal}>

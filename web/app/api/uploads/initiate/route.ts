@@ -53,6 +53,7 @@ export async function POST(req: Request) {
     analyzedAt: null,
     analysisPlayers: null,
     hasAnalysisProxy: false,
+    courtCalibration: null,
   });
 
   // Players chosen in the recorder's post-record shelf. Same path the web editor
