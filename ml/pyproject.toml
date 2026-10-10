@@ -1,0 +1,18 @@
+[project]
+name = "ojo-replay"
+version = "0.1.0"
+description = "Prototype 3D replay pipeline: court-calibrated ball and player tracking (docs/3D_REPLAY.md)"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+  "torch>=2.5",
+  "torchvision>=0.20",
+  "ultralytics>=8.3",
+  "opencv-python>=4.10",
+  "numpy>=1.26,<2.3",
+  "scipy>=1.13",
+  "pyyaml>=6",
+  "omegaconf>=2.3",
+  "lap>=0.5.12",
+  "gdown>=5",
+  "huggingface_hub>=0.25",
+]

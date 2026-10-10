@@ -493,6 +493,23 @@ Each phase is independently useful and stops if its gate fails.
       response-headers policy allowing GET from the app's origin. Without it the
       panel works but pins don't snap.
 
+### Prototype status, 2026-10-09: Phases 2 and 3 run end to end on "Short test"
+
+- Built in `ml/` (see [`ml/README.md`](../ml/README.md)) and run locally on an M1.
+- **Ball:** WASB detection, physics split and labelling, per-shot flight fit with a
+  simulated bounce.
+- **Players:** YOLO11-pose with a 4× far-court crop, VideoPose3D lifting, placed on
+  the court through the calibration.
+- **Outputs:**
+  - overlay videos;
+  - a three.js replay with a per-shot breakdown.
+- **Rally 1 result:** the physics split recovers the same 5 hits the rally
+  breakdown counted, and the serve lands in the correct service box.
+- **Biggest limit:** far-court depth (about 30 cm per pixel). 60 fps and a higher
+  mount are still the cheapest wins.
+- **Stand-in:** SAM 3D Body is wired up but waiting on gated Hugging Face access;
+  VideoPose3D stands in.
+
 ### Phase 2: Ball in 3D (3–5 weeks)
 - Fine-tune WASB on ~3–5k labelled Ojo frames, prioritising far court, night and
   clay. Event detection; physics fitter with surface-specific bounce coefficients.

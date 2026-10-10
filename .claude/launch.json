@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "web", "run", "dev:local"],
       "port": 3100
+    },
+    {
+      "name": "replay-viewer",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["-e", "const h=require('http'),f=require('fs'),p=require('path');const root=p.resolve('ml/out');h.createServer((q,r)=>{const fp=p.join(root,decodeURIComponent(q.url.split('?')[0]));if(!fp.startsWith(root)||!f.existsSync(fp)||f.statSync(fp).isDirectory()){r.writeHead(404);return r.end('not found')}r.writeHead(200,{'content-type':fp.endsWith('.html')?'text/html; charset=utf-8':'application/octet-stream'});f.createReadStream(fp).pipe(r)}).listen(8765,'127.0.0.1')"],
+      "port": 8765
     }
   ]
 }
