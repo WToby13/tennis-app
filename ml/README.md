@@ -15,7 +15,7 @@ skeletons on the court.
 | Ball, 3D | `ball3d.py` | Split the track into flights (dynamic programming over turns/gaps), label cuts as hits from the ball's along-court velocity reversing, then fit each shot as one flight with gravity, drag and a simulated bounce | ~1 min / rally |
 | Players, 3D | `body_sam.py` | [SAM 3D Body](https://github.com/facebookresearch/sam-3d-body) (gated, SAM License): a body mesh per player per frame from the 2D box and the calibrated camera, placed on the court; simplified to a 5 cm grid and stored as int16 mm. Every other frame | ~3 s / player-frame |
 | Players, 3D (light) | `pose3d.py` | [VideoPose3D](https://github.com/facebookresearch/VideoPose3D) (CC BY-NC) skeletons, the fallback where no mesh exists | < 1 s |
-| Render | `reconstruct.py` | Overlay video per rally: court, 3D ball + shadow, bounces, skeletons, top-down map | ~1 min / rally |
+| Render | `reconstruct.py` | Overlay video per rally: court, 3D ball + shadow, bounces, body meshes (2D skeletons where there is no mesh), top-down map. `--render-only` redraws from the saved fit | ~25 s / rally |
 | Replay | `export.py` + `viewer/replay.html` | Self-contained three.js page with the data inlined | – |
 
 ## Run
