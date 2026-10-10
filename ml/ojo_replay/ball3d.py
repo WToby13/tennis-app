@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.optimize import least_squares
 
-from .camera import HALF_LENGTH, SINGLES, Camera
+from .camera import HALF_LENGTH, NET_CENTRE, POST, POST_HEIGHT, SINGLES, Camera
 
 G = 9.81
 # Quadratic drag, k = rho * Cd * A / (2 m) for a tennis ball (Cd ~0.55).
@@ -47,7 +47,7 @@ class Shot:
     net_clearance_m: float | None = None
     rms_px: float = 0.0
     n_obs: int = 0
-    landing: str | None = None  # "in" | "out" | "close" (singles court) | None
+    landing: str | None = None  # "in" | "out" | "close" (singles court), "net", or None
     doubtful: str | None = None  # why this shot's numbers shouldn't be trusted, if so
 
 
@@ -81,17 +81,26 @@ def call(cam: Camera, x: float, y: float) -> str:
 # Flight model
 
 
+def net_height(x: float) -> float:
+    """Top of the net at x: 0.914 m at the centre strap, 1.07 m at the posts."""
+    return NET_CENTRE + (POST_HEIGHT - NET_CENTRE) * min(abs(x), POST) / POST
+
+
 def fly_bounce(
     p0: np.ndarray, v0: np.ndarray, n_frames: int, fps: float, e: float, mu: float
-) -> tuple[np.ndarray, float | None]:
-    """Like `fly`, but the court is solid: the ball bounces, keeping a fraction
-    `e` of its vertical speed and `mu` of its horizontal speed. Returns the
-    positions at each frame and the time (s) of the first bounce."""
+) -> tuple[np.ndarray, float | None, float | None, np.ndarray | None]:
+    """A flight with gravity and drag over a solid court and a real net.
+
+    The ball bounces off the court keeping a fraction `e` of its vertical speed
+    and `mu` of its horizontal speed. If it meets the net below the tape it
+    stops there and drops. Returns the positions at each frame, the times (s)
+    of the first bounce and of hitting the net, and where it first bounced
+    (None where they didn't happen)."""
     dt = 1.0 / (fps * SUBSTEPS)
     p, v = np.asarray(p0, float).copy(), np.asarray(v0, float).copy()
     out = np.empty((n_frames + 1, 3))
     out[0] = p
-    t, bounce_t = 0.0, None
+    t, bounce_t, net_t, bounce_p = 0.0, None, None, None
     for i in range(1, n_frames + 1):
         for _ in range(SUBSTEPS):
             a1 = GRAVITY - DRAG * np.linalg.norm(v) * v
@@ -99,48 +108,84 @@ def fly_bounce(
             a2 = GRAVITY - DRAG * np.linalg.norm(vm) * vm
             p_new = p + vm * dt
             v = v + a2 * dt
+            if net_t is None and p[1] * p_new[1] < 0:
+                w = p[1] / (p[1] - p_new[1])
+                cross = p + (p_new - p) * w
+                if abs(cross[0]) <= POST and 0 <= cross[2] < net_height(cross[0]):
+                    # Into the net: it stops on the hitter's side and drops.
+                    net_t = t + dt * w
+                    p_new = cross.copy()
+                    p_new[1] = 0.05 * np.sign(p[1])
+                    v = np.array([0.0, 0.0, min(v[2], 0.0)])
             if p_new[2] < 0 and v[2] < 0:
                 frac = p[2] / max(p[2] - p_new[2], 1e-9)
                 p_new = p + (p_new - p) * frac
                 p_new[2] = 0.0
                 v = np.array([v[0] * mu, v[1] * mu, -v[2] * e])
+                if net_t is not None:
+                    v[:] = 0.0  # a ball dropped from the net doesn't rally on
                 if bounce_t is None:
-                    bounce_t = t + dt * frac
+                    bounce_t, bounce_p = t + dt * frac, p_new.copy()
             p = p_new
             t += dt
         out[i] = p
-    return out, bounce_t
+    return out, bounce_t, net_t, bounce_p
 
 
-def fit_shot(cam: Camera, f: np.ndarray, uv: np.ndarray, fps: float, hitter: dict | None, side: str):
+def fit_shot(
+    cam: Camera,
+    f: np.ndarray,
+    uv: np.ndarray,
+    fps: float,
+    hitter: dict | None,
+    side: str,
+    bounce_hint: float | None = None,
+):
     """One shot, hit to next hit: launch position and velocity, and the bounce's
-    energy loss, fitted so the flight (with its bounce) projects onto the track."""
+    energy loss, fitted so the flight (with its bounce) projects onto the track.
+
+    Left free, the fit finds flights that bounce at the hitter's feet or never
+    bounce at all. Two things it knows rule those out: when the track was cut
+    with a bounce between the hits (`bounce_hint`, seconds after the hit), the
+    simulated bounce is pulled to that moment; and a shot can't bounce on its
+    own side of the net except right at the net (a net ball).
+    """
     f = f - f[0]
     n = int(f[-1])
     toward = 1.0 if side == "near" else -1.0  # +Y is away from the camera
     feet = np.array(hitter["feet"]) if hitter else None
 
     def residuals(x):
-        path, _ = fly_bounce(x[:3], x[3:6], n, fps, x[6], x[7])
-        r = np.nan_to_num((cam.project(path[f]) - uv).ravel(), nan=400.0)
-        if feet is None:
-            return r
-        off = np.abs(x[:2] - feet)
-        prior = np.concatenate([np.maximum(off - [1.0, 0.8], 0) * 60.0, [max(0.35 - x[2], 0.0, x[2] - 3.3) * 60.0]])
-        return np.concatenate([r, prior])
+        path, bounce_t, _, bounce_p = fly_bounce(x[:3], x[3:6], n, fps, x[6], x[7])
+        r = [np.nan_to_num((cam.project(path[f]) - uv).ravel(), nan=400.0)]
+        if feet is not None:
+            off = np.abs(x[:2] - feet)
+            r.append(np.maximum(off - [1.0, 0.8], 0) * 60.0)  # an arm and a racket away
+            r.append([max(0.35 - x[2], 0.0, x[2] - 3.3) * 60.0])  # racket height
+        if bounce_hint is not None:
+            # Seconds off the labelled bounce, at ~3 px per frame; no bounce at
+            # all costs as much as being half a second out.
+            r.append([abs((bounce_t if bounce_t is not None else bounce_hint + 0.5) - bounce_hint) * fps * 3.0])
+        own = bounce_p is not None and (bounce_p[1] < 0) == (side == "near")
+        r.append([max(abs(bounce_p[1]) - 1.5, 0.0) * 40.0 if own else 0.0])  # own side, away from the net
+        return np.concatenate([np.ravel(np.asarray(v, float)) for v in r])
 
     start = np.array([*feet, 1.1]) if feet is not None else cam.position + 12 * cam.ray(uv[:1])[0]
     lo = [-np.inf, -np.inf, 0.0, -70, -70, -40, 0.55, 0.45]
     hi = [np.inf, np.inf, 4.0, 70, 70, 40, 0.9, 0.95]
     best = None
-    for speed in (16.0, 27.0):
-        for elev in (0.02, 0.18):
+    for speed in (12.0, 20.0, 28.0):
+        for elev in (0.02, 0.15, 0.3):
             d = np.array([0.0, toward, elev])
             x0 = np.concatenate([start, speed * d / np.linalg.norm(d), [0.75, 0.7]])
             r = least_squares(residuals, x0, bounds=(lo, hi), loss="soft_l1", f_scale=5.0, max_nfev=120)
             if best is None or r.cost < best.cost:
                 best = r
     return best.x
+
+
+PIECE_LO = np.array([-12.0, -22.0, 0.0, -70.0, -70.0, -40.0])
+PIECE_HI = np.array([12.0, 22.0, 4.5, 70.0, 70.0, 40.0])
 
 
 def _parabola_fit(cam: Camera, frames: np.ndarray, uv: np.ndarray, fps: float) -> tuple[float, np.ndarray | None]:
@@ -170,6 +215,19 @@ def _parabola_fit(cam: Camera, frames: np.ndarray, uv: np.ndarray, fps: float) -
             r = least_squares(res, np.concatenate([a, v0]), loss="soft_l1", f_scale=4.0, max_nfev=60)
             if 2 * r.cost < best:
                 best, best_x = 2 * r.cost, r.x
+    if best_x is not None and not np.all((best_x >= PIECE_LO) & (best_x <= PIECE_HI)):
+        # A short or noisy piece can "fit" from kilometres away at absurd speed.
+        # Refit it on or near the court, at a speed a racket can produce. Only
+        # then: bounding every piece flips the direction of some short, sound ones.
+        best, best_x = np.inf, None
+        for d0 in (6.0, 14.0, 26.0):
+            for d1 in (6.0, 14.0, 26.0):
+                a, b = c + d0 * rays[0], c + d1 * rays[1]
+                v0 = (b - a) / T - 0.5 * GRAVITY * T
+                x0 = np.clip(np.concatenate([a, v0]), PIECE_LO + 1e-6, PIECE_HI - 1e-6)
+                r = least_squares(res, x0, bounds=(PIECE_LO, PIECE_HI), loss="soft_l1", f_scale=4.0, max_nfev=60)
+                if 2 * r.cost < best:
+                    best, best_x = 2 * r.cost, r.x
     return best, best_x
 
 
@@ -284,6 +342,70 @@ def label_cuts(pieces: list[np.ndarray | None]) -> list[str]:
     return labels
 
 
+def _at_racket(uv: np.ndarray, player: dict | None, slack: float = 15.0) -> bool:
+    """Whether the ball's pixel is within racket reach of a player.
+
+    Reach is scaled by the player's height in the image (a person is ~1.75 m):
+    arm plus racket reaches ~1.7 m to the side and a serve ~1 m above the head.
+    Box width is no guide: a side-on far player is 16 px wide. `slack` covers
+    the far player's coarse box and a contact a frame or two from the cut."""
+    if player is None:
+        return False
+    x1, y1, x2, y2 = player["box"]
+    h = y2 - y1
+    u, v = uv
+    cx = (x1 + x2) / 2
+    return abs(u - cx) <= 0.97 * h + slack and y1 - 0.6 * h - slack <= v <= y2 + slack
+
+
+def apply_rules(labels: list[str], cut_uv: list[np.ndarray], cut_frames: list[int], players) -> list[str]:
+    """Correct the physics labels with the rules of a rally.
+
+    Short pieces give unreliable along-court directions, so a bounce and the
+    hit right after it can swap. Tennis settles it: hits alternate ends, the
+    ball bounces at most once between them, and a hit needs the ball at the
+    hitter. A "hit" where the ball isn't at that player is a bounce; a second
+    bounce before the other player has hit is their hit, if the ball is at them.
+    """
+    out = list(labels)
+    last_hitter, bounces = None, 0
+    for k in range(len(out)):
+        lab = out[k]
+        if lab in ("start", "end"):
+            continue
+        near = _nearby_players(players, cut_frames[k])
+        if lab in ("near", "far"):
+            if lab == last_hitter or not _at_racket(cut_uv[k], near.get(lab)):
+                lab = "bounce"
+        if lab == "bounce" and last_hitter is not None and bounces >= 1:
+            other = "far" if last_hitter == "near" else "near"
+            # Unless the physics already puts that player's hit at the next cut:
+            # then this "bounce" is a spurious mid-flight cut, not a missed hit.
+            nxt = next((labels[j] for j in range(k + 1, len(labels)) if labels[j] != "bounce"), None)
+            if nxt != other and _at_racket(cut_uv[k], near.get(other)):
+                lab = other
+        out[k] = lab
+        if lab in ("near", "far"):
+            last_hitter, bounces = lab, 0
+        else:
+            bounces += 1
+    return out
+
+
+def _trim_dead_ball(frames: np.ndarray, uv: np.ndarray, still_px: float = 2.0, run: int = 6):
+    """Drop the stretches at the start and end where the ball isn't in play: in
+    a hand or pocket before the serve, lying by the net after the point. A ball
+    that moves under `still_px` a frame for `run` frames is out of play there."""
+    step = np.r_[np.inf, np.linalg.norm(np.diff(uv, axis=0), axis=1) / np.maximum(np.diff(frames), 1)]
+    moving = step >= still_px
+    first, last = 0, len(frames) - 1
+    while last > run and not moving[last - run + 1 : last + 1].any():
+        last -= 1
+    while first < last - run and not moving[first + 1 : first + run + 1].any():
+        first += 1
+    return frames[first : last + 1], uv[first : last + 1]
+
+
 def reconstruct(
     cam: Camera,
     track: dict[int, tuple[float, float]],
@@ -295,9 +417,12 @@ def reconstruct(
     if len(frames) < 10:
         return []
     uv = np.array([track[f] for f in frames])
+    frames, uv = _trim_dead_ball(frames, uv)
+    if len(frames) < 10:
+        return []
     cuts, pieces = split(cam, frames, uv, fps)
     cut_frames = [int(frames[i]) for i in cuts]
-    labels = label_cuts(pieces)
+    labels = apply_rules(label_cuts(pieces), [uv[i] for i in cuts], cut_frames, players_by_frame)
 
     # Shots run from one hit to the next. Each is fitted as one flight with its
     # bounce simulated, so a bounce too gentle to show as a kink is still found.
@@ -310,11 +435,25 @@ def reconstruct(
             continue
         side = labels[k0]
         hitter = _nearby_players(players_by_frame, cut_frames[k0]).get(side)
-        x = fit_shot(cam, frames[a : b + 1], uv[a : b + 1], fps, hitter, side)
-        n = int(frames[b] - frames[a])
-        path, bounce_t = fly_bounce(x[:3], x[3:6], n, fps, x[6], x[7])
-        fi = frames[a : b + 1] - frames[a]
-        err = np.linalg.norm(cam.project(path[fi]) - uv[a : b + 1], axis=1)
+        bounce_frame = next((cut_frames[k] for k in range(k0 + 1, k1) if labels[k] == "bounce"), None)
+        # The cut that marks a hit often lands a few frames before contact (the
+        # ball is lost at the racket), and those frames are the incoming ball.
+        # Try starting the flight a little later and keep the best fit.
+        best = None
+        for delay in (0, 3, 6, 9):
+            a2 = int(np.searchsorted(frames, frames[a] + delay))
+            if b - a2 < 8:
+                break
+            hint = (bounce_frame - frames[a2]) / fps if bounce_frame and bounce_frame > frames[a2] else None
+            x = fit_shot(cam, frames[a2 : b + 1], uv[a2 : b + 1], fps, hitter, side, hint)
+            path, bounce_t, net_t, _ = fly_bounce(x[:3], x[3:6], int(frames[b] - frames[a2]), fps, x[6], x[7])
+            err = np.linalg.norm(cam.project(path[frames[a2 : b + 1] - frames[a2]]) - uv[a2 : b + 1], axis=1)
+            score = float(np.sqrt(np.mean(np.minimum(err, 60) ** 2)))
+            if best is None or score < best[0] - 0.5:  # later only if clearly better
+                best = (score, a2, x, path, bounce_t, net_t, err)
+        if best is None:
+            continue
+        _, a, x, path, bounce_t, net_t, err = best
         t0 = frames[a] / fps
         shot = Shot(
             hitter=side,
@@ -327,7 +466,9 @@ def reconstruct(
             rms_px=round(float(np.sqrt(np.mean(np.minimum(err, 60) ** 2))), 2),
             n_obs=int(len(err)),
         )
-        if bounce_t is not None:
+        if net_t is not None and (bounce_t is None or net_t < bounce_t):
+            shot.landing = "net"
+        elif bounce_t is not None:
             j = min(int(round(bounce_t * fps)), len(path) - 1)
             bp = fly_bounce(x[:3], x[3:6], max(j, 1), fps, x[6], x[7])[0][-1]
             shot.bounce = [round(float(t0 + bounce_t), 4), round(float(bp[0]), 3), round(float(bp[1]), 3)]
@@ -335,7 +476,11 @@ def reconstruct(
             # A shot can't bounce on its hitter's own side and play on; if the
             # fit says it did, the fit is wrong somewhere (or it was a net cord).
             own_side = (bp[1] < 0) == (side == "near")
-            if own_side:
+            if own_side and abs(bp[1]) < 1.5:
+                # First contact on its own side, right at the net: the ball went
+                # into the net and dropped. No other flight lands there.
+                shot.landing, shot.bounce = "net", None
+            elif own_side:
                 shot.doubtful = "bounces on the hitter's own side"
         if shot.rms_px > 15:
             shot.doubtful = shot.doubtful or "loose fit to the ball track"
@@ -346,6 +491,8 @@ def reconstruct(
             w = ys[i] / (ys[i] - ys[i + 1])
             shot.net_clearance_m = round(float(path[i, 2] + w * (path[i + 1, 2] - path[i, 2])), 2)
         shots.append(shot)
+        if shot.landing == "net":
+            break  # the point is over; anything after is the ball being fetched
     # Keep only flights the fit can stand behind: a shot that misses its own
     # track by more than ~22 px, or leaves the racket faster than any rally
     # ball, is the fit failing (ball being bounced before a serve, dead ball
@@ -357,6 +504,7 @@ def events(cam: Camera, track: dict[int, tuple[float, float]], players: dict[int
     """(time, label) of each cut, for inspection."""
     frames = np.array(sorted(track))
     uv = np.array([track[f] for f in frames])
+    frames, uv = _trim_dead_ball(frames, uv)
     cuts, pieces = split(cam, frames, uv, fps)
-    labels = label_cuts(pieces)
+    labels = apply_rules(label_cuts(pieces), [uv[i] for i in cuts], [int(frames[i]) for i in cuts], players)
     return [(round(int(frames[i]) / fps, 2), lab) for i, lab in zip(cuts, labels)], [None if p is None else np.round(p[3:], 1).tolist() for p in pieces]

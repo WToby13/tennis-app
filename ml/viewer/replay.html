@@ -44,6 +44,7 @@ h1 { font-family: var(--font-display); font-weight: 700; font-size: 22px; margin
 .view.on { border-color: var(--accent); color: #fff; }
 .hud { position: absolute; left: 12px; bottom: 12px; font: 500 13px var(--font-data); color: var(--text); background: rgba(20, 17, 13, 0.72); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; pointer-events: none; display: grid; gap: 2px; }
 .hud:empty { display: none; }
+.bodytoggle { position: absolute; top: auto; left: auto; right: 12px; bottom: 52px; }
 .legend { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 12px; font-size: 12px; color: var(--muted); background: rgba(20, 17, 13, 0.72); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
 
@@ -71,6 +72,7 @@ section h2 { font-family: var(--font-display); font-size: 13px; font-weight: 600
 .pill.in { background: rgba(143, 179, 136, 0.18); color: var(--good); }
 .pill.out { background: rgba(229, 105, 91, 0.18); color: var(--bad); }
 .shot .doubt { color: #e5b65b; }
+.pill.net { background: rgba(229, 105, 91, 0.18); color: var(--bad); }
 .pill.close { background: rgba(229, 182, 91, 0.18); color: #e5b65b; }
 .pill.none { background: var(--surface-2); color: var(--muted); }
 .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -101,6 +103,7 @@ section h2 { font-family: var(--font-display); font-size: 13px; font-weight: 600
     <div class="stage" id="stage">
       <div class="views" id="views"></div>
       <div class="hud" id="hud"></div>
+      <button class="view bodytoggle" id="bodytoggle" hidden>Show skeletons</button>
       <div class="legend">
         <span><span class="dot" style="background: var(--near)"></span>Near</span>
         <span><span class="dot" style="background: var(--far)"></span>Far</span>
@@ -228,6 +231,54 @@ function makePlayer(color) {
   return { g, bones, joints };
 }
 const players = { near: makePlayer(COLORS.near), far: makePlayer(COLORS.far) };
+
+// Body meshes (SAM 3D Body): one geometry per player, vertices updated per frame.
+const meshes = {};
+let showBodies = true;
+function makeMesh(color) {
+  const g = new THREE.BufferGeometry();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.0 }));
+  m.castShadow = true; m.frustumCulled = false; m.visible = false;
+  scene.add(m);
+  return m;
+}
+meshes.near = makeMesh(COLORS.near); meshes.far = makeMesh(COLORS.far);
+function decodeBodies(b) {
+  if (!b || b._ready) return;
+  const bin = atob(b.verts); const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  b.mm = new Int16Array(bytes.buffer);
+  b._ready = true;
+}
+function poseMesh(side, frame) {
+  const m = meshes[side], b = R.bodies && R.bodies[side];
+  if (!showBodies || !b) { m.visible = false; return false; }
+  decodeBodies(b);
+  const fr = b.frames;
+  if (frame < fr[0] - 3 || frame > fr[fr.length - 1] + 3) { m.visible = false; return false; }
+  let i = 0; while (i < fr.length - 1 && fr[i + 1] <= frame) i++;
+  const j = Math.min(i + 1, fr.length - 1);
+  // Blend between processed frames, but not across gaps where the player was lost.
+  const w = (j > i && fr[j] - fr[i] <= 4) ? Math.min(Math.max((frame - fr[i]) / (fr[j] - fr[i]), 0), 1) : 0;
+  const n = b.nverts, a0 = i * n * 3, a1 = j * n * 3;
+  if (m.userData.side !== side || m.userData.rally !== R.idx) {
+    m.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    m.geometry.setIndex(b.faces);
+    m.userData.side = side; m.userData.rally = R.idx;
+  }
+  const pos = m.geometry.attributes.position.array;
+  for (let k = 0; k < n; k++) {
+    const o = k * 3;
+    const x = ((1 - w) * b.mm[a0 + o] + w * b.mm[a1 + o]) / 1000;
+    const y = ((1 - w) * b.mm[a0 + o + 1] + w * b.mm[a1 + o + 1]) / 1000;
+    const z = ((1 - w) * b.mm[a0 + o + 2] + w * b.mm[a1 + o + 2]) / 1000;
+    pos[o] = x; pos[o + 1] = z; pos[o + 2] = -y; // court (x, y, z) -> scene (x, z, -y)
+  }
+  m.geometry.attributes.position.needsUpdate = true;
+  m.geometry.computeVertexNormals();
+  m.visible = true;
+  return true;
+}
 const up = new THREE.Vector3(0, 1, 0);
 function posePlayer(p, J) {
   if (!J) { p.g.visible = false; return; }
@@ -287,6 +338,8 @@ function loadRally(k) {
     }
   }
   t = R.start;
+  const hasBodies = R.bodies && Object.keys(R.bodies).length > 0;
+  document.getElementById('bodytoggle').hidden = !hasBodies;
   document.querySelectorAll('.tab').forEach((b, i) => b.setAttribute('aria-selected', String(i === k)));
   renderSide();
   renderMarks();
@@ -295,8 +348,10 @@ function loadRally(k) {
 
 function update() {
   const frame = t * R.fps;
-  posePlayer(players.near, jointsAt(R.skeletons.near, frame));
-  posePlayer(players.far, jointsAt(R.skeletons.far, frame));
+  for (const side of ['near', 'far']) {
+    const meshShown = poseMesh(side, frame);
+    posePlayer(players[side], meshShown ? null : jointsAt(R.skeletons[side], frame));
+  }
   let shotNow = null, p = null;
   for (const s of R.shots) { const q = sampleAt(s.samples, t); if (q) { p = q; shotNow = s; } }
   ball.visible = shadow.visible = drop.visible = !!p;
@@ -326,7 +381,7 @@ function renderSide() {
     cell('Top speed', st.far.topSpeed != null ? st.far.topSpeed.toFixed(1) : '–', 'm/s', 'far'),
   ].join('');
   document.getElementById('shots').innerHTML = R.shots.map((s, i) => {
-    const b = s.bounce ? `bounce ${s.bounce[1] >= 0 ? '+' : ''}${s.bounce[1].toFixed(1)}, ${s.bounce[2] >= 0 ? '+' : ''}${s.bounce[2].toFixed(1)} m` : 'no bounce in view';
+    const b = s.bounce ? `bounce ${s.bounce[1] >= 0 ? '+' : ''}${s.bounce[1].toFixed(1)}, ${s.bounce[2] >= 0 ? '+' : ''}${s.bounce[2].toFixed(1)} m` : (s.landing === 'net' ? 'into the net' : 'taken before it bounced');
     const net = s.net_clearance_m != null ? ` · net +${s.net_clearance_m.toFixed(2)} m` : '';
     const pill = s.landing ? `<span class="pill ${s.landing}">${s.landing.toUpperCase()}</span>` : '<span class="pill none">–</span>';
     const doubt = s.doubtful ? `<span class="meta doubt">Unsure: ${s.doubtful}</span>` : '';
@@ -397,6 +452,11 @@ function boot() {
   document.querySelectorAll('.view').forEach(b => b.addEventListener('click', () => setView(b.dataset.v)));
   document.getElementById('speeds').innerHTML = [0.25, 0.5, 1].map(r => `<button class="speed${r === rate ? ' on' : ''}" data-r="${r}">${r}×</button>`).join('');
   document.querySelectorAll('.speed').forEach(b => b.addEventListener('click', () => { rate = +b.dataset.r; document.querySelectorAll('.speed').forEach(x => x.classList.toggle('on', x === b)); }));
+  document.getElementById('bodytoggle').addEventListener('click', e => {
+    showBodies = !showBodies;
+    e.target.textContent = showBodies ? 'Show skeletons' : 'Show bodies';
+    update();
+  });
   document.getElementById('play').addEventListener('click', () => { playing = !playing; syncPlay(); });
   document.getElementById('scrub').addEventListener('input', e => { t = R.start + (+e.target.value / 1000) * (R.end - R.start); update(); });
   window.addEventListener('keydown', e => {

@@ -8,6 +8,7 @@ then writes out/<match>/replay.html: viewer/replay.html with the data inlined.
 
 from __future__ import annotations
 
+import base64
 import json
 import sys
 from pathlib import Path
@@ -54,6 +55,26 @@ def movement(sk: dict | None, fps: float) -> dict:
     return {"distance": round(dist, 1), "topSpeed": round(top, 1)}
 
 
+def bodies(path: Path) -> dict:
+    """SAM 3D Body meshes for the page: per side, frame numbers, faces, and
+    vertices as base64 little-endian int16 millimetres (decoded in the page)."""
+    if not path.exists():
+        return {}
+    z = np.load(path)
+    out = {}
+    for side in ("near", "far"):
+        if f"{side}_frames" not in z:
+            continue
+        v = z[f"{side}_verts_mm"].astype("<i2")
+        out[side] = {
+            "frames": z[f"{side}_frames"].tolist(),
+            "faces": z[f"{side}_faces"].ravel().tolist(),
+            "nverts": int(v.shape[1]),
+            "verts": base64.b64encode(v.tobytes()).decode(),
+        }
+    return out
+
+
 def main(match_json: str, out_dir: str) -> None:
     match = json.loads(Path(match_json).read_text())
     cam = Camera.from_match(Path(match_json))
@@ -74,6 +95,7 @@ def main(match_json: str, out_dir: str) -> None:
             "end": raw["lastFrame"] / fps,
             "shots": shots,
             "skeletons": sk,
+            "bodies": bodies(out / f"rally{seg['idx']}_bodies.npz"),
             "stats": {
                 "duration": (seg["endS"] - seg["startS"]),
                 "shots": len(shots),
@@ -110,11 +132,11 @@ CONFIDENCE = [
     {"level": ["hi", "Solid"], "what": "Where each player stands and how far they ran. Feet are pinned to the court through the calibration."},
     {"level": ["mid", "Approximate"], "what": "Ball path and bounce spots. One camera can't see depth, so each shot is a physics fit to the 2D track; errors grow toward the far baseline."},
     {"level": ["mid", "Approximate"], "what": "Shot speed. Comes from the fitted launch; fair for groundstrokes, least reliable for serves (30 fps blur)."},
-    {"level": ["lo", "Stand-in"], "what": "Body poses. VideoPose3D lifted from 2D keypoints; the far player is ~45 px tall, so limbs there are rough."},
+    {"level": ["mid", "Approximate"], "what": "Body shape and pose. SAM 3D Body meshes, fitted per frame (every other frame, blended between); the far player is ~45 px tall, so their limbs are rough."},
 ]
 NOTES = [
-    "<b>How it was made.</b> One iPhone, ultra-wide, 30 fps. The court calibration from the web panel gives the camera. WASB finds the ball in each frame, YOLO11-pose finds both players (the far one in a 4× enlarged crop), VideoPose3D lifts them to 3D, and each shot is fitted as a physical flight with gravity, air drag and a bounce.",
-    "<b>What's next.</b> SAM 3D Body for proper body meshes once Hugging Face access is approved, 60 fps recording for the ball, and racket pose.",
+    "<b>How it was made.</b> One iPhone, ultra-wide, 30 fps. The court calibration from the web panel gives the camera. WASB finds the ball in each frame, YOLO11-pose finds both players (the far one in a 4× enlarged crop), SAM 3D Body turns each into a 3D body mesh (VideoPose3D skeletons as the lighter alternative), and each shot is fitted as a physical flight with gravity, air drag and a bounce.",
+    "<b>What's next.</b> 60 fps recording for the ball, racket pose, and smoothing body motion over time rather than frame by frame.",
 ]
 
 if __name__ == "__main__":

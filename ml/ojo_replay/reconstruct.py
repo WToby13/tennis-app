@@ -127,7 +127,11 @@ def main(match_json: str, video: str, out_dir: str) -> None:
         shots = [asdict(s) for s in reconstruct(cam, track, players, fps, raw["lastFrame"])]
         (out / f"rally{seg['idx']}.json").write_text(json.dumps({"rally": seg["idx"], "fps": fps, "shots": shots, "players": raw["players"]}))
         for s in shots:
-            b = f"bounce ({s['bounce'][1]:+.2f}, {s['bounce'][2]:+.2f}) {s['landing']}" if s["bounce"] else "no bounce"
+            b = (
+                f"bounce ({s['bounce'][1]:+.2f}, {s['bounce'][2]:+.2f}) {s['landing']}"
+                if s["bounce"]
+                else ("into the net" if s["landing"] == "net" else "no bounce")
+            )
             print(f"rally {seg['idx']} {s['hitter']:>4} hit at {s['t0']:.2f}s  {s['speed_kmh']:5.1f} km/h  {b}  net {s['net_clearance_m']}  fit {s['rms_px']} px over {s['n_obs']} frames")
 
         frames = read_frames(Path(video), raw["firstFrame"], raw["lastFrame"])
