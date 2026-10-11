@@ -2797,3 +2797,16 @@ video {
 
 /* Our tracking over the video (TrackOverlay.tsx): above the picture, under the controls. */
 .track-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.mstats-best { margin-top: 16px; display: grid; gap: 8px; }
+.mstats-best h4 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; }
+.mstats-best ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.mstats-best button {
+  width: 100%; display: grid; grid-template-columns: 52px 72px 110px 80px 1fr; gap: 8px; align-items: center;
+  padding: 7px 10px; background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; font: inherit; font-size: 13px; text-align: left; cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.mstats-best button:hover { border-color: var(--accent); }
+.mstats-best button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mstats-best-time { font-weight: 600; }
+.mstats-hot { justify-self: end; font-size: 11px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
+@media (max-width: 560px) { .mstats-best button { grid-template-columns: 48px 1fr 1fr; } .mstats-best button span:nth-child(4), .mstats-hot { display: none; } }

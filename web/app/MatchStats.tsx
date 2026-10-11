@@ -184,6 +184,29 @@ export function MatchStats({
         </div>
       </div>
 
+      {stats.rallies.length > 0 && (
+        <div className="mstats-best">
+          <h4 className="muted">Best rallies</h4>
+          <ol>
+            {[...stats.rallies]
+              .filter((r) => r.shots >= 3)
+              .sort((a, b) => b.intensity - a.intensity)
+              .slice(0, 5)
+              .map((r) => (
+                <li key={r.idx}>
+                  <button type="button" onClick={() => onSeek(Math.max(0, r.start - 1))}>
+                    <span className="mstats-best-time">{mmss(r.start)}</span>
+                    <span>{r.shots} shots</span>
+                    <span>{r.maxSpeed != null ? `${Math.round(r.maxSpeed)} km/h top` : ""}</span>
+                    <span>{r.run ? `${Math.round(r.run)} m run` : ""}</span>
+                    {r.high && <span className="mstats-hot">High intensity</span>}
+                  </button>
+                </li>
+              ))}
+          </ol>
+        </div>
+      )}
+
       {stats.games && stats.games.length > 0 && (
         <div className="mstats-games">
           <h4 className="muted">Service games</h4>
