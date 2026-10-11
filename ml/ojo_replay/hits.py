@@ -153,7 +153,7 @@ def decide(model, cuts: list[tuple[float, str, str]], ball: np.ndarray, offset: 
     return sorted(hits, key=lambda h: h["t"])
 
 
-def training_rows(mid: str, uncut: bool = True):
+def training_rows(mid: str, uncut: bool = False):
     """Features and tags for every cut in the tagged span of a match: from the
     analysis run's saved cuts, its ball track and players, and ml/labels/<mid>.json."""
     import glob
@@ -196,12 +196,18 @@ def training_rows(mid: str, uncut: bool = True):
     return np.array(X), np.array(y), np.array(far), np.array(group)
 
 
+# Offering the split's uncut candidates too (uncut_candidates) recovers contacts
+# in principle, but on two tagged matches it more than doubled the negatives and
+# lowered held-out recall and precision. Off until there's more tagged data.
+UNCUT = False
+
+
 def train(mids: list[str]) -> None:
     """Fit the hit and end classifiers on every tagged match given; save to MODEL."""
     import joblib
     from sklearn.ensemble import HistGradientBoostingClassifier
 
-    parts = [training_rows(m) for m in mids]
+    parts = [training_rows(m, UNCUT) for m in mids]
     X = np.vstack([p[0] for p in parts])
     y = np.concatenate([p[1] for p in parts])
     far = np.concatenate([p[2] for p in parts])
@@ -210,7 +216,7 @@ def train(mids: list[str]) -> None:
     end = HistGradientBoostingClassifier(max_iter=150, learning_rate=0.05, max_leaf_nodes=7, min_samples_leaf=5).fit(X[pos], far[pos])
     MODEL.parent.mkdir(exist_ok=True)
     joblib.dump({"hit": hit, "end": end, "features": FEATURES, "trainedOn": mids, "cuts": int(len(y)),
-                 "hits": int(y.sum()), "uncut": True}, MODEL)
+                 "hits": int(y.sum()), "uncut": UNCUT}, MODEL)
     print(f"trained on {', '.join(mids)}: {len(y)} cuts, {int(y.sum())} near tagged hits -> {MODEL}")
 
 

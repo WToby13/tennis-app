@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".cache"
 WEIGHTS = CACHE / "weights"
 # Bump when the ball tracking or 3D fit changes, so cached shots aren't reused.
-FIT_VERSION = "f6"
+FIT_VERSION = "f5"
 
 
 def download(url: str, dest: Path) -> float:

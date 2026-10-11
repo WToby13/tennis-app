@@ -125,6 +125,11 @@ match, scored on the other):
 | Morning session, trained on Afternoon | 28% -> 43% | 68% -> 58% |
 | Afternoon session, trained on Morning | 44% -> 61% | 79% -> 66% |
 
+Tried and reverted (2026-10-12): offering the split's uncut candidates to the
+classifier and padding rally windows 1.2 s. Held out it lowered hits found
+(43% -> 38%, 61% -> 59%) and serving end (24/32 -> 15/29); the code stays
+(`hits.UNCUT`) for when there's more tagged data.
+
 Serving end on Morning session: 18 / 19 (TwelveLabs 20 / 21). Retrain after
 tagging more: `python -m ojo_replay.hits train <id> <id> ...`.
 
