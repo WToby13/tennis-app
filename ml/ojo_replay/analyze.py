@@ -205,7 +205,8 @@ def main() -> None:
         cal_path.write_text(json.dumps(cal))
     timing["calibrate"] = time.time() - t0
     cam = Camera.from_calibration(cal)
-    log(f"court: {cal['quality']} (cover {cal['coverage']:.2f}, rms {cal['rms']:.2f}px, f {cal['camera']['f']:.0f})")
+    # Ours (autocal/handcal) or the web panel's (solve.ts): both carry the camera.
+    log(f"court: {cal.get('source', 'panel')}, {cal.get('quality')}, f {cal['camera']['f']:.0f}")
 
     t0 = time.time()
     bp_path = out / "ball.npz"
@@ -312,7 +313,8 @@ def main() -> None:
 
     result = {
         "id": meta["id"], "title": meta["title"], "durationS": n_frames / fps, "fps": fps,
-        "calibration": {**{k: cal[k] for k in ("quality", "coverage", "rms")}, "source": cal.get("source", "auto")},
+        "calibration": {"quality": cal.get("quality"), "coverage": cal.get("coverage"),
+                        "rms": cal.get("rms", cal.get("rmsErrorPx")), "source": cal.get("source", "auto")},
         "rallies": rally_out, "compare": cmp, "timing": timing,
         # Whole points (stretches of play grouped), for the serve and the score.
         "points": [{"startS": round(a, 2), "endS": round(b, 2)} for a, b in rallies.find(ball, fps, cam, points=True)],

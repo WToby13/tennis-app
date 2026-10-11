@@ -1,5 +1,5 @@
 import { track } from "@/lib/analytics/server";
-import { OJO_QUEUED, ownEngine } from "@/lib/ojoEngine";
+import { OJO_QUEUED, ownEngine, startWorker } from "@/lib/ojoEngine";
 import { assumedDurationS, needsAnalysisProxy } from "@/lib/analysisProxy";
 import {
   advanceAnalysis,
@@ -152,6 +152,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       analysisError: null,
       ...playersPatch,
     });
+    await startWorker(id);
     track("analysis_started", { userId, videoId: id, props: { engine: "own", durationS: video.durationS } });
     return json({ analysisStatus: "processing", stage: "analysing" });
   }

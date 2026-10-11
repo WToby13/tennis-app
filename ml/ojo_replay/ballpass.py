@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 import torch
 
-from .ball2d import IN_H, IN_W, MEAN, STD, _blobs, load_wasb
+from .ball2d import IN_H, IN_W, MEAN, STD, _blobs, best_device, load_wasb
 
 WEIGHTS = Path(__file__).resolve().parents[1] / ".cache" / "weights" / "wasb_tennis.pth.tar"
 KEEP = 4  # candidates kept per frame
@@ -66,8 +66,9 @@ def frames_small(video: str, start: float = 0.0, duration: float | None = None):
 
 
 @torch.no_grad()
-def run(video: str, step: int = 3, device: str = "mps", batch: int = 4, threshold: float = 0.5,
+def run(video: str, step: int = 3, device: str | None = None, batch: int = 4, threshold: float = 0.5,
         start: float = 0.0, duration: float | None = None) -> dict:
+    device = device or best_device()
     W, H, fps, dur = probe(video)
     # Half precision, small batches: measured on an M1 (16 GB), 59 ms a window
     # against 90 in float32, and larger batches get slower, not faster.

@@ -1,66 +1,108 @@
 # Launching our own analysis
 
-What's needed to go from the `ml/` prototype to analysis showing up on every
-match in the app, in order. The pipeline itself is described in
-[`ml/README.md`](../ml/README.md).
+From the `ml/` pipeline to every match in the app analysed by our own models,
+with TwelveLabs switched off. The pipeline itself is described in
+[`ml/README.md`](../ml/README.md); this is the runbook.
 
-## 1. Turn on the app side (no user-visible change yet)
+Everything below the demo is opt-in and reversible: with no new settings the
+app behaves exactly as today.
 
-1. Run `supabase/migrations/0023_match_analyses.sql` in the Supabase SQL editor.
-   It adds the `match_analyses` table (readable by anyone who can see the match,
-   written only by the service role).
-2. Set `ANALYSIS_WORKER_SECRET` in the app's environment (Vercel → Settings →
-   Environment Variables): any long random string, e.g. from `openssl rand -hex 32`.
-   Both worker routes refuse everything while it's unset.
-3. Deploy (merge #4 → #5 → #6, or deploy the branch).
+## 0. Demo it locally (no accounts, nothing in production)
 
-Until a match has a row in `match_analyses`, its watch page looks exactly as it
-does today: the new "Shot analysis" section renders nothing.
+```bash
+cd ml && .venv/bin/python -m ojo_replay.demo_local f85eedfd 08f3fb94   # load analysed matches
+cd .. && MATCH_STATS_DIR=../ml/out/match-stats npm --prefix web run dev:local
+# open http://localhost:3100 (or the "ojo-demo-local" launch config)
+```
 
-## 2. Backfill our own recordings
+On a match's watch page:
+- **AI breakdown** shows our rallies, servers and service games (what
+  `ANALYSIS_ENGINE=own` produces).
+- **Show tracking** draws the ball, both players (A/B by kit colour) and each
+  bounce with its speed over the playing video.
+- **Shot analysis (Beta)** below: shot map (tap a bounce to jump there),
+  per-player serve and rally speeds, in/net, first serves, distance run, and
+  the service games.
 
-With `OJO_APP_URL` and `ANALYSIS_WORKER_SECRET` in the environment:
+## 1. App side, still on TwelveLabs (side by side)
+
+1. Run `supabase/migrations/0023_match_analyses.sql` in the Supabase SQL editor
+   (table `match_analyses`: stats + tracking per match, readable wherever the
+   match is, written only by the service role).
+2. Set `ANALYSIS_WORKER_SECRET` in Vercel (`openssl rand -hex 32`).
+3. Deploy (merge #4 → #5 → #6).
+
+Nothing changes for users until a match has an analysis row; then the Shot
+analysis section and "Show tracking" appear on it, next to TwelveLabs'
+breakdown.
+
+## 2. Backfill our own recordings (from a laptop)
 
 ```bash
 cd ml
-# Court: automatic pins; the panel asks for a check where it isn't sure.
+export OJO_APP_URL=https://<the app> ANALYSIS_WORKER_SECRET=<same secret>
 .venv/bin/python -m ojo_replay.autocal .cache/videos/<id>.mov out/autocal/<id>.json
 .venv/bin/python -m ojo_replay.post_calibration <video-uuid> out/autocal/<id>.json
-# Analysis: shots, rallies, games.
 .venv/bin/python -m ojo_replay.analyze <id> && .venv/bin/python -m ojo_replay.structure <id>
 .venv/bin/python -m ojo_replay.post_analysis <id>
 ```
 
-A hand calibration is never overwritten by an automatic one (the route answers 409).
+(A hand calibration is never overwritten by an automatic one.)
 
-## 3. Measure before switching anything off
+## 3. The GPU worker (AWS Batch, scales to zero)
 
-- Tag one or two matches in the labeller (`node ml/viewer/label-server.mjs`,
-  then <http://localhost:8766>) and score them: `python -m ojo_replay.evaluate <id>`.
-- The bar for showing shot stats to users without a "Beta" label: hit recall and
-  precision both above ~85% on tagged matches, serving end above ~95%.
-- Today: shot recall is the gap (the fit catches a minority of shots on cameras
-  ~20 m back). Player identity, serving end and games work on the points found.
+```bash
+cd infra
+# terraform.tfvars: worker_app_url = "https://<the app>", analysis_worker_secret = "<same secret>"
+terraform plan && terraform apply           # analysis_worker.tf: ECR, Batch on g6.xlarge spot, IAM
+cd .. && ml/docker/build.sh "$(terraform -chdir=infra output -raw analysis_worker_ecr)"
+```
 
-## 4. Run it for every upload
+Then in Vercel set `ANALYSIS_BATCH_JOB_QUEUE` and `ANALYSIS_BATCH_JOB_DEFINITION`
+to the Terraform outputs. Until `ANALYSIS_ENGINE=own` nothing submits jobs.
+Note: AWS accounts start with a GPU spot quota of 0 vCPUs for G instances;
+request "All G and VT Spot Instance Requests" ≥ 8 in Service Quotas first.
 
-The prototype runs on a laptop. For every upload it needs a GPU worker:
+Any machine can also be a worker: `python -m ojo_replay.worker` polls the app
+for queued matches (useful on the Mac before Batch is up).
 
-- **Where:** AWS Batch on GPU spot instances (g6.xlarge, NVIDIA L4) in eu-west-1
-  next to the bucket, scaling to zero; or a serverless GPU host.
-- **Trigger:** the same place the TwelveLabs analysis starts today
-  (`/api/videos/:id/analyze` and the advance-analyses cron) submits a job with
-  the video id; the worker downloads the master from S3, runs
-  `autocal → analyze → structure`, and posts to the two worker routes.
-- **Cost (estimate until benchmarked on a real L4):** ~$0.20 (spot) to $0.50
-  (on demand) per hour of match today, ~$0.10–0.20 after the planned speed-ups,
-  against TwelveLabs' $1.94.
-- **Licences to settle first:** YOLO11 is AGPL-3.0 (a commercial licence from
-  Ultralytics, or switch to an Apache-licensed pose model such as RTMPose);
-  WASB (ball) is MIT.
+## 4. Switch the breakdown to our engine
 
-## 5. Switch TwelveLabs off
+Set `ANALYSIS_ENGINE=own` in Vercel and redeploy. "AI breakdown" then queues
+the match (`ojo:queued`), the app submits a Batch job, the worker claims it,
+analyses it and posts the result, which fills the same rally breakdown
+TwelveLabs did and finishes the run. Failures show the owner a message.
+Revert by setting it back to `twelvelabs`.
 
-Run both side by side on new uploads for a few weeks; when ours matches or beats
-it on tagged matches, stop calling TwelveLabs and move the rally breakdown onto
-our own rallies and games.
+## 5. The accuracy bar, then switch TwelveLabs off
+
+Measured against hand tags (`ml/labels/`, scored with
+`python -m ojo_replay.evaluate <id>`, held out across matches):
+
+| | Now | Bar to drop "Beta" |
+|---|---|---|
+| Points found | 94–97% | ≥ 95% |
+| Serving end | 75–95% | ≥ 95% |
+| Hits found | 43–61% | ≥ 85% |
+| Hits that are real | 58–66% | ≥ 85% |
+
+When ours meets the bar on a few tagged matches, stop calling TwelveLabs
+(remove `TWELVELABS_API_KEY`), and delete `web/lib/twelvelabs/` and the
+transcoder (`infra/transcoder.tf`), which only exists to make TwelveLabs
+proxies.
+
+## Costs (per hour of match)
+
+| | TwelveLabs | Ours (spot GPU) |
+|---|---|---|
+| Today | $1.94 ($4.27 if indexing is billed) | ~$0.20–0.50 (estimate until benchmarked) |
+| After planned speed-ups | | ~$0.10–0.20 |
+
+Scale is linear with no idle cost: 1,000 match-hours a month is ~$1,940 on
+TwelveLabs against ~$200–500 ours.
+
+## Licences to settle before charging for it
+
+- YOLO11 (player detection) is AGPL-3.0: buy an Ultralytics licence or swap to
+  an Apache-licensed pose model (RTMPose/RTMDet).
+- WASB (ball) is MIT. Our hit classifier and code are ours.

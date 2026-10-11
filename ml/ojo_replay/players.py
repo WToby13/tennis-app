@@ -95,12 +95,15 @@ def detect_players(
     frames: list[tuple[int, np.ndarray]],
     cam: Camera,
     weights: str,
-    device: str = "mps",
+    device: str | None = None,
     imgsz: int = 1280,
     crop_scale: float = 4.0,
 ) -> list[PlayerFrame]:
     """Pose over each frame, plus an enlarged pass over the far court; keep at
     most one player per end, by confidence."""
+    from .ball2d import best_device
+
+    device = device or best_device()
     model = YOLO(weights)
     far_model = YOLO(weights)  # separate instance: its own tracker state
     cx1, cy1, cx2, cy2 = far_crop(cam)

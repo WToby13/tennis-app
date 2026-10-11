@@ -36,3 +36,24 @@ export function ojoClaimable(taskId: string | null | undefined, now = Date.now()
   }
   return false;
 }
+
+/**
+ * Start a worker for a queued match: one AWS Batch job (infra/analysis_worker.tf)
+ * when ANALYSIS_BATCH_JOB_QUEUE and ANALYSIS_BATCH_JOB_DEFINITION are set. Best
+ * effort: if it fails the match stays queued for any worker that polls.
+ */
+export async function startWorker(videoId: string): Promise<void> {
+  const queue = process.env.ANALYSIS_BATCH_JOB_QUEUE;
+  const definition = process.env.ANALYSIS_BATCH_JOB_DEFINITION;
+  if (!queue || !definition) return;
+  try {
+    const { BatchClient, SubmitJobCommand } = await import("@aws-sdk/client-batch");
+    const { config } = await import("./config");
+    const client = new BatchClient({ region: config.aws.region });
+    await client.send(
+      new SubmitJobCommand({ jobName: `analysis-${videoId.slice(0, 8)}`, jobQueue: queue, jobDefinition: definition }),
+    );
+  } catch (err) {
+    console.error("[ojo] couldn't submit the analysis job; it stays queued", videoId, err);
+  }
+}

@@ -25,6 +25,15 @@ MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
 
+def best_device() -> str:
+    """An NVIDIA GPU in the cloud, Apple's GPU on a Mac, else the CPU."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 @dataclass
 class BallCandidate:
     frame: int
@@ -70,10 +79,11 @@ def _blobs(hm: np.ndarray, threshold: float) -> list[tuple[float, float, float]]
 def detect_ball(
     frames: list[tuple[int, np.ndarray]],
     weights: Path,
-    device: str = "mps",
+    device: str | None = None,
     threshold: float = 0.5,
     batch: int = 8,
 ) -> list[BallCandidate]:
+    device = device or best_device()
     model = load_wasb(weights, device)
     idxs = [i for i, _ in frames]
     full_h, full_w = frames[0][1].shape[:2]
