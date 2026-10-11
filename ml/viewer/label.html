@@ -68,6 +68,7 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--rule); border-bottom-w
       <h1>Shot labeller</h1>
       <label for="match" class="status">Match</label>
       <select id="match"></select>
+      <label class="status"><input type="checkbox" id="showOurs"> Show our detections</label>
       <span class="status" id="saved">No labels yet</span>
     </header>
     <div class="stage">
@@ -110,9 +111,9 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--rule); border-bottom-w
         <kbd>← →</kbd><span>One frame</span>
         <kbd>⇧ ← →</kbd><span>One second</span>
         <kbd>, .</kbd><span>Slower / faster</span>
-        <kbd>N P</kbd><span>Next / previous rally window</span>
+        <kbd>N P</kbd><span>Next / previous rally we found (with detections shown)</span>
       </div>
-      <p class="empty" style="margin:8px 0 0">The first hit after a point ends counts as the serve. Only stretches you've watched (green) are scored.</p>
+      <p class="empty" style="margin:8px 0 0">The first hit after a point ends counts as the serve. Only stretches you've watched (green) are scored. Our detections stay hidden unless you tick the box, so the tags are yours.</p>
     </div>
     <div class="panel events" id="events"><h2>Marks</h2><p class="empty">Play the match and press a key at each contact.</p></div>
   </aside>
@@ -248,8 +249,9 @@ function draw() {
     g.clearRect(0, 0, w, h);
     g.fillStyle = C.reviewed;
     for (const [a, b] of state.reviewed) g.fillRect(x(a), 0, x(b) - x(a), h);
-    for (const r of state.analysis?.twelvelabs ?? []) { g.fillStyle = C.tl; g.fillRect(x(r.startS), 4, x(r.endS) - x(r.startS), 5); }
-    for (const r of state.analysis?.rallies ?? []) {
+    const show = $("showOurs").checked;  // off by default: tag what you see, not what we found
+    for (const r of show ? state.analysis?.twelvelabs ?? [] : []) { g.fillStyle = C.tl; g.fillRect(x(r.startS), 4, x(r.endS) - x(r.startS), 5); }
+    for (const r of show ? state.analysis?.rallies ?? [] : []) {
       g.fillStyle = C.ours; g.fillRect(x(r.startS), 12, x(r.endS) - x(r.startS), 5);
       for (const hit of r.hits) { g.fillStyle = C[hit.end]; g.fillRect(x(hit.t) - 1, 19, 2, 8); }
     }
@@ -272,7 +274,7 @@ function draw() {
     g.clearRect(0, 0, w, h);
     g.fillStyle = C.reviewed;
     for (const [a, b] of state.reviewed) g.fillRect(x(a), 0, Math.max(1, x(b) - x(a)), h);
-    for (const r of state.analysis?.rallies ?? []) { g.fillStyle = C.ours; g.fillRect(x(r.startS), h - 4, Math.max(1, x(r.endS) - x(r.startS)), 3); }
+    for (const r of $("showOurs").checked ? state.analysis?.rallies ?? [] : []) { g.fillStyle = C.ours; g.fillRect(x(r.startS), h - 4, Math.max(1, x(r.endS) - x(r.startS)), 3); }
     for (const e of state.events) { g.fillStyle = colorOf(e, C); g.fillRect(x(e.t), 3, 1, h - 9); }
     g.fillStyle = C.ink; g.fillRect(x(t) - 1, 0, 2, h);
   }
@@ -303,6 +305,9 @@ video.addEventListener("seeked", draw);
 function stepTo(t) { video.pause(); video.currentTime = Math.max(0, Math.min(video.duration || t, t)); }
 
 function jumpRally(dir) {
+  // Only with our detections shown: jumping between the rallies we found would
+  // skip the ones we missed, and the score would flatter us.
+  if (!$("showOurs").checked) { flash("Tick “Show our detections” to jump", COLORS().muted); return; }
   const t = video.currentTime, rs = state.analysis?.rallies ?? [];
   const r = dir > 0 ? rs.find((r) => r.startS > t + 0.5) : [...rs].reverse().find((r) => r.startS < t - 0.5);
   if (r) stepTo(Math.max(0, r.startS - 1.5));
@@ -338,6 +343,7 @@ document.addEventListener("keydown", (ev) => {
 });
 
 $("match").addEventListener("change", () => openMatch($("match").value));
+$("showOurs").addEventListener("change", () => { $("showOurs").blur(); draw(); });
 addEventListener("resize", draw);
 loadMatches();
 </script>

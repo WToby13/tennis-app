@@ -157,7 +157,8 @@ const totalH = M.reduce((a, m) => a + m.durationS, 0) / 3600;
 const totalShots = M.reduce((a, m) => a + m.shots.length, 0);
 const totalRallies = M.reduce((a, m) => a + m.rallies.length, 0);
 document.getElementById("lede").textContent =
-  `${M.length} of your recordings, ${totalH.toFixed(1)} hours of tennis, run through the court, ball and player models on a laptop: ${totalRallies} rallies and ${totalShots} shots, each with its speed and where it bounced.`;
+  `${M.length} of your recordings, ${totalH.toFixed(1)} hours of tennis, run through the court, ball and player models on a laptop: ${totalRallies} points and ${totalShots} shots, each with its speed and where it bounced. ` +
+  `A prototype: the shot fit still misses most shots on cameras this far back, so the counts here are what it caught, not the whole match. Who served, the games and which player is which are measured on every point it found.`;
 
 // Cost, weighted by match length.
 const w = M.map(m => m.durationS);
