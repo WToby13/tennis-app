@@ -101,6 +101,20 @@ along-court velocity fail on most rallies. Next: hits from player proximity and
 image motion first, physics second; and a hand-labelled set of a few matches to
 tune against (neither TwelveLabs' counts nor guesses are ground truth).
 
+Scored against hand tags on "Afternoon session" (15 min, 32 points, 165 hits,
+2026-10-11), `python -m ojo_replay.evaluate 08f3fb94`:
+
+| | Ours | TwelveLabs |
+|---|---|---|
+| Points found | 31 / 32 | |
+| Hits found (recall) | 44% (73 / 165) | |
+| Our hits that are real (precision) | 79% (73 / 92) | |
+| Serving end | 24 / 32 (first fitted shot 7 / 7, ball 14 / 19, stance 3 / 6) | 18 / 28 |
+
+The tags also showed the session isn't match play (one player served 27 points
+running), so the game structure is now imposed only when the measurements bear
+it out.
+
 Learned on the way:
 - Every recording so far is the iPhone ultra-wide (f = 0.38-0.39 of the frame
   width, ~105 deg), on a fence or tripod 2.8-2.9 m up, 17-19 m behind centre court.

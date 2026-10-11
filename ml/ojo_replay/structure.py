@@ -37,7 +37,6 @@ import cv2
 import numpy as np
 
 from .camera import HALF_LENGTH
-from .report import on_this_court
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".cache"
@@ -149,13 +148,57 @@ def _side(x: float, near: bool) -> str:
     return "deuce" if (x > 0) == near else "ad"
 
 
-def serve(rally: dict, players: list[dict], fps: float) -> dict:
-    """Which end served and from which side, with what evidence."""
+def _ball_at_player(ball: np.ndarray | None, players: list[dict], lo: int, hi: int) -> str | None:
+    """Which end's player the ball is first seen beside in frames lo..hi: the
+    server bounces it and tosses it before serving, so the ball's first stretch
+    is next to them."""
+    if ball is None or not players:
+        return None
+    frames = np.array([p["frame"] for p in players])
+    votes = []
+    for f in range(max(0, lo), min(len(ball), hi)):
+        if not np.isfinite(ball[f, 0]):
+            continue
+        near = [p for p in players if abs(p["frame"] - f) <= 6]
+        best = None
+        for p in near:
+            x1, y1, x2, y2 = p["box"]
+            h = max(y2 - y1, 1.0)
+            d = np.hypot(ball[f, 0] - (x1 + x2) / 2, ball[f, 1] - (y1 + y2) / 2) / h
+            if d < 1.0 and (best is None or d < best[0]):
+                best = (d, p["side"])
+        if best:
+            votes.append(best[1])
+        if len(votes) >= 12:
+            break
+    if len(votes) < 4:
+        return None
+    near_votes = sum(v == "near" for v in votes)
+    if near_votes >= 0.75 * len(votes):
+        return "near"
+    if near_votes <= 0.25 * len(votes):
+        return "far"
+    return None
+
+
+def serve(rally: dict, players: list[dict], fps: float, ball: np.ndarray | None = None) -> dict:
+    """Which end served and from which side, with what evidence.
+
+    Checked against a hand-tagged match: the first fitted shot named the
+    serving end right 13 times out of 13; where the players stand got it wrong
+    about half the time, so it's only the last resort. In between: the ball,
+    which is first seen beside the server (bouncing it, then the toss)."""
     shots = rally["shots"]
     if shots and shots[0]["t0"] - rally["startS"] < 2.5:
         s = shots[0]
         near = s["hitter"] == "near"
         return {"end": s["hitter"], "side": _side(s["p0"][0], near), "from": "first shot", "conf": 0.9}
+    start = int(rally["startS"] * fps)
+    end = _ball_at_player(ball, players, start - int(3 * fps), start + int(1.0 * fps))
+    if end is not None:
+        mine = [p for p in players if p["side"] == end and abs(p["frame"] - start) < 2 * fps]
+        side = _side(float(np.median([p["feet"][0] for p in mine])), end == "near") if mine else None
+        return {"end": end, "side": side, "from": "ball", "conf": 0.75}
     # Where the players stand in the first second: the server is behind their
     # baseline, near the middle; the receiver is usually further across.
     t_end = (rally["startS"] + 1.2) * fps
@@ -171,7 +214,7 @@ def serve(rally: dict, players: list[dict], fps: float) -> dict:
     if best:
         p = best[1]
         near = p["side"] == "near"
-        return {"end": p["side"], "side": _side(p["feet"][0], near), "from": "stance", "conf": 0.6}
+        return {"end": p["side"], "side": _side(p["feet"][0], near), "from": "stance", "conf": 0.3}
     return {"end": None, "side": None, "from": None, "conf": 0.0}
 
 
@@ -284,18 +327,37 @@ def main(prefix: str) -> None:
     a = json.loads((out / "analysis.json").read_text())
     fps = a["fps"]
     video = CACHE / "videos" / f"{mid}.mov"
-    rallies = [r for r in a["rallies"] if on_this_court(r)]
+    # Points: the analysis's point windows (stretches of play grouped, see
+    # rallies.find), each with the shots and players of the stretches inside.
+    # Every window counts, not only those with a shot landing on this court:
+    # against a hand-tagged match that check dropped 24 real windows to remove 7
+    # noise ones. Older runs without point windows use the stretches as points.
+    from . import rallies as RL
+    from .camera import Camera
+
+    cam = Camera.from_calibration(json.loads((out / "calibration.json").read_text()))
+    z = np.load(out / "ball.npz")
+    ball = RL.tracked(z["cands"], cam, fps)
     files = sorted(glob.glob(str(out / "rallies" / "*c4.players.json")))
-    starts = {int(Path(f).name.split("-")[0]): f for f in files}
+    windows = [(int(Path(f).name.split("-")[0]), int(Path(f).name.split("-")[1]), f) for f in files]
+    stretches = a["rallies"]
+    spans = a.get("points") or [{"startS": r["startS"], "endS": r["endS"]} for r in stretches]
 
     entries, kits = [], []
-    for r in rallies:
-        first = int(r["startS"] * fps)
-        key = min(starts, key=lambda s: abs(s - first)) if starts else None
-        players = json.loads(Path(starts[key]).read_text())["players"] if key is not None and abs(key - first) < 5 else []
-        sv = serve(r, players, fps)
+    for k, span in enumerate(spans):
+        s0, s1 = span["startS"], span["endS"]
+        inside = [r for r in stretches if min(r["endS"], s1) - max(r["startS"], s0) > 0.2]
+        shots = sorted((sh for r in inside for sh in r["shots"]), key=lambda sh: sh["t0"])
+        lo, hi = int(s0 * fps), int(s1 * fps)
+        players = sorted(
+            {(p["frame"], p["side"]): p for a0, b0, f in windows if b0 >= lo and a0 <= hi
+             for p in json.loads(Path(f).read_text())["players"] if lo <= p["frame"] <= hi}.values(),
+            key=lambda p: p["frame"],
+        )
+        point = {"startS": s0, "endS": s1, "shots": shots}
+        sv = serve(point, players, fps, ball)
         kits.append(rally_kits(video, players))
-        entries.append({**sv, "start": r["startS"], "end_s": r["endS"], "rally": r["idx"], "shots": r["shots"]})
+        entries.append({**sv, "start": s0, "end_s": s1, "rally": k, "rallies": [r["idx"] for r in inside], "shots": shots})
     # A first serve that missed (the serve alone, out or into the net) and the
     # second serve from the same end shortly after are one point.
     points, point_kits = [], []
@@ -314,9 +376,25 @@ def main(prefix: str) -> None:
         p["pNearA"] = o
     gaps = [999.0] + [points[i]["start"] - points[i - 1]["end_s"] for i in range(1, len(points))]
     fit = fit_games(points, gaps)
+    # Casual sessions don't always follow match rules (one player serving many
+    # points running, no changes of ends). Impose the game structure only where
+    # the measurements bear it out; otherwise report what was measured per point.
+    sure = [(p, q) for p, q in zip(points, fit["points"]) if p["end"] is not None and p["conf"] >= 0.75]
+    agree = sum(p["end"] == q["serverEnd"] for p, q in sure) / len(sure) if sure else 0.0
+    regular = len(sure) >= 6 and agree >= 0.8
+    if not regular:
+        for p, q in zip(points, fit["points"]):
+            near_a = p["pNearA"] is None or p["pNearA"] >= 0.5
+            q["nearPlayer"] = "A" if near_a else "B"
+            q["serverEnd"] = p["end"]
+            q["server"] = None if p["end"] is None else ("A" if (p["end"] == "near") == near_a else "B")
+            q["side"] = p["side"]
+            q["game"] = None
     result = {
         "kits": {"A": A.round(1).tolist(), "B": B.round(1).tolist()},
-        "games": fit["games"],
+        "games": fit["games"] if regular else None,
+        "regular": regular,
+        "structureAgreement": round(agree, 2),
         "points": [{**{k: v for k, v in p.items() if k != "shots"}, **q} for p, q in zip(points, fit["points"])],
     }
     (out / "structure.json").write_text(json.dumps(result))
@@ -325,14 +403,14 @@ def main(prefix: str) -> None:
     tl = a.get("twelvelabs", [])
     agree_end = agree_n = 0
     for p in result["points"]:
-        r = next((r for r in rallies if r["idx"] == p["rally"]), None)
-        m = next((t for t in tl if min(t["endS"], r["endS"]) - max(t["startS"], r["startS"]) > 1.0), None)
+        m = next((t for t in tl if min(t["endS"], p["end_s"]) - max(t["startS"], p["start"]) > 1.0), None)
         if m and m["metadata"].get("serving_side") in ("near", "far"):
             agree_n += 1
             agree_end += m["metadata"]["serving_side"] == p["serverEnd"]
     measured = sum(p["end"] is not None for p in points)
-    print(f"[{mid}] {len(points)} points ({sum(bool(p.get('fault')) for p in points)} after a first-serve fault), {fit['games']} games; serve measured on {measured} "
-          f"({sum(p['from'] == 'first shot' for p in points)} from the first shot); kit seen on "
+    print(f"[{mid}] {'match play' if regular else 'not match play'} (structure agrees with {agree:.0%} of sure serves); "
+          f"{len(points)} points ({sum(bool(p.get('fault')) for p in points)} after a first-serve fault), {fit['games'] if regular else '-'} games; serve measured on {measured} "
+          f"({sum(p['from'] == 'first shot' for p in points)} first shot, {sum(p['from'] == 'ball' for p in points)} ball, {sum(p['from'] == 'stance' for p in points)} stance); kit seen on "
           f"{sum(o is not None for o in orient)}; serving end agrees with TwelveLabs on {agree_end}/{agree_n}")
 
 

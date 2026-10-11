@@ -40,6 +40,12 @@ def main(prefix: str) -> None:
     mid = lab_path.stem
     a = json.loads((ROOT / "out" / "analysis" / mid / "analysis.json").read_text())
     watched = labels.get("reviewed", [])
+    # The labeller only logs stretches played at speed, not frame-stepping or
+    # skipping ahead through dead time, so its log undercounts. Tagging is
+    # sequential: score from the first mark to the last.
+    ts = [e["t"] for e in labels["events"]]
+    if ts:
+        watched = [[min(ts) - 3.0, max(ts) + 3.0]]
 
     def seen(t: float) -> bool:
         return any(lo <= t <= hi for lo, hi in watched)
@@ -73,8 +79,10 @@ def main(prefix: str) -> None:
             serve = next((e for e in p if e["type"] == "hit"), None)
             if not serve:
                 continue
-            ours = next((q for q in st["points"] if abs(q["start"] - serve["t"]) < 3.0), None)
-            if ours:
+            # Our point whose window holds the serve (a little slack: our window
+            # can start just after contact, once the dribble and toss are cut).
+            ours = next((q for q in st["points"] if q["start"] - 2.0 <= serve["t"] <= q.get("end_s", q["start"] + 30)), None)
+            if ours and ours["serverEnd"] is not None:
                 serve_n += 1
                 serve_ok += ours["serverEnd"] == serve["end"]
 

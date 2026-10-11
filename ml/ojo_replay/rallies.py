@@ -11,7 +11,7 @@ fail one test or another:
   bouncing the ball is moving but dead, and separates a fault from the second
   serve and one point from the next;
 - moving stretches less than `MERGE_S` apart are one rally (the ball is lost for
-  a moment at a hit or against the far fence);
+  a moment at a hit, against the far fence, or misread as a dribble);
 - the ball crosses the net, on screen, at least once (a serve does; a bounce
   before serving doesn't), and the rally lasts at least `MIN_S`.
 """
@@ -23,7 +23,8 @@ import numpy as np
 from .ball2d import BallCandidate, track_ball
 from .camera import Camera
 
-MERGE_S = 2.0
+MERGE_S = 2.0  # stretches of play, for the shot fit
+POINT_MERGE_S = 4.0  # points, for who served and the score
 MIN_S = 2.0
 PAD_S = 0.6
 
@@ -118,7 +119,9 @@ def dribbles(ball: np.ndarray, fps: float, cam: Camera) -> np.ndarray:
     return out
 
 
-def find(ball: np.ndarray, fps: float, cam: Camera) -> list[tuple[float, float]]:
+def find(ball: np.ndarray, fps: float, cam: Camera, points: bool = False) -> list[tuple[float, float]]:
+    """Stretches of play (default: tight, for fitting shots) or whole points
+    (`points`: bridges short gaps and misread dribbles, for the serve and score)."""
     n = len(ball)
     have = np.isfinite(ball[:, 0])
     # Moving: displacement over 2 frames, scaled to a 1080p frame.
@@ -135,9 +138,13 @@ def find(ball: np.ndarray, fps: float, cam: Camera) -> list[tuple[float, float]]
     runs = [[a, b] for a, b in zip(edges[::2], edges[1::2])]
     merged: list[list[int]] = []
     for a, b in runs:
-        # A dribble between two stretches ends one point (or a fault) and
-        # starts the next serve: never bridge it.
-        if merged and a - merged[-1][1] < MERGE_S * fps and not dead[merged[-1][1] : a].any():
+        # For points, dribbles may be bridged: checked against a hand-tagged
+        # match, 28 of them fired inside real points, and refusing to bridge
+        # split 17 of 32 points in pieces (bridging gaps under 4 s split 1, and
+        # merged 5 pairs). For fitting, the tight stretches fit much better
+        # (hit recall 44% against 21%), so there a dribble still ends one.
+        gap = a - merged[-1][1] if merged else None
+        if merged and (gap < POINT_MERGE_S * fps if points else (gap < MERGE_S * fps and not dead[merged[-1][1] : a].any())):
             merged[-1][1] = b
         else:
             merged.append([a, b])

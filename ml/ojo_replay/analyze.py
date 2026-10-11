@@ -303,6 +303,8 @@ def main() -> None:
         "id": meta["id"], "title": meta["title"], "durationS": n_frames / fps, "fps": fps,
         "calibration": {**{k: cal[k] for k in ("quality", "coverage", "rms")}, "source": cal.get("source", "auto")},
         "rallies": rally_out, "compare": cmp, "timing": timing,
+        # Whole points (stretches of play grouped), for the serve and the score.
+        "points": [{"startS": round(a, 2), "endS": round(b, 2)} for a, b in rallies.find(ball, fps, cam, points=True)],
         "settings": {"step": args.step, "playerStride": args.player_stride},
         "twelvelabs": [s for s in meta["segments"] if s["kind"] == "rally"],
     }

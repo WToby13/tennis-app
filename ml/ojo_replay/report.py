@@ -126,7 +126,9 @@ def summarise(a: dict) -> dict:
     who: dict[int, dict] = {}
     if struct:
         for p in struct["points"]:
-            who[p["rally"]] = p
+            # A point holds one or more stretches of play (the analysis's rallies).
+            for idx in p.get("rallies", [p["rally"]]):
+                who[idx] = p
         for s_ in shots:
             p = who.get(s_["rally"])
             if p:

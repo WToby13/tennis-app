@@ -300,7 +300,16 @@ video.addEventListener("timeupdate", () => {
 });
 video.addEventListener("pause", () => { lastPlayT = null; state.reviewed = mergeIntervals(state.reviewed); save(); });
 video.addEventListener("play", () => { lastPlayT = video.currentTime; });
-video.addEventListener("seeked", draw);
+// Stepping or nudging forward a little while paused is watching too (it's how
+// contacts get tagged); a jump further than that isn't.
+let lastSeenT = 0;
+video.addEventListener("seeked", () => {
+  const t = video.currentTime;
+  if (video.paused && t > lastSeenT && t - lastSeenT <= 2.5) state.reviewed.push([lastSeenT, t]);
+  lastSeenT = t;
+  draw();
+});
+video.addEventListener("timeupdate", () => { if (!video.paused) lastSeenT = video.currentTime; });
 
 function stepTo(t) { video.pause(); video.currentTime = Math.max(0, Math.min(video.duration || t, t)); }
 
