@@ -68,7 +68,12 @@ The same models over a whole recording, for shot stats instead of a replay:
 | Ball | `ballpass.py` | WASB over every frame, windows tiling (step 3), half precision, batch 4. OpenCV's resize, not ffmpeg's: ffmpeg's filtered downscale blurs the ball and lost ~10% of ball frames | ~40 fps |
 | Rallies | `rallies.py` | Ball tracked, moving, crossing the net; gaps under 2 s merged | seconds |
 | Players + shots | `analyze.py` | Players on rally frames only (every 3rd frame); each rally's 3D shot fit runs in a pool of CPU workers alongside | see report |
+| Hits | `hits.py` | Every cut of the ball track (and every uncut candidate) judged by a classifier trained on hand tags (`models/hits.joblib`); fitted shots kept regardless | seconds |
 | Report | `report.py` + `viewer/analysis.html` | Shot maps, serve/shot speeds, in/out, distance run, rally intensity, timings → cost | – |
+| To the app | `post_analysis.py` | Stats, tracking (ball/players/bounces in pixels) and the rally breakdown → `/api/worker/videos/:id/analysis` (`--out <dir>` for local) | – |
+| Worker | `worker.py`, `docker/` | Claims queued matches from the app, runs everything above, posts results; CUDA image for AWS Batch (`infra/analysis_worker.tf`) | – |
+| Demo | `demo_local.py` | Loads analysed matches into the app's local mode (see docs/OWN_ANALYSIS_LAUNCH.md §0) | – |
+| Ground truth | `viewer/label.html` + `label-server.mjs`, `evaluate.py` | Tag hits/faults/point ends by keyboard; score the pipeline against the tags | – |
 
 ```bash
 node web/scripts/fetch-matches.mjs ml/.cache/matches        # from web/
