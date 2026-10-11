@@ -3,7 +3,7 @@
     OJO_APP_URL=https://… ANALYSIS_WORKER_SECRET=… \\
         python -m ojo_replay.post_calibration <video-uuid> <autocal.json>
 
-Posts the result's pins to /api/videos/<id>/calibration/auto, which solves the
+Posts the result's pins to /api/worker/videos/<id>/calibration, which solves the
 camera from them exactly as for a hand save and stores it marked automatic. A
 match someone calibrated by hand is left alone (the app answers 409).
 """
@@ -29,7 +29,7 @@ def main(video_id: str, path: str) -> None:
         "moved": bool(cal.get("moved")),
     }
     req = urllib.request.Request(
-        f"{os.environ['OJO_APP_URL'].rstrip('/')}/api/videos/{video_id}/calibration/auto",
+        f"{os.environ['OJO_APP_URL'].rstrip('/')}/api/worker/videos/{video_id}/calibration",
         data=json.dumps(body).encode(),
         method="POST",
         headers={"content-type": "application/json", "authorization": f"Bearer {os.environ['ANALYSIS_WORKER_SECRET']}"},

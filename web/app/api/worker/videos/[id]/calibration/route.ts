@@ -3,6 +3,7 @@ import { solveCalibration } from "@/lib/court/solve";
 import { metadata } from "@/lib/metadata";
 import { getSupabaseServiceRole, serviceRoleConfigured } from "@/lib/supabase/service";
 import { badRequest, json, notFound } from "@/lib/util";
+import { workerAuthError } from "@/lib/worker";
 
 export const runtime = "nodejs";
 
@@ -19,12 +20,8 @@ export const runtime = "nodejs";
  * a person placed is never replaced (409): theirs is the better one.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const secret = process.env.ANALYSIS_WORKER_SECRET;
-  if (!secret) {
-    console.error("[calibration/auto] ANALYSIS_WORKER_SECRET is not set — refusing");
-    return json({ error: "Not configured." }, { status: 503 });
-  }
-  if (req.headers.get("authorization") !== `Bearer ${secret}`) return json({ error: "Unauthorized." }, { status: 401 });
+  const denied = workerAuthError(req, "worker/calibration");
+  if (denied) return denied;
   if (!serviceRoleConfigured()) return json({ error: "Not configured." }, { status: 503 });
 
   const { id } = await params;

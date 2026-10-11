@@ -8,6 +8,7 @@ import { CourtCalibration } from "../../CourtCalibration";
 import { EditDetails, type EditableParticipant } from "../../EditDetails";
 import { FollowButton } from "../../FollowButton";
 import { LikeButton } from "../../LikeButton";
+import { MatchStats } from "../../MatchStats";
 import { RallySegments } from "../../RallySegments";
 import { VideoPlayer } from "../../VideoPlayer";
 import { CloseIcon, CommentIcon, EditIcon, ShareIcon } from "../../icons";
@@ -651,6 +652,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             currentTime={currentTime}
           />
         )}
+        {ready && <MatchStats videoId={id} onSeek={seekTo} />}
       </div>
 
       <div className="watch-below">

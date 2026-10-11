@@ -40,6 +40,19 @@
         "8766"
       ],
       "port": 8766
+    },
+    {
+      "name": "tennis-web-stats",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "MATCH_STATS_DIR=../ml/out/match-stats",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev"
+      ],
+      "port": 3000
     }
   ]
 }
