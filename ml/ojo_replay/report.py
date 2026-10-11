@@ -169,7 +169,8 @@ def summarise(a: dict) -> dict:
         "detected": len(detected),
         "shots": shots, "rallies": rows, "near": player("near"), "far": player("far"),
         "people": {k: {**player(k, "player"), **_serving(struct, k), "kit": struct["kits"][k], "swatch": _swatch(struct["kits"][k])} for k in ("A", "B")} if struct else None,
-        "games": _games(struct) if struct else None,
+        # Games only when the play followed match rules (structure.py decides).
+        "games": _games(struct) if struct and struct.get("regular", True) else None,
         "timing": {k: round(v) for k, v in t.items()},
         "cost": {
             "m1SecondsPerHour": round(compute / dur_h),
