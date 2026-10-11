@@ -65,11 +65,14 @@ def read_samples(video: str, n: int = 31, start: float = 0.04, end: float = 0.96
     )
     frames = []
     for t in np.linspace(start * dur, end * dur, n):
-        raw = subprocess.run(
-            ["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{t:.2f}", "-i", video, "-frames:v", "1",
-             "-f", "image2pipe", "-vcodec", "png", "-"],
-            capture_output=True,
-        ).stdout
+        try:
+            raw = subprocess.run(
+                ["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{t:.2f}", "-i", video, "-frames:v", "1",
+                 "-f", "image2pipe", "-vcodec", "png", "-"],
+                capture_output=True, timeout=90,  # a stalled remote read shouldn't hang the run
+            ).stdout
+        except subprocess.TimeoutExpired:
+            continue
         img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR) if raw else None
         if img is not None:
             frames.append(img)
@@ -240,6 +243,16 @@ def _project(Hm: np.ndarray, pts: np.ndarray) -> np.ndarray:
         return p[:, :2] / p[:, 2:3]
 
 
+def line_weight(paint: np.ndarray) -> np.ndarray:
+    """What landing on each pixel is worth: paint near it (dilated a pixel),
+    counted less where paint is dense. A line is thin, so most of its
+    neighbourhood is bare court; fence mesh and nets are paint all over, and a
+    court laid over them would otherwise score well for nothing."""
+    near = cv2.dilate(paint, np.ones((3, 3), np.uint8)).astype(np.float32)
+    density = cv2.blur(paint.astype(np.float32), (21, 21))
+    return near * np.clip(1.0 - 2.5 * density, 0.0, 1.0)
+
+
 def score(Hm: np.ndarray, near_paint: np.ndarray, surface: np.ndarray, samples: np.ndarray) -> float:
     """Paint pixels the projected court covers, less the court pixels it misses."""
     H, W = near_paint.shape
@@ -250,17 +263,18 @@ def score(Hm: np.ndarray, near_paint: np.ndarray, surface: np.ndarray, samples: 
     if inside.sum() < 50:
         return -1e9
     px = np.unique(np.floor(uv[inside]).astype(int), axis=0)
-    hit = near_paint[px[:, 1], px[:, 0]] > 0
+    w = near_paint[px[:, 1], px[:, 0]]
+    hit = w > 0
     # Only count a miss where the court surface is visible (a line behind the
     # fence or off the playable area may just be hidden).
     on_court = surface[px[:, 1], px[:, 0]] > 0
-    return float(hit.sum() - 0.6 * (~hit & on_court).sum())
+    return float(w.sum() - 0.6 * (~hit & on_court).sum())
 
 
 # Ojo is filmed on an iPhone's ultra-wide lens: four matches calibrated by hand
 # from their net posts all came out at f = 0.38-0.39 of the image width, the
 # camera 2.8-2.9 m up and 17-19 m behind centre court.
-LENS = (0.36, 0.43)
+LENS = (0.37, 0.41)
 
 
 def _rigid(Hm: np.ndarray, W: int, H: int) -> tuple[float, float, np.ndarray | None]:
@@ -323,7 +337,7 @@ def _on_surface(Hm: np.ndarray, surface: np.ndarray) -> bool:
 
 def search(lines: list[np.ndarray], paint: np.ndarray, surface: np.ndarray) -> tuple[np.ndarray, float] | None:
     H, W = paint.shape
-    near_paint = cv2.dilate(paint, np.ones((3, 3), np.uint8))
+    near_paint = line_weight(paint)
     coarse, fine = _samples(0.3), _samples(0.05)
     # Across-court lines face the camera, so they run near-horizontal; along-court
     # lines head for the vanishing point (as shallow as ~30 deg on an ultra-wide).
@@ -372,6 +386,61 @@ def search(lines: list[np.ndarray], paint: np.ndarray, surface: np.ndarray) -> t
     return best[1], score(best[1], near_paint, surface, fine)
 
 
+def search_anchored(lines: list[np.ndarray], paint: np.ndarray, surface: np.ndarray) -> tuple[np.ndarray, float] | None:
+    """Court hypotheses anchored on the near baseline.
+
+    Measured on five calibrated matches: the near baseline is always the
+    strongest across-court line found, the sidelines are found but anywhere in
+    the ranking, and the service lines often not at all (thin, faint, far). So:
+    the strongest across line or two as the near baseline, any line above it as
+    one of the other three across lines, and any two of many along lines as two
+    of the five along lines. The known lens rejects most combinations before
+    they're scored (`_rigid`): a real camera can't produce them.
+    """
+    H, W = paint.shape
+    near_paint = line_weight(paint)
+    coarse, fine = _samples(0.3), _samples(0.05)
+    across = [l for l in lines if abs(l[1]) > np.cos(np.radians(15))]
+    along = [l for l in lines if abs(l[1]) <= np.cos(np.radians(15))][:18]
+
+    def y_at(l, x=W / 2):
+        return -(l[0] * x + l[2]) / l[1]
+
+    def x_at(l, y):
+        return -(l[1] * y + l[2]) / l[0]
+
+    cands: list[tuple[float, np.ndarray]] = []
+    for base in across[:2]:
+        yb = y_at(base)
+        others = [l for l in across if y_at(l) < yb - 8][:30]
+        for lc, ld in itertools.combinations(along, 2):
+            if x_at(lc, yb) > x_at(ld, yb):
+                lc, ld = ld, lc
+            p_bc, p_bd = _meet(base, lc), _meet(base, ld)
+            if p_bc is None or p_bd is None:
+                continue
+            for top in others:
+                p_tc, p_td = _meet(top, lc), _meet(top, ld)
+                if p_tc is None or p_td is None:
+                    continue
+                img = np.array([p_tc, p_td, p_bc, p_bd], np.float32)
+                for y_top in ACROSS[:3]:  # far base, far service, near service
+                    for xc, xd in itertools.combinations(ALONG, 2):
+                        world = np.array([[xc, y_top], [xd, y_top], [xc, -HALF_LENGTH], [xd, -HALF_LENGTH]], np.float32)
+                        Hm = cv2.getPerspectiveTransform(world, img)
+                        err, _, pos = _rigid(Hm, W, H)
+                        if err > 0.12 or pos is None or not (0.8 < pos[2] < 8.0):
+                            continue
+                        if not _plausible(Hm, W, H) or not _on_surface(Hm, surface):
+                            continue
+                        cands.append((_quick(Hm, near_paint, surface, coarse), Hm))
+    if not cands:
+        return None
+    cands.sort(key=lambda c: -c[0])
+    best = max(cands[:40], key=lambda c: score(c[1], near_paint, surface, fine))
+    return best[1], score(best[1], near_paint, surface, fine)
+
+
 def _quick(Hm, near_paint, surface, samples) -> float:
     H, W = near_paint.shape
     uv = _project(Hm, samples)
@@ -379,8 +448,8 @@ def _quick(Hm, near_paint, surface, samples) -> float:
     if ok.sum() < 20:
         return -1e9
     px = np.unique(uv[ok].astype(int), axis=0)
-    hit = near_paint[px[:, 1], px[:, 0]] > 0
-    return float(hit.sum() - 0.6 * (~hit & (surface[px[:, 1], px[:, 0]] > 0)).sum())
+    w = near_paint[px[:, 1], px[:, 0]]
+    return float(w.sum() - 0.6 * ((w == 0) & (surface[px[:, 1], px[:, 0]] > 0)).sum())
 
 
 def refine(Hm: np.ndarray, paint: np.ndarray, iters: int = 4) -> tuple[np.ndarray, float]:
@@ -521,24 +590,186 @@ def camera_from_homography(Hm: np.ndarray, W: int, H: int, paint: np.ndarray | N
     }
 
 
+def polish(cam: dict, paint: np.ndarray, W: int, H: int) -> tuple[dict, np.ndarray, float]:
+    """Nudge the whole camera (pose and focal length, within the lens's range)
+    so the projected court lines sit on line paint. Each line sample counts for
+    the screen length it covers, so the near court, large and clearly painted,
+    leads; distances are capped so clutter can't pull. Starts from the
+    homography's camera, which is already close; returns (camera, homography,
+    mean distance px)."""
+    from scipy.optimize import minimize
+
+    good = (line_weight(paint) > 0.3).astype(np.uint8)
+    dt = cv2.distanceTransform(1 - good, cv2.DIST_L2, 3)
+    cap = 12.0
+    world, seg = [], []
+    for k, ((x1, y1), (x2, y2)) in enumerate(model_segments()):
+        n = max(2, int(np.hypot(x2 - x1, y2 - y1) / 0.04))
+        t = np.linspace(0, 1, n)
+        world.append(np.column_stack([x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, np.zeros(n)]))
+        seg.append(np.full(n, k))
+    world, seg = np.vstack(world), np.concatenate(seg)
+    R0 = np.array(cam["rotation"]).reshape(3, 3)
+    r0, _ = cv2.Rodrigues(R0)
+    x0 = np.concatenate([r0.ravel(), cam["translation"], [cam["f"] / W]])
+
+    def unpack(x):
+        R, _ = cv2.Rodrigues(x[:3])
+        return R, x[3:6], x[6] * W
+
+    def cost(x):
+        if not (LENS[0] <= x[6] <= LENS[1]):
+            return 1e3
+        R, t, f = unpack(x)
+        pc = world @ R.T + t
+        if (pc[:, 2] <= 0.5).any():
+            return 1e3
+        uv = pc[:, :2] / pc[:, 2:3] * f + [W / 2, H / 2]
+        step = np.linalg.norm(np.diff(uv, axis=0), axis=1)
+        w = np.append(np.where(np.diff(seg) == 0, step, 0), 0)
+        ins = (uv[:, 0] >= 0) & (uv[:, 0] < W - 1) & (uv[:, 1] >= 0) & (uv[:, 1] < H - 1)
+        if w[ins].sum() < W / 4:
+            return 1e3
+        px = uv[ins].astype(int)
+        d = np.minimum(dt[px[:, 1], px[:, 0]], cap)
+        return float((d * w[ins]).sum() / w[ins].sum())
+
+    scale = np.array([0.01, 0.01, 0.01, 0.2, 0.2, 0.2, 0.005])
+    r = minimize(lambda z: cost(x0 + z * scale), np.zeros(7), method="Powell",
+                 options={"xtol": 1e-3, "ftol": 1e-4, "maxfev": 4000})
+    x = x0 + r.x * scale
+    if cost(x) > cost(x0):
+        x = x0
+    R, t, f = unpack(x)
+    pos = -R.T @ t
+    K = np.array([[f, 0, W / 2], [0, f, H / 2], [0, 0, 1.0]])
+    Hm = K @ np.column_stack([R[:, 0], R[:, 1], t])
+    Hm /= Hm[2, 2]
+    out = {**cam, "f": float(f), "hfovDeg": float(np.degrees(2 * np.arctan(W / (2 * f)))),
+           "position": pos.tolist(), "rotation": R.ravel().tolist(), "translation": t.tolist()}
+    return out, Hm, cost(x)
+
+
 # ------------------------------------------------------------------------ main
 
 
-def calibrate(video: str, debug: str | None = None) -> dict:
-    frames = read_samples(video)
-    if not frames:
-        raise RuntimeError("could not read frames")
-    plate = clean_plate(frames)
+# The web panel's landmarks (web/lib/court/model.ts), so an automatic result
+# opens there as pins to check and drag.
+POST_X, POST_TOP = 6.4, 1.07
+PANEL_LANDMARKS = {
+    "far_left_doubles": (-DOUBLES, HALF_LENGTH, 0), "far_right_doubles": (DOUBLES, HALF_LENGTH, 0),
+    "near_right_doubles": (DOUBLES, -HALF_LENGTH, 0), "near_left_doubles": (-DOUBLES, -HALF_LENGTH, 0),
+    "far_left_singles": (-SINGLES, HALF_LENGTH, 0), "far_right_singles": (SINGLES, HALF_LENGTH, 0),
+    "near_right_singles": (SINGLES, -HALF_LENGTH, 0), "near_left_singles": (-SINGLES, -HALF_LENGTH, 0),
+    "far_t": (0, SERVICE, 0), "near_t": (0, -SERVICE, 0),
+    "far_left_service": (-SINGLES, SERVICE, 0), "far_right_service": (SINGLES, SERVICE, 0),
+    "near_left_service": (-SINGLES, -SERVICE, 0), "near_right_service": (SINGLES, -SERVICE, 0),
+    "left_post_top": (-POST_X, 0, POST_TOP), "right_post_top": (POST_X, 0, POST_TOP),
+    "left_post_base": (-POST_X, 0, 0), "right_post_base": (POST_X, 0, 0),
+}
+
+
+def panel_pins(cam: dict, W: int, H: int) -> list[dict]:
+    """The panel's landmarks where this camera puts them, those inside the frame."""
+    R = np.array(cam["rotation"]).reshape(3, 3)
+    t = np.array(cam["translation"])
+    out = []
+    for lid, p in PANEL_LANDMARKS.items():
+        c = R @ np.array(p, float) + t
+        if c[2] <= 0.5:
+            continue
+        u, v = c[0] / c[2] * cam["f"] + W / 2, c[1] / c[2] * cam["f"] + H / 2
+        if 4 <= u < W - 4 and 4 <= v < H - 4:
+            out.append({"id": lid, "x": round(float(u), 1), "y": round(float(v), 1)})
+    return out
+
+
+def confident(r: dict) -> bool:
+    """Whether to trust an automatic result without a person checking it. The
+    mean distance from the fitted lines to line paint (`linePx`) separated right
+    from wrong on 25 recordings: right ones sit under ~4 px. And the camera must
+    be somewhere a phone can be: behind the near baseline, 1.2-6 m up."""
+    x, y, z = r["camera"]["position"]
+    return r["linePx"] <= 4.0 and 1.2 <= z <= 6.0 and y < -HALF_LENGTH and abs(x) < 8
+
+
+def read_window(video: str, start: float, span: float = 40.0, n: int = 9) -> list[np.ndarray]:
+    """n frames over a short stretch: a clean plate even if the phone moves later."""
+    frames = []
+    for t in np.linspace(start, start + span, n):
+        try:
+            raw = subprocess.run(
+                ["ffmpeg", "-nostdin", "-v", "error", "-ss", f"{t:.2f}", "-i", video, "-frames:v", "1",
+                 "-f", "image2pipe", "-vcodec", "png", "-"],
+                capture_output=True, timeout=90,  # a stalled remote read shouldn't hang the run
+            ).stdout
+        except subprocess.TimeoutExpired:
+            continue
+        img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR) if raw else None
+        if img is not None:
+            frames.append(img)
+    return frames
+
+
+def _agree(a: dict, b: dict, tol: float = 15.0) -> bool:
+    """Two stretches see the same camera. Fits of a still camera differ by 1-10 px
+    (measured on 5 matches); a phone that was moved differs by 50+."""
+    g = np.array([[x, y] for x in (-5.485, 0, 5.485) for y in (-11.885, -6.4, 0, 6.4, 11.885)])
+    pa = _project(np.array(a["homography"]).reshape(3, 3), g)
+    pb = _project(np.array(b["homography"]).reshape(3, 3), g)
+    return float(np.median(np.linalg.norm(pa - pb, axis=1))) < tol
+
+
+def calibrate(video: str, debug: str | None = None, windows: int = 6) -> dict:
+    """The court from a video. Calibrates a few short stretches spread through
+    it (a phone on a fence gets bumped; a whole-match median of a moving camera
+    is a blur), keeps the best, and says whether the stretches agree.
+
+    The result carries `landmarks` as the web panel's pins, `status` "auto"
+    (trust it) or "review" (show it in the panel to check), and `moved` when
+    confident stretches disagree, i.e. the camera moved during the recording.
+    """
+    dur = float(subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", video],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip())
+    span = min(40.0, dur / (windows + 1))
+    results = []
+    for k, start in enumerate(np.linspace(0.03 * dur, 0.97 * dur - span, windows)):
+        frames = read_window(video, float(start), span)
+        if len(frames) < 3:
+            continue
+        try:
+            r = calibrate_plate(clean_plate(frames), debug.replace(".jpg", f"_{k}.jpg") if debug else None)
+        except RuntimeError:
+            continue
+        r["frameS"] = round(float(start + span / 2), 2)
+        r["confident"] = confident(r)
+        results.append(r)
+    if not results:
+        raise RuntimeError("no court found in any stretch of the video")
+    best = min(results, key=lambda r: (not r["confident"], r["linePx"]))
+    sure = [r for r in results if r["confident"]]
+    moved = any(not _agree(a, b) for a, b in itertools.combinations(sure, 2))
+    W, H = best["imageWidth"], best["imageHeight"]
+    best = {**best, "status": "auto" if best["confident"] and not moved else "review", "moved": moved,
+            "landmarks": panel_pins(best["camera"], W, H),
+            "windows": [{"frameS": r["frameS"], "linePx": round(r["linePx"], 2), "confident": r["confident"],
+                         "homography": r["homography"]} for r in results]}
+    return best
+
+
+def calibrate_plate(plate: np.ndarray, debug: str | None = None) -> dict:
     paint, surface = paint_mask(plate)
     lines = find_lines(paint)
     H, W = paint.shape
-    found = search(lines, paint, surface)
+    found = search_anchored(find_lines(paint, 40), paint, surface) or search(lines, paint, surface)
     if found is None:
         raise RuntimeError(f"no court found ({len(lines)} lines)")
     Hm, s = found
     # Refining re-fits every line to nearby paint; keep it only if the whole
     # court then sits better on the paint (it can latch onto a fence rail).
-    near_paint = cv2.dilate(paint, np.ones((3, 3), np.uint8))
+    near_paint = line_weight(paint)
     Hr, rms = refine(Hm, paint)
     fine = _samples(0.05)
     if score(Hr, near_paint, surface, fine) >= score(Hm, near_paint, surface, fine):
@@ -546,8 +777,9 @@ def calibrate(video: str, debug: str | None = None) -> dict:
     cam = camera_from_homography(Hm, W, H, paint)
     if cam is None:
         raise RuntimeError("homography gave no plausible camera")
+    cam, Hm, line_px = polish(cam, paint, W, H)
     # Coverage: how much of the visible, on-court model lies on paint.
-    near_paint = cv2.dilate(paint, np.ones((3, 3), np.uint8))
+    near_paint = line_weight(paint)
     uv = _project(Hm, _samples(0.05))
     ok = np.isfinite(uv).all(axis=1) & (uv[:, 0] >= 0) & (uv[:, 0] < W) & (uv[:, 1] >= 0) & (uv[:, 1] < H)
     px = np.unique(np.floor(uv[ok]).astype(int), axis=0)
@@ -556,7 +788,7 @@ def calibrate(video: str, debug: str | None = None) -> dict:
     result = {
         "model": "pinhole", "source": "auto", "camera": cam, "quality": quality, "version": 1,
         "imageWidth": W, "imageHeight": H, "homography": Hm.ravel().tolist(),
-        "rms": rms, "coverage": cover, "lines": len(lines),
+        "rms": rms, "coverage": cover, "lines": len(lines), "linePx": line_px,
     }
     if debug:
         vis = plate.copy()
@@ -576,8 +808,9 @@ def main(video: str, out: str, debug: str | None = None) -> None:
     cal = calibrate(video, debug)
     Path(out).write_text(json.dumps(cal))
     c = cal["camera"]
-    print(f"{cal['quality']}: cover {cal['coverage']:.2f}, rms {cal['rms']:.2f}px, f {c['f']:.0f} "
-          f"(hfov {c['hfovDeg']:.0f}), camera at {np.round(c['position'], 2).tolist()}, {cal['lines']} lines")
+    print(f"{cal['status']}{' (camera moved)' if cal['moved'] else ''}: lines {cal['linePx']:.1f}px off paint, "
+          f"f {c['f']:.0f} (hfov {c['hfovDeg']:.0f}), camera at {np.round(c['position'], 2).tolist()}, "
+          f"{len(cal['landmarks'])} pins; stretches " + " ".join(f"{w['linePx']:.1f}{'*' if w['confident'] else ''}" for w in cal["windows"]))
 
 
 if __name__ == "__main__":

@@ -64,7 +64,7 @@ The same models over a whole recording, for shot stats instead of a replay:
 | Step | Module | What | M1 speed |
 |---|---|---|---|
 | Recordings | `web/scripts/fetch-matches.mjs` | Your own analysed matches from Supabase: signed URL + TwelveLabs rallies to compare against | – |
-| Court | `autocal.py` / `handcal.py` | Automatic: line paint on a clean plate (median of frames), court-model search, focal length from the net tape. Works on some courts (Short test, Morning session) but not yet reliably. `handcal.py` solves from a few hand-picked landmarks incl. the net posts, like the web panel | 30 s |
+| Court | `autocal.py` / `handcal.py` | Automatic: line paint on clean plates from 6 short stretches of the video, candidates anchored on the near baseline, the iPhone ultra-wide lens as a prior (f = 0.37-0.41 W), weighted against fence mesh, then the whole camera polished onto the paint. Right on 15 of 24 recordings (within ~1-9 px of hand calibrations); `status` says whether to trust it, `moved` when the phone moved. Results become the web panel's pins (`post_calibration.py` → `/api/videos/:id/calibration/auto`). `handcal.py` solves from hand-picked landmarks, net posts included | ~3 min |
 | Ball | `ballpass.py` | WASB over every frame, windows tiling (step 3), half precision, batch 4. OpenCV's resize, not ffmpeg's: ffmpeg's filtered downscale blurs the ball and lost ~10% of ball frames | ~40 fps |
 | Rallies | `rallies.py` | Ball tracked, moving, crossing the net; gaps under 2 s merged | seconds |
 | Players + shots | `analyze.py` | Players on rally frames only (every 3rd frame); each rally's 3D shot fit runs in a pool of CPU workers alongside | see report |

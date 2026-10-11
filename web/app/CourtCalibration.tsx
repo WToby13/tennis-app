@@ -305,8 +305,14 @@ export function CourtCalibration({ videoId, src, startS, initial, onClose, onSav
           <div>
             <h2 style={{ fontSize: 18, margin: 0 }}>Calibrate the court</h2>
             <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
-              Place at least four court points. The whole court is then redrawn over the frame,
-              and if every line sits on the paint, the camera is right.
+              {initial?.source === "auto"
+                ? initial.autoStatus === "auto"
+                  ? "These pins were placed automatically and the court lines fit the paint. Check every line sits on the paint; drag any pin that's off, then save."
+                  : "These pins were placed automatically, but the fit is uncertain. Check each one carefully and drag any that's off the landmark, then save."
+                : "Place at least four court points. The whole court is then redrawn over the frame, and if every line sits on the paint, the camera is right."}
+              {initial?.source === "auto" && initial.moved
+                ? " The camera moved during this recording, so these pins only hold for part of it."
+                : ""}
             </p>
           </div>
           <button className="modal-close" aria-label="Close" onClick={onClose}>

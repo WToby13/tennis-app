@@ -64,6 +64,16 @@ export interface CourtCalibration {
   suspect: { id: string; errorPx: number; expected: [number, number] } | null;
   warnings: string[];
   solvedAt: string;
+  /**
+   * Who placed the pins: a person in the panel, or the analysis pipeline's
+   * automatic court detection. An automatic result is "auto" when its lines sit
+   * on the paint well enough to trust, "review" when someone should check it.
+   * `moved`: the camera moved during the recording, so one calibration can't
+   * cover all of it.
+   */
+  source?: "manual" | "auto";
+  autoStatus?: "auto" | "review";
+  moved?: boolean;
 }
 
 export interface SolveInput {
