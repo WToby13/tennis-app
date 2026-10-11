@@ -9,11 +9,13 @@ import { EditDetails, type EditableParticipant } from "../../EditDetails";
 import { FollowButton } from "../../FollowButton";
 import { LikeButton } from "../../LikeButton";
 import { MatchStats } from "../../MatchStats";
+import { TrackOverlay } from "../../TrackOverlay";
 import { RallySegments } from "../../RallySegments";
 import { VideoPlayer } from "../../VideoPlayer";
 import { CloseIcon, CommentIcon, EditIcon, ShareIcon } from "../../icons";
 import { track } from "@/lib/analytics/client";
 import type { CourtCalibration as Calibration } from "@/lib/court/solve";
+import type { MatchTracks } from "@/lib/matchStats";
 import { formatDate, formatDuration, formatSize } from "@/lib/matchFormat";
 
 interface Author {
@@ -100,6 +102,10 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [canCalibrate, setCanCalibrate] = useState(false);
   const [calibrating, setCalibrating] = useState(false);
   const [calibrateFromS, setCalibrateFromS] = useState(0);
+  // Our tracking over the video: loaded the first time it's switched on.
+  const [showTracks, setShowTracks] = useState(false);
+  const [tracks, setTracks] = useState<MatchTracks | null>(null);
+  const [hasAnalysis, setHasAnalysis] = useState(false);
 
   const shareToken = () =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
@@ -565,6 +571,24 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             <ShareIcon size={17} />
             {copied ? "Copied" : "Share"}
           </button>
+          {hasAnalysis && ready && (
+            <button
+              className={`btn secondary ${showTracks ? "on" : ""}`}
+              aria-pressed={showTracks}
+              onClick={async () => {
+                if (!tracks) {
+                  const res = await fetch(`/api/videos/${id}/match-tracks`).catch(() => null);
+                  const data = res?.ok ? await res.json() : null;
+                  if (!data?.tracks) return;
+                  setTracks(data.tracks);
+                }
+                setShowTracks((v) => !v);
+              }}
+              title="Draw the ball, the players and each bounce over the video"
+            >
+              {showTracks ? "Hide tracking" : "Show tracking"}
+            </button>
+          )}
           {canCalibrate && ready && (
             <button
               className={`btn secondary calib-open ${courtCalibration ? "on" : ""}`}
@@ -614,6 +638,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 setCurrentTime(el.currentTime);
                 setMetadataReady(true);
               }}
+              overlay={showTracks && tracks ? <TrackOverlay tracks={tracks} videoRef={videoRef} /> : null}
             />
           ) : (
             <div className="placeholder">
@@ -652,7 +677,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             currentTime={currentTime}
           />
         )}
-        {ready && <MatchStats videoId={id} onSeek={seekTo} />}
+        {ready && <MatchStats videoId={id} onSeek={seekTo} onLoaded={setHasAnalysis} />}
       </div>
 
       <div className="watch-below">

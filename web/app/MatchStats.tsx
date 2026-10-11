@@ -28,7 +28,16 @@ type Filter = "all" | "serves" | Who | "near" | "far";
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const num = (v: number | null | undefined, unit = "") => (v == null ? "–" : `${Math.round(v)}${unit}`);
 
-export function MatchStats({ videoId, onSeek }: { videoId: string; onSeek: (s: number) => void }) {
+export function MatchStats({
+  videoId,
+  onSeek,
+  onLoaded,
+}: {
+  videoId: string;
+  onSeek: (s: number) => void;
+  /** Whether this match has an analysis, once known (the page shows tracking then). */
+  onLoaded?: (has: boolean) => void;
+}) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -36,12 +45,16 @@ export function MatchStats({ videoId, onSeek }: { videoId: string; onSeek: (s: n
     let live = true;
     fetch(`/api/videos/${videoId}/match-stats`)
       .then((r) => (r.ok ? r.json() : { stats: null }))
-      .then((d) => live && setStats(d.stats ?? null))
+      .then((d) => {
+        if (!live) return;
+        setStats(d.stats ?? null);
+        onLoaded?.(Boolean(d.stats));
+      })
       .catch(() => live && setStats(null));
     return () => {
       live = false;
     };
-  }, [videoId]);
+  }, [videoId, onLoaded]);
 
   const byPerson = Boolean(stats?.people);
   const colour = (s: Shot) =>
@@ -80,7 +93,7 @@ export function MatchStats({ videoId, onSeek }: { videoId: string; onSeek: (s: n
           Shot analysis <span className="mstats-beta">Beta</span>
         </h3>
         <span className="seg-count">
-          {stats.rallies.length} points · {stats.hits ?? stats.shots.length} shots
+          {stats.points ?? stats.rallies.length} points · {stats.hits ?? stats.shots.length} shots
         </span>
       </div>
       <p className="seg-hint muted">

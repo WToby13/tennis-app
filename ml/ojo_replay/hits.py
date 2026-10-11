@@ -78,6 +78,37 @@ def features(f: int, ball: np.ndarray, players: dict[int, dict[str, dict]], phys
     return np.array(out, dtype=float)
 
 
+def uncut_candidates(ball: np.ndarray, offset: int, first: int, last: int, fps: float,
+                     cut_times: list[float]) -> list[float]:
+    """Times where the track turns sharply or drops out (ball3d's cut
+    candidates) that the physics split didn't cut. On two tagged matches, 28 of
+    45 contacts with no cut nearby had one: one smooth flight explained the
+    track well enough. They go to the classifier too, labelled "none"."""
+    from . import ball3d as B
+
+    lo, hi = max(first - offset, 0), min(last - offset, len(ball) - 1)
+    fr = np.array([f for f in range(lo, hi + 1) if np.isfinite(ball[f, 0])])
+    if len(fr) < 10:
+        return []
+    uv = ball[fr]
+    fr, uv = B._trim_dead_ball(fr, uv)
+    fr, uv = B._trim_dribble(fr, uv)
+    if len(fr) < 10:
+        return []
+    out = []
+    for i in B._candidates(fr, uv):
+        t = (fr[i] + offset) / fps
+        if all(abs(t - c) > 0.2 for c in cut_times) and all(abs(t - o) > 0.2 for o in out):
+            out.append(t)
+    return out
+
+
+def _with_uncut(cuts: list, extra: list[float]) -> list:
+    """The split's cuts plus uncut candidates, in time order."""
+    rows = [(t, a, b) for t, a, b in cuts] + [(t, "none", "none") for t in extra]
+    return sorted(rows, key=lambda c: c[0])
+
+
 # ------------------------------------------------------------------ model
 
 MODEL = __import__("pathlib").Path(__file__).resolve().parents[1] / "models" / "hits.joblib"
@@ -95,12 +126,15 @@ def load():
 
 def decide(model, cuts: list[tuple[float, str, str]], ball: np.ndarray, offset: int,
            players: dict[int, dict[str, dict]], fps: float, width: int,
-           fitted: list[tuple[float, str]]) -> list[dict]:
-    """Hits in one rally: the fitted shots, plus cuts the classifier is sure
-    of that no fitted shot already covers."""
+           fitted: list[tuple[float, str]], window: tuple[int, int] | None = None) -> list[dict]:
+    """Hits in one rally: the fitted shots, plus cuts (and, given the rally's
+    frame `window`, uncut candidates) the classifier is sure of that no fitted
+    shot already covers."""
     hits = [{"t": round(t, 3), "end": e, "fitted": True} for t, e in fitted]
     if model is None:
         return hits
+    if window is not None and model.get("uncut"):
+        cuts = _with_uncut(cuts, uncut_candidates(ball, offset, window[0], window[1], fps, [c[0] for c in cuts]))
     rows, times = [], []
     for j, (t, phys, rule) in enumerate(cuts):
         if phys in ("start", "end") or any(abs(t - h["t"]) <= 0.4 for h in hits):
@@ -119,7 +153,7 @@ def decide(model, cuts: list[tuple[float, str, str]], ball: np.ndarray, offset: 
     return sorted(hits, key=lambda h: h["t"])
 
 
-def training_rows(mid: str):
+def training_rows(mid: str, uncut: bool = True):
     """Features and tags for every cut in the tagged span of a match: from the
     analysis run's saved cuts, its ball track and players, and ml/labels/<mid>.json."""
     import glob
@@ -147,6 +181,8 @@ def training_rows(mid: str):
     X, y, far, group = [], [], [], []
     for r in a["rallies"]:
         cuts = r.get("cuts", [])
+        if uncut:
+            cuts = _with_uncut(cuts, uncut_candidates(ball, 0, int(r["startS"] * fps), int(r["endS"] * fps), fps, [c[0] for c in cuts]))
         for j, (t, phys, rule) in enumerate(cuts):
             if not (lo <= t <= hi) or phys in ("start", "end"):
                 continue
@@ -173,7 +209,8 @@ def train(mids: list[str]) -> None:
     pos = y == 1
     end = HistGradientBoostingClassifier(max_iter=150, learning_rate=0.05, max_leaf_nodes=7, min_samples_leaf=5).fit(X[pos], far[pos])
     MODEL.parent.mkdir(exist_ok=True)
-    joblib.dump({"hit": hit, "end": end, "features": FEATURES, "trainedOn": mids, "cuts": int(len(y)), "hits": int(y.sum())}, MODEL)
+    joblib.dump({"hit": hit, "end": end, "features": FEATURES, "trainedOn": mids, "cuts": int(len(y)),
+                 "hits": int(y.sum()), "uncut": True}, MODEL)
     print(f"trained on {', '.join(mids)}: {len(y)} cuts, {int(y.sum())} near tagged hits -> {MODEL}")
 
 

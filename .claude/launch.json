@@ -53,6 +53,19 @@
         "dev"
       ],
       "port": 3000
+    },
+    {
+      "name": "ojo-demo-local",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "MATCH_STATS_DIR=../ml/out/match-stats",
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "dev:local"
+      ],
+      "port": 3100
     }
   ]
 }

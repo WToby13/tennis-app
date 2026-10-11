@@ -2794,3 +2794,6 @@ video {
 .mstats-game b { font-family: var(--font-display); font-size: 15px; line-height: 1.1; }
 .mstats-game span { font-size: 11px; color: var(--muted); }
 .mstats-swap { font-size: 11px; color: var(--muted); }
+
+/* Our tracking over the video (TrackOverlay.tsx): above the picture, under the controls. */
+.track-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }

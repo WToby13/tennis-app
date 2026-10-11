@@ -66,6 +66,8 @@ export interface MatchStats {
   durationS: number;
   /** Every hit found. `shots` are the ones whose flight fitted (speed, bounce). */
   hits?: number;
+  /** Points played (rallies grouped by the structure step). */
+  points?: number;
   shots: Shot[];
   rallies: RallyStats[];
   near: PlayerStats;
@@ -86,4 +88,18 @@ export function isMatchStats(v: unknown): v is MatchStats {
     typeof m.near === "object" &&
     typeof m.far === "object"
   );
+}
+
+/**
+ * What the watch page draws over the video, in pixels of the source video
+ * (width × height): the ball by frame inside rallies, players' boxes at the
+ * frames they were detected (side n/f, who A/B or ""), and fitted bounces.
+ */
+export interface MatchTracks {
+  fps: number;
+  width: number;
+  height: number;
+  ball: { f: number[]; u: number[]; v: number[] };
+  players: { f: number[]; side: ("n" | "f")[]; who: ("A" | "B" | "")[]; box: [number, number, number, number][] };
+  bounces: { t: number; u: number; v: number; speed: number; landing: Shot["landing"]; who: "A" | "B" | "" }[];
 }

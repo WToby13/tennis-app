@@ -90,7 +90,10 @@ def compare(ours: list[dict], theirs: list[dict]) -> dict:
 
 def summarise(a: dict) -> dict:
     detected = a["rallies"]
-    rallies = [r for r in detected if on_this_court(r)]
+    # Every stretch of play counts: against hand tags, requiring a shot to land
+    # on this court dropped far more real play than noise. (Kept for the record:
+    # on_this_court.)
+    rallies = detected
     shots = []
     for r in rallies:
         for k, s in enumerate(r["shots"]):
@@ -170,7 +173,8 @@ def summarise(a: dict) -> dict:
         "compare": compare(rallies, a.get("twelvelabs", [])),
         "detected": len(detected),
         "shots": shots, "rallies": rows,
-        "hits": sum(len(r.get("hits", r["shots"])) for r in rallies), "near": player("near"), "far": player("far"),
+        "hits": sum(len(r.get("hits", r["shots"])) for r in rallies),
+        "points": len(a["structure"]["points"]) if a.get("structure") else len(rallies), "near": player("near"), "far": player("far"),
         "people": {k: {**player(k, "player"), **_serving(struct, k), "kit": struct["kits"][k], "swatch": _swatch(struct["kits"][k])} for k in ("A", "B")} if struct else None,
         # Games only when the play followed match rules (structure.py decides).
         "games": _games(struct) if struct and struct.get("regular", True) else None,

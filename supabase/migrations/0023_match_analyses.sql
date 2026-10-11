@@ -6,12 +6,15 @@
 --
 -- One row per match, replaced on every run; `pipeline_version` says which
 -- version of the models and fitting produced it, so stale rows can be found and
--- re-run. `data` is MatchStats in web/lib/matchStats.ts. Kept out of `videos`
+-- re-run. `data` is MatchStats in web/lib/matchStats.ts, `tracks` is MatchTracks. Kept out of `videos`
 -- so listing matches doesn't drag a few hundred shots along per row.
 create table if not exists public.match_analyses (
   video_id uuid primary key references public.videos(id) on delete cascade,
   pipeline_version text not null,
   data jsonb not null,
+  -- What the watch page draws over the video (ball by frame, players' boxes,
+  -- bounces in pixels): a few hundred kB, so loaded only when switched on.
+  tracks jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

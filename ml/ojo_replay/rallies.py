@@ -26,7 +26,7 @@ from .camera import Camera
 MERGE_S = 2.0  # stretches of play, for the shot fit
 POINT_MERGE_S = 4.0  # points, for who served and the score
 MIN_S = 2.0
-PAD_S = 0.6
+PAD_S = 1.2  # tagged points ran up to ~2 s past a tight window's edges
 
 
 def static(cands: np.ndarray, fps: float, width: int) -> np.ndarray:

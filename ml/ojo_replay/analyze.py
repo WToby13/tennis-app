@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".cache"
 WEIGHTS = CACHE / "weights"
 # Bump when the ball tracking or 3D fit changes, so cached shots aren't reused.
-FIT_VERSION = "f5"
+FIT_VERSION = "f6"
 
 
 def download(url: str, dest: Path) -> float:
@@ -295,7 +295,8 @@ def main() -> None:
         else:
             shots, cpu, err, cuts = fut.result()
             sfile.write_text(json.dumps([shots, cpu, err, cuts]))
-        hits = H.decide(hit_model, cuts, ball, 0, by_frames[k], fps, cam.width, [(s["t0"], s["hitter"]) for s in shots])
+        hits = H.decide(hit_model, cuts, ball, 0, by_frames[k], fps, cam.width, [(s["t0"], s["hitter"]) for s in shots],
+                        window=(first, last))
         timing["shots_cpu"] += cpu
         if err:
             log(f"rally {k}: fit failed: {err}")
