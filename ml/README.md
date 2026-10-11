@@ -57,6 +57,58 @@ Hits come from the physics split (a cut where the ball's along-court velocity
 reverses), corrected by the rules of a rally: hits alternate ends, one bounce
 between them, and a hit needs the ball at the hitter.
 
+## Whole-match analysis (replacing TwelveLabs)
+
+The same models over a whole recording, for shot stats instead of a replay:
+
+| Step | Module | What | M1 speed |
+|---|---|---|---|
+| Recordings | `web/scripts/fetch-matches.mjs` | Your own analysed matches from Supabase: signed URL + TwelveLabs rallies to compare against | – |
+| Court | `autocal.py` / `handcal.py` | Automatic: line paint on a clean plate (median of frames), court-model search, focal length from the net tape. Works on some courts (Short test, Morning session) but not yet reliably. `handcal.py` solves from a few hand-picked landmarks incl. the net posts, like the web panel | 30 s |
+| Ball | `ballpass.py` | WASB over every frame, windows tiling (step 3), half precision, batch 4. OpenCV's resize, not ffmpeg's: ffmpeg's filtered downscale blurs the ball and lost ~10% of ball frames | ~40 fps |
+| Rallies | `rallies.py` | Ball tracked, moving, crossing the net; gaps under 2 s merged | seconds |
+| Players + shots | `analyze.py` | Players on rally frames only (every 3rd frame); each rally's 3D shot fit runs in a pool of CPU workers alongside | see report |
+| Report | `report.py` + `viewer/analysis.html` | Shot maps, serve/shot speeds, in/out, distance run, rally intensity, timings → cost | – |
+
+```bash
+node web/scripts/fetch-matches.mjs ml/.cache/matches        # from web/
+.venv/bin/python -m ojo_replay.handcal <plate.png> out/analysis/<id>/calibration.json x,y[,z]=u,v ...
+PYTORCH_ENABLE_MPS_FALLBACK=1 caffeinate -i .venv/bin/python -m ojo_replay.analyze <id>
+.venv/bin/python -m ojo_replay.report
+```
+
+Run long jobs under `caffeinate` on mains power: a sleeping Mac freezes them and
+the timings come out 10x too slow.
+
+Results on "Morning session" (31 min, 2026-10-11), against TwelveLabs:
+
+| | Ours | TwelveLabs |
+|---|---|---|
+| Rally windows | 98 (66 of TwelveLabs' 74 overlapped) | 74 |
+| Rallies with a fitted shot | 49 | – |
+| Shots | 85 | 305 (its own count; it merged whole sequences of points into "rallies") |
+| Points after the on-court check | 28 | 74 |
+| Games | 8 | 10 |
+| Serving end, points both have | agrees on 21 of 26 | |
+| Player identity (kit colour) | clean: changes of ends every ~2 games | |
+
+Time on the M1, per hour of match: ball 48 min (0.8x real time), players 2.3 h,
+3D fits 2.9 CPU-hours (in parallel).
+
+Not good enough to replace TwelveLabs yet. Shot recall is the gap: this camera
+stands ~20 m back, depth is the weakest direction, and hit/bounce labels from the
+along-court velocity fail on most rallies. Next: hits from player proximity and
+image motion first, physics second; and a hand-labelled set of a few matches to
+tune against (neither TwelveLabs' counts nor guesses are ground truth).
+
+Learned on the way:
+- Every recording so far is the iPhone ultra-wide (f = 0.38-0.39 of the frame
+  width, ~105 deg), on a fence or tripod 2.8-2.9 m up, 17-19 m behind centre court.
+- The court plane alone barely fixes the focal length from behind a baseline; the
+  net (posts or tape) does.
+- The detector finds balls on the neighbouring courts too; a rally needs a 3D
+  check (its bounces on this court), not an image-space one.
+
 ## Known limits
 
 - **Depth at the far end.** A pixel covers ~30 cm of court at the far service

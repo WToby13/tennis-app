@@ -40,7 +40,11 @@ class Camera:
 
     @classmethod
     def from_match(cls, match_json: Path) -> "Camera":
-        cal = json.loads(Path(match_json).read_text())["calibration"]
+        return cls.from_calibration(json.loads(Path(match_json).read_text())["calibration"])
+
+    @classmethod
+    def from_calibration(cls, cal: dict) -> "Camera":
+        """From a saved calibration (the web panel's, or autocal's)."""
         cam = cal["camera"]
         K = np.array([[cam["f"], 0, cam["cx"]], [0, cam["f"], cam["cy"]], [0, 0, 1.0]])
         return cls(

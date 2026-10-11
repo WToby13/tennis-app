@@ -95,40 +95,46 @@ def fly_bounce(
     and `mu` of its horizontal speed. If it meets the net below the tape it
     stops there and drops. Returns the positions at each frame, the times (s)
     of the first bounce and of hitting the net, and where it first bounced
-    (None where they didn't happen)."""
+    (None where they didn't happen).
+
+    Plain floats rather than 3-element arrays: this runs tens of thousands of
+    times per rally inside the fit, and numpy's per-call overhead on tiny
+    arrays was most of its cost."""
     dt = 1.0 / (fps * SUBSTEPS)
-    p, v = np.asarray(p0, float).copy(), np.asarray(v0, float).copy()
+    px, py, pz = (float(c) for c in p0)
+    vx, vy, vz = (float(c) for c in v0)
+    k, g = DRAG, G
     out = np.empty((n_frames + 1, 3))
-    out[0] = p
+    out[0] = (px, py, pz)
     t, bounce_t, net_t, bounce_p = 0.0, None, None, None
     for i in range(1, n_frames + 1):
         for _ in range(SUBSTEPS):
-            a1 = GRAVITY - DRAG * np.linalg.norm(v) * v
-            vm = v + a1 * dt / 2
-            a2 = GRAVITY - DRAG * np.linalg.norm(vm) * vm
-            p_new = p + vm * dt
-            v = v + a2 * dt
-            if net_t is None and p[1] * p_new[1] < 0:
-                w = p[1] / (p[1] - p_new[1])
-                cross = p + (p_new - p) * w
-                if abs(cross[0]) <= POST and 0 <= cross[2] < net_height(cross[0]):
+            s1 = k * (vx * vx + vy * vy + vz * vz) ** 0.5
+            mx = vx + (-s1 * vx) * dt / 2
+            my = vy + (-s1 * vy) * dt / 2
+            mz = vz + (-g - s1 * vz) * dt / 2
+            s2 = k * (mx * mx + my * my + mz * mz) ** 0.5
+            nx, ny, nz = px + mx * dt, py + my * dt, pz + mz * dt
+            vx, vy, vz = vx - s2 * mx * dt, vy - s2 * my * dt, vz + (-g - s2 * mz) * dt
+            if net_t is None and py * ny < 0:
+                w = py / (py - ny)
+                cx, cz = px + (nx - px) * w, pz + (nz - pz) * w
+                if abs(cx) <= POST and 0 <= cz < net_height(cx):
                     # Into the net: it stops on the hitter's side and drops.
                     net_t = t + dt * w
-                    p_new = cross.copy()
-                    p_new[1] = 0.05 * np.sign(p[1])
-                    v = np.array([0.0, 0.0, min(v[2], 0.0)])
-            if p_new[2] < 0 and v[2] < 0:
-                frac = p[2] / max(p[2] - p_new[2], 1e-9)
-                p_new = p + (p_new - p) * frac
-                p_new[2] = 0.0
-                v = np.array([v[0] * mu, v[1] * mu, -v[2] * e])
+                    nx, ny, nz = cx, 0.05 * (1.0 if py > 0 else -1.0), cz
+                    vx, vy, vz = 0.0, 0.0, min(vz, 0.0)
+            if nz < 0 and vz < 0:
+                frac = pz / max(pz - nz, 1e-9)
+                nx, ny, nz = px + (nx - px) * frac, py + (ny - py) * frac, 0.0
+                vx, vy, vz = vx * mu, vy * mu, -vz * e
                 if net_t is not None:
-                    v[:] = 0.0  # a ball dropped from the net doesn't rally on
+                    vx = vy = vz = 0.0  # a ball dropped from the net doesn't rally on
                 if bounce_t is None:
-                    bounce_t, bounce_p = t + dt * frac, p_new.copy()
-            p = p_new
+                    bounce_t, bounce_p = t + dt * frac, np.array([nx, ny, nz])
+            px, py, pz = nx, ny, nz
             t += dt
-        out[i] = p
+        out[i] = (px, py, pz)
     return out, bounce_t, net_t, bounce_p
 
 
@@ -170,7 +176,12 @@ def fit_shot(
         r.append([max(abs(bounce_p[1]) - 1.5, 0.0) * 40.0 if own else 0.0])  # own side, away from the net
         return np.concatenate([np.ravel(np.asarray(v, float)) for v in r])
 
-    start = np.array([*feet, 1.1]) if feet is not None else cam.position + 12 * cam.ray(uv[:1])[0]
+    if feet is not None:
+        start = np.array([*feet, 1.1])
+    else:
+        # No hitter detected: start along the first sight-line, at racket height.
+        start = cam.position + 12 * cam.ray(uv[:1])[0]
+        start[2] = float(np.clip(start[2], 0.3, 3.0))
     lo = [-np.inf, -np.inf, 0.0, -70, -70, -40, 0.55, 0.45]
     hi = [np.inf, np.inf, 4.0, 70, 70, 40, 0.9, 0.95]
     best = None
@@ -188,6 +199,25 @@ PIECE_LO = np.array([-12.0, -22.0, 0.0, -70.0, -70.0, -40.0])
 PIECE_HI = np.array([12.0, 22.0, 4.5, 70.0, 70.0, 40.0])
 
 
+def _linear_flight(cam: Camera, t: np.ndarray, uv: np.ndarray) -> np.ndarray | None:
+    """Least-squares (p0, v0) of a drag-free flight, from the linearised
+    projection equations. None if the system is degenerate."""
+    f, cx, cy = cam.K[0, 0], cam.K[0, 2], cam.K[1, 2]
+    R, tc = cam.R, cam.t
+    rows, rhs = [], []
+    for ti, (u, v) in zip(t, uv):
+        A = np.hstack([R, R * ti])  # camera coords = A @ [p0, v0] + b
+        b = R @ (0.5 * GRAVITY * ti**2) + tc
+        for k, w in ((0, u - cx), (1, v - cy)):
+            row = w * A[2] - f * A[k]
+            rows.append(row)
+            rhs.append(f * b[k] - w * b[2])
+    A = np.array(rows)
+    # Scale rows so far points (large depth) don't dominate.
+    sol, _, rank, _ = np.linalg.lstsq(A, np.array(rhs), rcond=None)
+    return sol if rank == 6 else None
+
+
 def _parabola_fit(cam: Camera, frames: np.ndarray, uv: np.ndarray, fps: float) -> tuple[float, np.ndarray | None]:
     """How well one drag-free flight explains these observations (robust px^2).
 
@@ -198,21 +228,49 @@ def _parabola_fit(cam: Camera, frames: np.ndarray, uv: np.ndarray, fps: float) -
     if len(t) < 4:
         return 0.0, None
 
+    f, pp = cam.K[0, 0], cam.K[:2, 2]
+    R = cam.R
+    g_cam = (0.5 * np.outer(t**2, GRAVITY)) @ R.T + cam.t  # gravity + offset, camera frame
+    tt = t[:, None]
+
+    def cam_pts(x):
+        return x[:3] @ R.T + tt * (x[3:] @ R.T) + g_cam  # N x 3
+
     def res(x):
-        p0, v0 = x[:3], x[3:]
-        pos = p0 + np.outer(t, v0) + 0.5 * np.outer(t**2, GRAVITY)
-        r = (cam.project(pos) - uv).ravel()
+        P = cam_pts(x)
+        z = np.where(P[:, 2] > 1e-3, P[:, 2], np.nan)
+        r = (P[:, :2] / z[:, None] * f + pp - uv).ravel()
         return np.nan_to_num(r, nan=400.0)
+
+    def jac(x):
+        # d(pixel)/d(p0, v0): the camera point moves by R dp0 + t R dv0.
+        P = cam_pts(x)
+        z = np.maximum(P[:, 2], 1e-3)
+        J = np.empty((len(t), 2, 6))
+        for k in (0, 1):
+            dP = R[k][None, :] / z[:, None] - (P[:, k] / z**2)[:, None] * R[2][None, :]  # N x 3
+            J[:, k, :3] = f * dP
+            J[:, k, 3:] = f * dP * tt
+        return J.reshape(-1, 6)
 
     best, best_x = np.inf, None
     rays = cam.ray(uv[[0, -1]])
     c = cam.position
     T = max(t[-1], 1e-3)
-    for d0 in (6.0, 14.0, 26.0):
-        for d1 in (6.0, 14.0, 26.0):
-            a, b = c + d0 * rays[0], c + d1 * rays[1]
+    # Seed from the linear solution: with gravity known and no drag, the
+    # pinhole equations (u - cx) Zc = f Xc, (v - cy) Zc = f Yc are linear in the
+    # launch point and velocity. When that refines to a good fit it is the fit;
+    # otherwise three more starts (the ball near, mid-court, far) settle it.
+    # Measured on a checked rally: no good flight lost against nine starts.
+    seed = _linear_flight(cam, t, uv)
+    if seed is not None:
+        r = least_squares(res, seed, jac=jac, loss="soft_l1", f_scale=4.0, max_nfev=60)
+        best, best_x = 2 * r.cost, r.x
+    if best_x is None or best > 16.0 * len(t):
+        for d in (6.0, 14.0, 26.0):
+            a, b = c + d * rays[0], c + d * rays[1]
             v0 = (b - a) / T - 0.5 * GRAVITY * T
-            r = least_squares(res, np.concatenate([a, v0]), loss="soft_l1", f_scale=4.0, max_nfev=60)
+            r = least_squares(res, np.concatenate([a, v0]), jac=jac, loss="soft_l1", f_scale=4.0, max_nfev=60)
             if 2 * r.cost < best:
                 best, best_x = 2 * r.cost, r.x
     if best_x is not None and not np.all((best_x >= PIECE_LO) & (best_x <= PIECE_HI)):
@@ -225,7 +283,7 @@ def _parabola_fit(cam: Camera, frames: np.ndarray, uv: np.ndarray, fps: float) -
                 a, b = c + d0 * rays[0], c + d1 * rays[1]
                 v0 = (b - a) / T - 0.5 * GRAVITY * T
                 x0 = np.clip(np.concatenate([a, v0]), PIECE_LO + 1e-6, PIECE_HI - 1e-6)
-                r = least_squares(res, x0, bounds=(PIECE_LO, PIECE_HI), loss="soft_l1", f_scale=4.0, max_nfev=60)
+                r = least_squares(res, x0, jac=jac, bounds=(PIECE_LO, PIECE_HI), loss="soft_l1", f_scale=4.0, max_nfev=60)
                 if 2 * r.cost < best:
                     best, best_x = 2 * r.cost, r.x
     return best, best_x
@@ -375,7 +433,11 @@ def apply_rules(labels: list[str], cut_uv: list[np.ndarray], cut_frames: list[in
             continue
         near = _nearby_players(players, cut_frames[k])
         if lab in ("near", "far"):
-            if lab == last_hitter or not _at_racket(cut_uv[k], near.get(lab)):
+            # A player who wasn't detected around the cut is no evidence either
+            # way (the far player is ~40 px and sometimes missed): then the
+            # physics label stands.
+            hitter = near.get(lab)
+            if lab == last_hitter or (hitter is not None and not _at_racket(cut_uv[k], hitter)):
                 lab = "bounce"
         if lab == "bounce" and last_hitter is not None and bounces >= 1:
             other = "far" if last_hitter == "near" else "near"
@@ -406,6 +468,24 @@ def _trim_dead_ball(frames: np.ndarray, uv: np.ndarray, still_px: float = 2.0, r
     return frames[first : last + 1], uv[first : last + 1]
 
 
+def _trim_dribble(frames: np.ndarray, uv: np.ndarray, window: int = 18, column_px: float = 25.0):
+    """Drop a server's ball-bouncing at the start: the ball goes up and down in
+    a narrow column for a second or more. A serve's toss is in a column too,
+    but brief, and the serve itself leaves it at once, so a window that stays
+    in a column for most of a second (`window` frames) is still the dribble."""
+    first = 0
+    while first < len(frames) - 10:
+        w = (frames >= frames[first]) & (frames < frames[first] + window)
+        if w.sum() < 6:
+            break
+        u, v = uv[w, 0], uv[w, 1]
+        if np.ptp(u) < column_px and np.ptp(v) > column_px:
+            first += 1
+            continue
+        break
+    return frames[first:], uv[first:]
+
+
 def reconstruct(
     cam: Camera,
     track: dict[int, tuple[float, float]],
@@ -418,6 +498,7 @@ def reconstruct(
         return []
     uv = np.array([track[f] for f in frames])
     frames, uv = _trim_dead_ball(frames, uv)
+    frames, uv = _trim_dribble(frames, uv)
     if len(frames) < 10:
         return []
     cuts, pieces = split(cam, frames, uv, fps)
@@ -497,6 +578,8 @@ def reconstruct(
     # track by more than ~22 px, or leaves the racket faster than any rally
     # ball, is the fit failing (ball being bounced before a serve, dead ball
     # after the point), and showing it would be making it up.
+    global last_unfiltered
+    last_unfiltered = shots  # for diagnosing what the filter drops
     return [s for s in shots if s.rms_px <= 22 and s.speed_kmh <= 200]
 
 
