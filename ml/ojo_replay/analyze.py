@@ -41,7 +41,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".cache"
 WEIGHTS = CACHE / "weights"
 # Bump when the ball tracking or 3D fit changes, so cached shots aren't reused.
-FIT_VERSION = "f3"
+FIT_VERSION = "f5"
 
 
 def download(url: str, dest: Path) -> float:
@@ -141,17 +141,20 @@ def path_stats(points: list[tuple[int, float, float]], fps: float) -> dict:
     return {"distance_m": round(dist, 1), "top_speed_ms": round(top, 1) if top else None}
 
 
-def fit_rally(cam: Camera, track: dict, by_frame: dict, fps: float, last: int) -> tuple[list[dict], float, str | None]:
-    """One rally's shots in 3D (CPU), in a worker process."""
+def fit_rally(cam: Camera, track: dict, by_frame: dict, fps: float, last: int) -> tuple[list[dict], float, str | None, list]:
+    """One rally's shots in 3D (CPU), in a worker process, and the labelled
+    cuts the hit decision (hits.decide, in the main process) works from."""
+    from . import ball3d
+
     t0 = time.process_time()
     try:
         shots = [asdict(s) for s in reconstruct(cam, track, by_frame, fps, last)]
-        err = None
+        err, cuts = None, list(ball3d.last_cuts)
     except Exception as e:  # one bad rally shouldn't sink the match
-        shots, err = [], str(e)
+        shots, err, cuts = [], str(e), []
     for s in shots:
         s.pop("samples", None)
-    return shots, time.process_time() - t0, err
+    return shots, time.process_time() - t0, err, cuts
 
 
 def compare(ours: list[tuple[float, float]], theirs: list[dict]) -> dict:
@@ -232,6 +235,7 @@ def main() -> None:
     timing["shots_cpu"] = 0.0
     pool = ProcessPoolExecutor(max_workers=max(1, min(4, (os.cpu_count() or 4) - 2)))
     jobs = []
+    by_frames: dict[int, dict] = {}
     feet: dict[str, list] = {"near": [], "far": []}
     t_loop = time.time()
     # Each rally's players and shots are cached, so an interrupted run resumes.
@@ -266,6 +270,7 @@ def main() -> None:
         for p in players:
             by_frame.setdefault(p["frame"], {})[p["side"]] = p
             feet[p["side"]].append((p["frame"], *p["feet"]))
+        by_frames[k] = by_frame
         sfile = cache / f"{first}-{last}-s{args.player_stride}c4-{FIT_VERSION}.shots.json"
         if args.no_fit:
             continue
@@ -280,18 +285,23 @@ def main() -> None:
         pool.shutdown()
         log(f"detection only: players {timing['players']:.0f}s for {len(found)} rallies")
         return
+    from . import hits as H
+
+    hit_model = H.load()
     rally_out = []
     for k, s0, s1, first, last, sfile, fut in jobs:
         if fut is None:
-            shots, cpu, err = json.loads(sfile.read_text())
+            shots, cpu, err, cuts = json.loads(sfile.read_text())
         else:
-            shots, cpu, err = fut.result()
-            sfile.write_text(json.dumps([shots, cpu, err]))
+            shots, cpu, err, cuts = fut.result()
+            sfile.write_text(json.dumps([shots, cpu, err, cuts]))
+        hits = H.decide(hit_model, cuts, ball, 0, by_frames[k], fps, cam.width, [(s["t0"], s["hitter"]) for s in shots])
         timing["shots_cpu"] += cpu
         if err:
             log(f"rally {k}: fit failed: {err}")
         rally_out.append({
-            "idx": k, "startS": round(s0, 2), "endS": round(s1, 2), "shots": shots,
+            "idx": k, "startS": round(s0, 2), "endS": round(s1, 2), "shots": shots, "hits": hits,
+            "cuts": [[round(t, 3), a, b] for t, a, b in cuts],
             "near": path_stats([q for q in feet["near"] if first <= q[0] <= last], fps),
             "far": path_stats([q for q in feet["far"] if first <= q[0] <= last], fps),
         })

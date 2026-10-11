@@ -154,7 +154,7 @@ const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).
 
 const M = DATA.matches;
 const totalH = M.reduce((a, m) => a + m.durationS, 0) / 3600;
-const totalShots = M.reduce((a, m) => a + m.shots.length, 0);
+const totalShots = M.reduce((a, m) => a + (m.hits ?? m.shots.length), 0);
 const totalRallies = M.reduce((a, m) => a + m.rallies.length, 0);
 document.getElementById("lede").textContent =
   `${M.length} of your recordings, ${totalH.toFixed(1)} hours of tennis, run through the court, ball and player models on a laptop: ${totalRallies} points and ${totalShots} shots, each with its speed and where it bounced. ` +
@@ -181,7 +181,7 @@ const tb = el("tbody");
 for (const m of M) {
   const fastest = Math.max(m.near.serveMax ?? 0, m.far.serveMax ?? 0) || null;
   tb.append(el("tr", {}, `<td><a href="#m-${m.id}">${m.title}</a></td><td>${mmss(m.durationS)}</td>
-    <td>${m.compare.ours} / ${m.compare.twelvelabs}</td><td>${m.shots.length}</td>
+    <td>${m.compare.ours} / ${m.compare.twelvelabs}</td><td>${m.hits ?? m.shots.length}</td>
     <td>${fmt(fastest, 0, " km/h")}</td><td>${m.calibration.source === "hand" ? "hand-placed" : "automatic"}</td>
     <td>${(m.cost.m1SecondsPerHour / 60).toFixed(0)}</td>`));
 }
@@ -291,7 +291,7 @@ for (const m of M) {
     : `<span class="chip ok">Court: found automatically</span>`;
   sec.innerHTML = `
     <div class="match-head"><h2>${m.title}</h2>
-      <div class="chips"><span class="chip">${mmss(m.durationS)}</span><span class="chip">${m.rallies.length} rallies</span><span class="chip">${m.shots.length} shots</span>${calChip}</div></div>
+      <div class="chips"><span class="chip">${mmss(m.durationS)}</span><span class="chip">${m.rallies.length} rallies</span><span class="chip">${m.hits ?? m.shots.length} shots</span>${calChip}</div></div>
     <div class="split">
       <div class="map">
         <h3>Shot map</h3>

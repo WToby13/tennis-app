@@ -111,6 +111,18 @@ Scored against hand tags on "Afternoon session" (15 min, 32 points, 165 hits,
 | Our hits that are real (precision) | 79% (73 / 92) | |
 | Serving end | 24 / 32 (first fitted shot 7 / 7, ball 14 / 19, stance 3 / 6) | 18 / 28 |
 
+Hit classifier (`hits.py`, trained on the tags, `models/hits.joblib`): fitted
+shots plus cuts it's at least 80% sure of. Held out (trained on one tagged
+match, scored on the other):
+
+| | Hits found | Hits real |
+|---|---|---|
+| Morning session, trained on Afternoon | 28% -> 43% | 68% -> 58% |
+| Afternoon session, trained on Morning | 44% -> 61% | 79% -> 66% |
+
+Serving end on Morning session: 18 / 19 (TwelveLabs 20 / 21). Retrain after
+tagging more: `python -m ojo_replay.hits train <id> <id> ...`.
+
 The tags also showed the session isn't match play (one player served 27 points
 running), so the game structure is now imposed only when the measurements bear
 it out.

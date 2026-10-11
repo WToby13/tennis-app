@@ -51,7 +51,11 @@ def main(prefix: str) -> None:
         return any(lo <= t <= hi for lo, hi in watched)
 
     hits = [e for e in labels["events"] if e["type"] == "hit" and seen(e["t"])]
-    shots = [(s["t0"], s["hitter"]) for r in a["rallies"] for s in r["shots"] if seen(s["t0"])]
+    # Hits (fitted shots plus classifier-confident cuts) when the run has them.
+    if all("hits" in r for r in a["rallies"]):
+        shots = [(h["t"], h["end"]) for r in a["rallies"] for h in r["hits"] if seen(h["t"])]
+    else:
+        shots = [(s["t0"], s["hitter"]) for r in a["rallies"] for s in r["shots"] if seen(s["t0"])]
     used = set()
     found = 0
     for h in hits:

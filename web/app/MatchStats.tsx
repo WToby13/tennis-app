@@ -80,7 +80,7 @@ export function MatchStats({ videoId, onSeek }: { videoId: string; onSeek: (s: n
           Shot analysis <span className="mstats-beta">Beta</span>
         </h3>
         <span className="seg-count">
-          {stats.rallies.length} points · {stats.shots.length} shots
+          {stats.rallies.length} points · {stats.hits ?? stats.shots.length} shots
         </span>
       </div>
       <p className="seg-hint muted">

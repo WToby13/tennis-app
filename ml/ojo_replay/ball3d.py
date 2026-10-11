@@ -486,6 +486,10 @@ def _trim_dribble(frames: np.ndarray, uv: np.ndarray, window: int = 18, column_p
     return frames[first:], uv[first:]
 
 
+last_cuts: list[tuple[float, str, str]] = []
+last_unfiltered: list = []
+
+
 def reconstruct(
     cam: Camera,
     track: dict[int, tuple[float, float]],
@@ -503,7 +507,10 @@ def reconstruct(
         return []
     cuts, pieces = split(cam, frames, uv, fps)
     cut_frames = [int(frames[i]) for i in cuts]
-    labels = apply_rules(label_cuts(pieces), [uv[i] for i in cuts], cut_frames, players_by_frame)
+    raw_labels = label_cuts(pieces)
+    labels = apply_rules(raw_labels, [uv[i] for i in cuts], cut_frames, players_by_frame)
+    global last_cuts
+    last_cuts = [(f / fps, a, b) for f, a, b in zip(cut_frames, raw_labels, labels)]  # for hits.decide
 
     # Shots run from one hit to the next. Each is fitted as one flight with its
     # bounce simulated, so a bounce too gentle to show as a kink is still found.

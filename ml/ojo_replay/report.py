@@ -108,7 +108,9 @@ def summarise(a: dict) -> dict:
         dur = max(r["endS"] - r["startS"], 1.0)
         run = (r["near"]["distance_m"] or 0) + (r["far"]["distance_m"] or 0)
         rows.append({
-            "idx": r["idx"], "start": r["startS"], "end": r["endS"], "shots": len(r["shots"]),
+            # Shots in the rally: every hit found, fitted or not (speeds and
+            # bounces come only from the fitted ones).
+            "idx": r["idx"], "start": r["startS"], "end": r["endS"], "shots": len(r.get("hits", r["shots"])),
             "avgSpeed": round(float(np.mean(good)), 1) if good else None,
             "maxSpeed": round(float(np.max(good)), 1) if good else None,
             "run": round(run, 1), "runRate": run / dur,
@@ -167,7 +169,8 @@ def summarise(a: dict) -> dict:
         "calibration": {"source": "auto", **a["calibration"]},
         "compare": compare(rallies, a.get("twelvelabs", [])),
         "detected": len(detected),
-        "shots": shots, "rallies": rows, "near": player("near"), "far": player("far"),
+        "shots": shots, "rallies": rows,
+        "hits": sum(len(r.get("hits", r["shots"])) for r in rallies), "near": player("near"), "far": player("far"),
         "people": {k: {**player(k, "player"), **_serving(struct, k), "kit": struct["kits"][k], "swatch": _swatch(struct["kits"][k])} for k in ("A", "B")} if struct else None,
         # Games only when the play followed match rules (structure.py decides).
         "games": _games(struct) if struct and struct.get("regular", True) else None,

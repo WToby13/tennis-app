@@ -64,6 +64,8 @@ export interface MatchStats {
   version: string;
   generatedAt: string;
   durationS: number;
+  /** Every hit found. `shots` are the ones whose flight fitted (speed, bounce). */
+  hits?: number;
   shots: Shot[];
   rallies: RallyStats[];
   near: PlayerStats;
