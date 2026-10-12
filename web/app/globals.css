@@ -2763,7 +2763,7 @@ video {
 .mstats-block-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
 .mstats-block-head h4 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; color: var(--muted); }
 .mstats-block-head span { font-size: 12px; font-variant-numeric: tabular-nums; }
-.mstats-court { width: 100%; max-width: 760px; height: auto; display: block; }
+.mstats-court { width: 100%; height: auto; display: block; }
 .mstats-courtlabel { font: 600 11px var(--font-sans); letter-spacing: 0.12em; fill: var(--court-line); opacity: 0.75; }
 .mstats-zonepct { font: 600 17px var(--font-display); fill: var(--court-ink); font-variant-numeric: tabular-nums; }
 .mstats-zonen { font: 500 10px var(--font-sans); fill: var(--court-ink); opacity: 0.75; }
