@@ -103,13 +103,32 @@ def summarise(a: dict) -> dict:
     # on this court dropped far more real play than noise. (Kept for the record:
     # on_this_court.)
     rallies = detected
+    # A serve is the first contact of a point, not merely the first shot we
+    # fitted in a stretch of play: when the serve itself wasn't fitted, that's
+    # a rally ball, and judging it against the service box called it out.
+    opener = {}  # stretch idx -> serving end (None: unknown), for stretches that open a point
+    if a.get("structure"):
+        for p in a["structure"]["points"]:
+            first = (p.get("rallies") or [p["rally"]])[0]
+            opener[first] = p.get("serverEnd")
+    else:
+        opener = {r["idx"]: None for r in rallies}
+
+    def is_serve(r: dict, k: int, s: dict) -> bool:
+        if k != 0 or r["idx"] not in opener:
+            return False
+        first = r.get("hits") or [{"t": s["t0"]}]
+        end = opener[r["idx"]]
+        return abs(first[0]["t"] - s["t0"]) <= 0.5 and (end is None or end == s["hitter"])
+
     shots = []
     for r in rallies:
         for k, s in enumerate(r["shots"]):
+            serve = is_serve(r, k, s)
             shots.append({
-                "rally": r["idx"], "serve": k == 0, "hitter": s["hitter"], "t": s["t0"],
+                "rally": r["idx"], "serve": serve, "hitter": s["hitter"], "t": s["t0"],
                 "speed": s["speed_kmh"], "bounce": s["bounce"][1:] if s.get("bounce") else None,
-                "landing": serve_call(s) if k == 0 else s.get("landing"),
+                "landing": serve_call(s) if serve else s.get("landing"),
                 "net": s.get("net_clearance_m"),
                 "doubt": s.get("doubtful") or ("lands off this court" if lands_elsewhere(s) else None),
             })

@@ -97,7 +97,8 @@ export function MatchStats({
         </span>
       </div>
       <p className="seg-hint muted">
-        Every shot we tracked, with its speed and where it bounced. Tap a bounce or a game to jump there.
+        Each dot is where a shot bounced, coloured by who hit it (not where it was hit from). Tap one to jump
+        to that shot.
       </p>
 
       <div className="mstats-grid">
@@ -151,7 +152,8 @@ export function MatchStats({
           <div className="mstats-legend muted">
             <span><i style={{ background: "var(--player-a)" }} />{byPerson ? "Player A" : "Camera end"}</span>
             <span><i style={{ background: "var(--player-b)" }} />{byPerson ? "Player B" : "Far end"}</span>
-            <span><i className="ring" />Called out</span>
+            <span><i className="ring" />Called out (serves: outside the service box)</span>
+            <span><i style={{ background: "var(--muted)", opacity: 0.45 }} />Faded: position unsure</span>
           </div>
         </div>
 
