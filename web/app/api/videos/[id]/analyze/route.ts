@@ -1,4 +1,5 @@
 import { track } from "@/lib/analytics/server";
+import { OJO_QUEUED, ownEngine, startWorker } from "@/lib/ojoEngine";
 import { assumedDurationS, needsAnalysisProxy } from "@/lib/analysisProxy";
 import {
   advanceAnalysis,
@@ -141,6 +142,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Optional owner-assigned player names, persisted with the analysis.
   const players = body?.players ? sanitizePlayers(body.players) : null;
   const playersPatch = players ? { analysisPlayers: players } : {};
+
+  // Our own engine: queue the match for the analysis worker and stop here.
+  if (ownEngine()) {
+    await store.update(id, {
+      analysisStatus: "processing",
+      analysisTaskId: OJO_QUEUED,
+      analysisWindows: null,
+      analysisError: null,
+      ...playersPatch,
+    });
+    await startWorker(id);
+    track("analysis_started", { userId, videoId: id, props: { engine: "own", durationS: video.durationS } });
+    return json({ analysisStatus: "processing", stage: "analysing" });
+  }
 
   // Proxies survive a run now (48h, then a bucket lifecycle rule), so a retry
   // can reuse one instead of paying for another ~16-minute transcode. Ask

@@ -87,6 +87,10 @@ export async function middleware(request: NextRequest) {
     // Resend's inbound webhook. Arrives with no session, so it has to be
     // public; the route authenticates it by signature instead.
     "/api/inbound",
+    // Our analysis worker (ml/) posting court calibrations and match analysis.
+    // No session; every route under it checks ANALYSIS_WORKER_SECRET itself
+    // (lib/worker.ts) and refuses everything while that's unset.
+    "/api/worker",
   ];
   const isPublic = publicPrefixes.some((p) => path === p || path.startsWith(`${p}/`));
 

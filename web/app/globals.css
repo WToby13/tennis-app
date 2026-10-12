@@ -2430,3 +2430,399 @@ video {
 .theater.is-fullscreen .seg-editor {
   display: none;
 }
+
+/* ---- court calibration (app/CourtCalibration.tsx) ---- */
+.calib-overlay {
+  align-items: flex-start;
+  overflow: auto;
+}
+.modal-card.calib-card {
+  max-width: 1480px;
+  max-height: none;
+  /* A flex item's default min-width is its content's, and the frame canvas is
+     1920 px wide natively — without this it stretches the card off a phone. */
+  min-width: 0;
+}
+.calib-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 20px;
+}
+.calib-main {
+  min-width: 0;
+}
+.calib-stage {
+  position: relative;
+  max-width: 100%;
+  margin: 0 auto;
+  background: #000;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  user-select: none;
+}
+.calib-frame {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+}
+/* Decodes frames for the canvas; never shown itself. */
+.calib-source {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+.calib-stage svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.calib-stage svg.placing {
+  cursor: crosshair;
+}
+.calib-line {
+  stroke: #ffd24a;
+  stroke-width: 1.5;
+  stroke-opacity: 0.9;
+}
+.calib-net {
+  stroke: var(--sage);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+}
+.calib-pin {
+  cursor: grab;
+}
+.calib-pin circle {
+  fill: rgba(217, 102, 44, 0.25);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.calib-pin circle.hit {
+  fill: transparent;
+  stroke: none;
+}
+.calib-pin line {
+  stroke: #fff;
+  stroke-width: 1;
+}
+.calib-pin text {
+  fill: #fff;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.75);
+  stroke-width: 3px;
+}
+.calib-pin.active circle:not(.hit) {
+  fill: rgba(255, 255, 255, 0.2);
+  stroke: #fff;
+  stroke-width: 2;
+}
+.calib-pin.suspect circle:not(.hit) {
+  stroke: var(--danger);
+}
+.calib-suspect line,
+.calib-suspect circle {
+  stroke: var(--danger);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  fill: none;
+}
+.calib-loupe {
+  position: absolute;
+  top: 10px;
+  width: 168px;
+  height: 168px;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
+  pointer-events: none;
+  background: #000;
+}
+.calib-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin-top: 12px;
+}
+.calib-steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.calib-time {
+  min-width: 72px;
+  text-align: center;
+  font-size: 13px;
+}
+.calib-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.calib-hint {
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 10px 0 0;
+}
+.calib-hint b {
+  color: var(--text);
+}
+.calib-note {
+  color: var(--text);
+}
+.calib-side {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.calib-quality {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.calib-quality p {
+  font-size: 13px;
+  line-height: 1.45;
+  margin: 8px 0;
+}
+.calib-quality .calib-warning {
+  color: var(--danger);
+}
+.calib-badge {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--border);
+  color: var(--text);
+}
+.calib-badge.good {
+  background: rgba(143, 179, 136, 0.22);
+  color: var(--sage);
+}
+.calib-badge.fair,
+.calib-badge.unchecked {
+  background: rgba(255, 210, 74, 0.16);
+  color: #ffd24a;
+}
+.calib-badge.poor {
+  background: rgba(229, 105, 91, 0.18);
+  color: var(--danger);
+}
+.calib-list {
+  max-height: 44vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+.calib-group {
+  margin-bottom: 10px;
+}
+.calib-group .lbl {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 6px 0 4px;
+}
+.calib-item {
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+}
+.calib-item.active {
+  background: rgba(217, 102, 44, 0.16);
+}
+.calib-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.calib-item.placed .calib-item-main {
+  color: var(--text);
+}
+.calib-item.suspect .calib-label {
+  color: var(--danger);
+}
+.calib-num {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+}
+.calib-item.placed .calib-num {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.calib-label {
+  flex: 1;
+  min-width: 0;
+}
+.calib-err {
+  font-size: 11px;
+  color: var(--muted);
+}
+.calib-remove {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.calib-remove:hover {
+  color: var(--text);
+}
+.calib-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.calib-error {
+  color: var(--danger);
+  font-size: 13px;
+  margin: 0;
+}
+@media (max-width: 960px) {
+  .calib-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .calib-list {
+    max-height: none;
+  }
+}
+@media (max-width: 640px) {
+  /* Placing pins to a pixel needs more screen than a phone has. */
+  .calib-open {
+    display: none;
+  }
+  .calib-overlay {
+    padding: 0;
+  }
+  .modal-card.calib-card {
+    border-radius: 0;
+    min-height: 100%;
+    padding: 16px;
+  }
+  .calib-loupe {
+    width: 120px;
+    height: 120px;
+  }
+}
+
+/* Shot analysis (MatchStats.tsx): our own analysis under the rally breakdown. */
+:root {
+  --player-a: #f0954e;
+  --player-b: #64a2ec;
+}
+.mstats { margin-top: 24px; }
+.mstats-beta {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--accent); border: 1px solid var(--accent-soft); border-radius: 999px; padding: 0 7px;
+}
+.mstats {
+  /* The court views: clay, chalk lines, like a broadcast graphic. */
+  --court: #8a4a30; --court-in: #a35a3a; --court-line: #f6efe4; --court-ink: #2a1a12;
+  --heat: #ffd84d; --zone: #fff6e0;
+}
+.mstats-body { margin-inline: 5%; display: grid; gap: 24px; }
+.mstats-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+@media (max-width: 720px) { .mstats-pair { grid-template-columns: minmax(0, 1fr); } }
+.mstats-block { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.mstats-block-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
+.mstats-block-head h4 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; color: var(--muted); }
+.mstats-block-head span { font-size: 12px; font-variant-numeric: tabular-nums; }
+.mstats-court { width: 100%; height: auto; display: block; }
+.mstats-courtlabel { font: 600 17px var(--font-sans); letter-spacing: 0.12em; fill: var(--court-line); opacity: 0.75; }
+.mstats-zonepct { font: 600 22px var(--font-display); fill: var(--court-ink); font-variant-numeric: tabular-nums; }
+.mstats-zonen { font: 500 13px var(--font-sans); fill: var(--court-ink); opacity: 0.75; }
+.mstats-shot { cursor: pointer; }
+.mstats-shot:focus { outline: none; }
+.mstats-shot:focus-visible circle:first-child { stroke: var(--court-line); stroke-width: 1.5; }
+.mstats-caption { margin: 0; font-size: 12px; color: var(--muted); min-height: 2.6em; }
+.mstats-key { color: var(--text); font-weight: 600; }
+.mstats-filters { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.mstats-fgroup { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mstats-flabel { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
+.mstats-chip {
+  font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border);
+}
+.mstats-chip.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+.mstats-chip:focus-visible, .mstats-game:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mstats-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 480px) { .mstats-cards { grid-template-columns: minmax(0, 1fr); } }
+.mstats-card {
+  background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+}
+.mstats-card h4 { margin: 0 0 10px; font-family: var(--font-display); font-size: 16px; display: flex; align-items: center; gap: 8px; }
+.mstats-kit { display: inline-flex; gap: 2px; }
+.mstats-kit i { width: 11px; height: 11px; border-radius: 3px; border: 1px solid var(--border); display: inline-block; }
+.mstats-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin: 0; }
+.mstats-card dt { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.mstats-card dd { margin: 0; font-family: var(--font-display); font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mstats-card dd small { font-family: var(--font-sans); font-size: 11px; font-weight: 400; color: var(--muted); }
+.mstats-games { display: grid; gap: 8px; }
+.mstats-games h4 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500; }
+.mstats-strip { display: flex; flex-wrap: wrap; gap: 6px 4px; align-items: center; }
+.mstats-gamewrap { display: inline-flex; align-items: center; gap: 4px; }
+.mstats-game {
+  display: grid; gap: 0; min-width: 48px; padding: 5px 8px; cursor: pointer; text-align: left;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); border-top: 3px solid var(--border);
+  border-radius: 8px; font: inherit; font-variant-numeric: tabular-nums;
+}
+.mstats-game b { font-family: var(--font-display); font-size: 15px; line-height: 1.1; }
+.mstats-game span { font-size: 11px; color: var(--muted); }
+.mstats-swap { font-size: 11px; color: var(--muted); }
+
+/* Our tracking over the video (TrackOverlay.tsx): above the picture, under the controls. */
+.track-overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.mstats-best { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; align-content: start; }
+.mstats-best button {
+  width: 100%; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 2px 10px; align-items: center;
+  padding: 9px 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; font: inherit; font-size: 13px; text-align: left; cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.mstats-best button:hover, .mstats-best button.on { border-color: var(--accent); }
+.mstats-best button.on { background: var(--surface-2); }
+.mstats-best button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mstats-best-rank { grid-row: span 2; font-family: var(--font-display); font-size: 20px; font-weight: 600; color: var(--muted); text-align: center; }
+.mstats-best-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.mstats-best-sub { font-size: 12px; }
+.mstats-hot { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
+.mstats-rallyn { font: 700 14px var(--font-sans); fill: var(--court-line); pointer-events: none; }

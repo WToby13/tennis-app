@@ -1,0 +1,329 @@
+<title>Ojo Match Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column of match sections; each opens with its shot map beside the
+   numbers that matter, then rallies, then the run's cost. Clay only inside the court. */
+:root {
+  --bg: #f3f5f3;
+  --surface: #ffffff;
+  --ink: #18211d;
+  --muted: #5a6862;
+  --rule: #dce2de;
+  --accent: #23614d;      /* windscreen green */
+  --accent-soft: #e1ede7;
+  --clay: #c96a43;
+  --clay-dark: #b15b37;
+  --paint: #fbf7f2;
+  --near: #e07a2e;
+  --far: #2f78cf;
+  --good: #2f8a5b;
+  --warn: #b7791f;
+  --bad: #c2453b;
+  --display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111614; --surface: #19201d; --ink: #e4ebe7; --muted: #95a49d; --rule: #2a3330;
+    --accent: #74c3a3; --accent-soft: #1f2e28; --clay: #a95a3a; --clay-dark: #8f4b30; --paint: #efe9e2;
+    --near: #f0954e; --far: #64a2ec; --good: #5cbf8a; --warn: #d9a440; --bad: #e0675c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111614; --surface: #19201d; --ink: #e4ebe7; --muted: #95a49d; --rule: #2a3330;
+  --accent: #74c3a3; --accent-soft: #1f2e28; --clay: #a95a3a; --clay-dark: #8f4b30; --paint: #efe9e2;
+  --near: #f0954e; --far: #64a2ec; --good: #5cbf8a; --warn: #d9a440; --bad: #e0675c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 32px 64px; display: grid; gap: 40px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 600; letter-spacing: 0.01em; line-height: 1.05; margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(2.2rem, 5vw, 3.2rem); }
+h2 { font-size: 1.9rem; }
+h3 { font-size: 1.15rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+p { margin: 0; max-width: 68ch; }
+.lede { color: var(--muted); font-size: 1.02rem; }
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-size: 0.86em; }
+.label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+header.top { display: grid; gap: 12px; }
+
+/* Overview table */
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 8px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 500; font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+tbody tr:hover { background: var(--accent-soft); }
+td a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 3px; }
+
+.cost { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 20px; display: grid; gap: 14px; }
+.cost-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px; }
+.figure { display: grid; gap: 2px; }
+.figure b { font-family: var(--display); font-size: 2rem; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.figure .sub { font-size: 0.82rem; color: var(--muted); }
+
+/* Match sections */
+section.match { display: grid; gap: 22px; padding-top: 28px; border-top: 2px solid var(--ink); scroll-margin-top: 16px; }
+.match-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 0.76rem; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--rule); color: var(--muted); background: var(--surface); }
+.chip.ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+.chip.hand { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+
+.split { display: grid; grid-template-columns: minmax(0, 340px) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 760px) { .split { grid-template-columns: minmax(0, 1fr); } }
+
+.map { display: grid; gap: 10px; }
+.map svg { width: 100%; max-width: 340px; height: auto; display: block; }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.filters button { font: inherit; font-size: 0.8rem; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.filters button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.78rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+
+.players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 480px) { .players { grid-template-columns: minmax(0, 1fr); } }
+.player { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 16px; display: grid; gap: 12px; border-top: 4px solid var(--c); }
+.player h4 { margin: 0; font-family: var(--display); font-size: 1.3rem; font-weight: 600; }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin: 0; }
+.stats div { display: grid; gap: 0; }
+.stats dt { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.stats dd { margin: 0; font-family: var(--display); font-size: 1.45rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats dd small { font-family: var(--body); font-size: 0.75rem; color: var(--muted); font-weight: 400; }
+
+.hist { display: grid; gap: 6px; }
+.hist svg { width: 100%; height: auto; display: block; }
+
+.rallies td.bar { width: 30%; min-width: 120px; }
+.ibar { height: 8px; border-radius: 4px; background: var(--rule); position: relative; overflow: hidden; }
+.ibar i { position: absolute; inset: 0 auto 0 0; background: var(--muted); border-radius: 4px; }
+tr.high .ibar i { background: var(--bad); }
+tr.high td:first-child::after { content: "High"; margin-left: 8px; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--bad); }
+details summary { cursor: pointer; color: var(--accent); font-weight: 500; }
+details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.timing { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.86rem; color: var(--muted); }
+.timing b { color: var(--ink); font-weight: 500; }
+.note { font-size: 0.86rem; color: var(--muted); }
+.swatch { display: inline-flex; gap: 2px; margin-left: 8px; vertical-align: middle; }
+.swatch i { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--rule); display: inline-block; }
+.games { display: grid; gap: 10px; }
+.strip { display: flex; flex-wrap: wrap; gap: 6px 4px; align-items: stretch; }
+.game { display: grid; gap: 1px; min-width: 52px; padding: 6px 8px; border-radius: 8px; background: var(--surface); border: 1px solid var(--rule); border-top: 3px solid var(--c); font-variant-numeric: tabular-nums; }
+.game b { font-family: var(--display); font-size: 1.05rem; font-weight: 600; line-height: 1.1; }
+.game span { font-size: 0.72rem; color: var(--muted); }
+.swap { align-self: center; font-size: 0.72rem; color: var(--muted); padding: 0 2px; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <span class="label">Ojo · own analysis prototype</span>
+    <h1>Match analysis without TwelveLabs</h1>
+    <p class="lede" id="lede"></p>
+  </header>
+
+  <section class="cost" aria-labelledby="cost-h">
+    <h3 id="cost-h">What it costs per hour of match</h3>
+    <div class="cost-grid" id="cost"></div>
+    <p class="note" id="cost-note"></p>
+  </section>
+
+  <section aria-labelledby="ov-h" style="display:grid;gap:12px">
+    <h3 id="ov-h">Matches analysed</h3>
+    <div class="scroll"><table id="overview"></table></div>
+  </section>
+
+  <div id="matches" style="display:grid;gap:56px"></div>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const C = DATA.court;
+const fmt = (v, d = 0, unit = "") => v == null ? "–" : `${Number(v).toFixed(d)}${unit}`;
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const el = (tag, attrs = {}, html = "") => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); e.innerHTML = html; return e; };
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+const M = DATA.matches;
+const totalH = M.reduce((a, m) => a + m.durationS, 0) / 3600;
+const totalShots = M.reduce((a, m) => a + (m.hits ?? m.shots.length), 0);
+const totalRallies = M.reduce((a, m) => a + (m.points ?? m.rallies.length), 0);
+document.getElementById("lede").textContent =
+  `${M.length} of your recordings, ${totalH.toFixed(1)} hours of tennis, run through the court, ball and player models on a laptop: ${totalRallies} points and ${totalShots} shots, each with its speed and where it bounced. ` +
+  `A prototype: the shot fit still misses most shots on cameras this far back, so the counts here are what it caught, not the whole match. Who served, the games and which player is which are measured on every point it found.`;
+
+// Cost, weighted by match length.
+const w = M.map(m => m.durationS);
+const wavg = key => M.reduce((a, m, i) => a + m.cost[key] * w[i], 0) / w.reduce((a, b) => a + b, 0);
+const tl = M[0]?.cost.twelvelabsPerHour ?? 0;
+const cloud = wavg("cloudPerHour"), spot = wavg("spotPerHour");
+const fig = (big, label, sub) => `<div class="figure"><span class="label">${label}</span><b>${big}</b><span class="sub">${sub}</span></div>`;
+document.getElementById("cost").innerHTML =
+  fig(`$${tl.toFixed(2)}`, "TwelveLabs today", "analyze input at $0.0292/min, +11% window overlap") +
+  fig(`$${cloud.toFixed(2)}`, "Own models, cloud GPU", `L4 on demand, ~${wavg("cloudGpuMinutesPerHour").toFixed(0)} GPU-min per match-hour`) +
+  fig(`$${spot.toFixed(2)}`, "Own models, spot GPU", "same work on a spot instance") +
+  fig(`${(wavg("m1SecondsPerHour") / 60).toFixed(0)} min`, "Laptop time (M1)", "per hour of match, all stages, measured");
+document.getElementById("cost-note").textContent =
+  `Laptop times are measured on these runs. Cloud figures assume a single NVIDIA L4 runs the same two models ${DATA.cloud.gpu_speedup}x faster than this M1 at $${DATA.cloud.gpu_per_hour}/h; that ratio is an estimate until one match is benchmarked on a real instance.`;
+
+// Overview table.
+const ov = document.getElementById("overview");
+ov.innerHTML = `<thead><tr><th>Match</th><th>Length</th><th>Rallies (ours / TwelveLabs)</th><th>Shots</th><th>Fastest serve</th><th>Court</th><th>Laptop min / h</th></tr></thead>`;
+const tb = el("tbody");
+for (const m of M) {
+  const fastest = Math.max(m.near.serveMax ?? 0, m.far.serveMax ?? 0) || null;
+  tb.append(el("tr", {}, `<td><a href="#m-${m.id}">${m.title}</a></td><td>${mmss(m.durationS)}</td>
+    <td>${m.compare.ours} / ${m.compare.twelvelabs}</td><td>${m.hits ?? m.shots.length}</td>
+    <td>${fmt(fastest, 0, " km/h")}</td><td>${m.calibration.source === "hand" ? "hand-placed" : "automatic"}</td>
+    <td>${(m.cost.m1SecondsPerHour / 60).toFixed(0)}</td>`));
+}
+ov.append(tb);
+
+// Court in metres -> SVG units. Far end at the top, as the camera sees it.
+const S = 14, PADX = 3.2, PADY = 4.5;
+const W = (2 * 5.485 + 2 * PADX) * S, H = (2 * C.half + 2 * PADY) * S;
+const X = x => (x + 5.485 + PADX) * S, Y = y => (C.half + PADY - y) * S;
+
+function courtSVG(m, filter) {
+  const lines = [
+    [-5.485, -C.half, 5.485, -C.half], [-5.485, C.half, 5.485, C.half],
+    [-5.485, -C.half, -5.485, C.half], [5.485, -C.half, 5.485, C.half],
+    [-C.singles, -C.half, -C.singles, C.half], [C.singles, -C.half, C.singles, C.half],
+    [-C.singles, C.service, C.singles, C.service], [-C.singles, -C.service, C.singles, -C.service],
+    [0, -C.service, 0, C.service],
+  ];
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Where shots bounced, ${m.title}">`;
+  s += `<rect x="0" y="0" width="${W}" height="${H}" rx="8" fill="var(--clay)"/>`;
+  s += `<rect x="${X(-5.485)}" y="${Y(C.half)}" width="${10.97 * S}" height="${2 * C.half * S}" fill="var(--clay-dark)" opacity="0.25"/>`;
+  for (const [a, b, c, d] of lines) s += `<line x1="${X(a)}" y1="${Y(b)}" x2="${X(c)}" y2="${Y(d)}" stroke="var(--paint)" stroke-width="2"/>`;
+  s += `<line x1="${X(-6.4)}" y1="${Y(0)}" x2="${X(6.4)}" y2="${Y(0)}" stroke="var(--ink)" stroke-width="3" opacity="0.7"/>`;
+  s += `<text x="${W / 2}" y="${Y(C.half) - 12}" text-anchor="middle" font-size="12" fill="var(--paint)" font-family="var(--body)">far end</text>`;
+  s += `<text x="${W / 2}" y="${Y(-C.half) + 22}" text-anchor="middle" font-size="12" fill="var(--paint)" font-family="var(--body)">camera end</text>`;
+  for (const sh of m.shots) {
+    if (!sh.bounce) continue;
+    if (filter === "serves" && !sh.serve) continue;
+    if (filter === "near" && sh.hitter !== "near") continue;
+    if (filter === "far" && sh.hitter !== "far") continue;
+    if ((filter === "A" || filter === "B") && sh.player !== filter) continue;
+    const [x, y] = sh.bounce;
+    if (Math.abs(x) > 5.485 + PADX || Math.abs(y) > C.half + PADY) continue;
+    const col = m.people ? (sh.player === "A" ? "var(--near)" : sh.player === "B" ? "var(--far)" : "var(--muted)")
+                         : (sh.hitter === "near" ? "var(--near)" : "var(--far)");
+    const out = sh.landing === "out";
+    const r = sh.serve ? 5 : 4;
+    const by = sh.player ? `player ${sh.player} (${sh.hitter === "near" ? "camera" : "far"} end)` : `${sh.hitter === "near" ? "camera-end" : "far-end"} player`;
+    const title = `${sh.serve ? "Serve" : "Shot"} by ${by} at ${mmss(sh.t)}, ${sh.speed.toFixed(0)} km/h, ${sh.landing ?? "uncalled"}${sh.doubt ? " (" + sh.doubt + ")" : ""}`;
+    s += out
+      ? `<circle cx="${X(x)}" cy="${Y(y)}" r="${r}" fill="none" stroke="${col}" stroke-width="2"><title>${title}</title></circle>`
+      : `<circle cx="${X(x)}" cy="${Y(y)}" r="${r}" fill="${col}" stroke="var(--surface)" stroke-width="1" opacity="${sh.doubt ? 0.45 : 0.95}"><title>${title}</title></circle>`;
+  }
+  return s + "</svg>";
+}
+
+function histSVG(m) {
+  const bins = [];
+  for (let b = 20; b < 200; b += 10) bins.push({ lo: b, near: 0, far: 0 });
+  for (const s of m.shots) {
+    if (s.doubt) continue;
+    const i = Math.min(bins.length - 1, Math.max(0, Math.floor((s.speed - 20) / 10)));
+    const k = m.people ? (s.player === "B" ? "far" : "near") : s.hitter;
+    bins[i][k]++;
+  }
+  const max = Math.max(1, ...bins.map(b => b.near + b.far));
+  const w = 560, h = 150, pl = 28, pb = 24, bw = (w - pl) / bins.length;
+  let g = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Shot speeds">`;
+  const ticks = [0, Math.ceil(max / 2), max];
+  for (const t of ticks) {
+    const y = h - pb - (t / max) * (h - pb - 10);
+    g += `<line x1="${pl}" x2="${w}" y1="${y}" y2="${y}" stroke="var(--rule)" stroke-width="1"/><text x="${pl - 6}" y="${y + 4}" text-anchor="end" font-size="10" fill="var(--muted)" font-family="var(--mono)">${t}</text>`;
+  }
+  bins.forEach((b, i) => {
+    const x = pl + i * bw + 1.5, hn = (b.near / max) * (h - pb - 10), hf = (b.far / max) * (h - pb - 10);
+    g += `<rect x="${x}" y="${h - pb - hn}" width="${bw - 3}" height="${hn}" fill="var(--near)"/>`;
+    g += `<rect x="${x}" y="${h - pb - hn - hf}" width="${bw - 3}" height="${hf}" fill="var(--far)"/>`;
+    if (b.lo % 40 === 0) g += `<text x="${pl + i * bw}" y="${h - 6}" font-size="10" fill="var(--muted)" font-family="var(--mono)">${b.lo}</text>`;
+  });
+  g += `<text x="${w}" y="${h - 6}" text-anchor="end" font-size="10" fill="var(--muted)" font-family="var(--body)">km/h</text>`;
+  return g + "</svg>";
+}
+
+function gamesHTML(m) {
+  if (!m.games) return "";
+  const col = w => w === "A" ? "var(--near)" : "var(--far)";
+  let strip = "";
+  m.games.forEach((g, i) => {
+    strip += `<div class="game" style="--c:${col(g.server)}" title="Game ${i + 1} from ${mmss(g.start)}: player ${g.server} served from the ${g.serverEnd === "near" ? "camera" : "far"} end; ${g.points} points seen"><b>${g.server}</b><span>${g.serverEnd === "near" ? "camera" : "far"} · ${g.points} pts</span></div>`;
+    if (g.changeoverAfter) strip += `<span class="swap" title="Players change ends">⇄</span>`;
+  });
+  const meas = m.games.reduce((a, g) => a + g.measured, 0), agree = m.games.reduce((a, g) => a + g.agree, 0);
+  return `<div class="games"><h3>Service games</h3><div class="strip">${strip}</div>
+    <p class="note">${m.games.length} games. Letters are the server, coloured by player; ⇄ marks a change of ends. The serving end was measured on ${meas} points and the fitted game structure agrees with ${agree} of them.</p></div>`;
+}
+
+function playerCard(p, side, label) {
+  const sw = p.swatch ? `<span class="swatch" title="Shirt and shorts colour"><i style="background:${p.swatch[0]}"></i><i style="background:${p.swatch[1]}"></i></span>` : "";
+  return `<div class="player" style="--c: var(--${side})"><h4>${label}${sw}</h4><dl class="stats">
+    <div><dt>Serve, avg</dt><dd>${fmt(p.serveAvg)}<small> km/h</small></dd></div>
+    <div><dt>Serve, max</dt><dd>${fmt(p.serveMax)}<small> km/h</small></dd></div>
+    <div><dt>Rally shot, avg</dt><dd>${fmt(p.shotAvg)}<small> km/h</small></dd></div>
+    <div><dt>Rally shot, max</dt><dd>${fmt(p.shotMax)}<small> km/h</small></dd></div>
+    <div><dt>Landed in</dt><dd>${fmt(p.inPct)}<small>%</small></dd></div>
+    <div><dt>Into the net</dt><dd>${fmt(p.netPct)}<small>%</small></dd></div>
+    <div><dt>Distance in rallies</dt><dd>${fmt(p.distance)}<small> m</small></dd></div>
+    ${p.pointsServed != null ? `<div><dt>1st serves in</dt><dd>${fmt(p.firstServeIn)}<small>% of ${p.pointsServed} points</small></dd></div>` : ""}
+    <div><dt>Shots tracked</dt><dd>${p.shots}<small> (${p.serves} serves)</small></dd></div>
+  </dl></div>`;
+}
+
+const host = document.getElementById("matches");
+for (const m of M) {
+  const sec = el("section", { class: "match", id: `m-${m.id}` });
+  const calChip = m.calibration.source === "hand"
+    ? `<span class="chip hand">Court: hand-placed landmarks</span>`
+    : `<span class="chip ok">Court: found automatically</span>`;
+  sec.innerHTML = `
+    <div class="match-head"><h2>${m.title}</h2>
+      <div class="chips"><span class="chip">${mmss(m.durationS)}</span><span class="chip">${m.points ?? m.rallies.length} points</span><span class="chip">${m.hits ?? m.shots.length} shots</span>${calChip}</div></div>
+    <div class="split">
+      <div class="map">
+        <h3>Shot map</h3>
+        <div class="filters" role="group" aria-label="Which shots">
+          <button type="button" data-f="all" aria-pressed="true">All</button>
+          <button type="button" data-f="serves" aria-pressed="false">Serves</button>
+          ${m.people ? `<button type="button" data-f="A" aria-pressed="false">Player A</button><button type="button" data-f="B" aria-pressed="false">Player B</button>`
+            : `<button type="button" data-f="near" aria-pressed="false">Camera end</button><button type="button" data-f="far" aria-pressed="false">Far end</button>`}
+        </div>
+        <div class="svgbox">${courtSVG(m, "all")}</div>
+        <div class="legend">${m.people
+          ? `<span><i class="dot" style="background:var(--near)"></i>player A</span><span><i class="dot" style="background:var(--far)"></i>player B</span>`
+          : `<span><i class="dot" style="background:var(--near)"></i>hit from camera end</span><span><i class="dot" style="background:var(--far)"></i>hit from far end</span>`}<span><i class="dot" style="border:2px solid var(--muted)"></i>called out</span></div>
+      </div>
+      <div style="display:grid;gap:22px;min-width:0">
+        <div class="players">${m.people ? playerCard(m.people.A, "near", "Player A") + playerCard(m.people.B, "far", "Player B")
+                                        : playerCard(m.near, "near", "Camera end") + playerCard(m.far, "far", "Far end")}</div>
+        <div class="hist"><h3>Shot speeds</h3>${histSVG(m)}</div>
+      </div>
+    </div>
+    ${gamesHTML(m)}
+    <details><summary>Rallies, by intensity (${m.rallies.filter(r => r.high).length} high-intensity)</summary>
+      <div class="scroll" style="margin-top:12px"><table class="rallies"><thead><tr><th>Starts</th><th>Shots</th><th>Avg km/h</th><th>Max km/h</th><th>Ran (m)</th><th>Intensity</th></tr></thead><tbody>
+      ${[...m.rallies].sort((a, b) => b.intensity - a.intensity).map(r => `<tr class="${r.high ? "high" : ""}"><td>${mmss(r.start)}</td><td>${r.shots}</td><td>${fmt(r.avgSpeed)}</td><td>${fmt(r.maxSpeed)}</td><td>${fmt(r.run)}</td><td class="bar"><div class="ibar"><i style="width:${(r.intensity * 100).toFixed(0)}%"></i></div></td></tr>`).join("")}
+      </tbody></table></div>
+    </details>
+    <div class="timing"><span>Laptop run:</span>${Object.entries(m.timing).map(([k, v]) => `<span>${k} <b class="num">${v < 120 ? v + " s" : (v / 60).toFixed(1) + " min"}</b></span>`).join("")}
+      <span>rally overlap with TwelveLabs <b class="num">${m.compare.ours_matched}/${m.compare.ours}</b> of ours, <b class="num">${m.compare.twelvelabs_matched}/${m.compare.twelvelabs}</b> of theirs</span></div>`;
+  sec.querySelectorAll(".filters button").forEach(b => b.addEventListener("click", () => {
+    sec.querySelectorAll(".filters button").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    sec.querySelector(".svgbox").innerHTML = courtSVG(m, b.dataset.f);
+  }));
+  host.append(sec);
+}
+</script>

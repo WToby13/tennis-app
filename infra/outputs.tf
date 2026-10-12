@@ -59,3 +59,18 @@ output "TRANSCODER_ECR_REPOSITORY_URL" {
   description = "Push the image here before the first analysis of a large match."
   value       = aws_ecr_repository.transcoder.repository_url
 }
+
+output "analysis_worker_ecr" {
+  description = "Push the analysis worker image here (ml/docker/build.sh)."
+  value       = aws_ecr_repository.analysis_worker.repository_url
+}
+
+output "analysis_job_queue" {
+  description = "Set as ANALYSIS_BATCH_JOB_QUEUE in the web app."
+  value       = aws_batch_job_queue.analysis.name
+}
+
+output "analysis_job_definition" {
+  description = "Set as ANALYSIS_BATCH_JOB_DEFINITION in the web app."
+  value       = aws_batch_job_definition.analysis.name
+}

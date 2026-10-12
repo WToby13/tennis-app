@@ -1,0 +1,474 @@
+<title>Short test in 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: the court fills the stage; transport bar under it; the rally's numbers in a column beside (stacked below on phones).
+   Ojo's own palette and faces (web/app/globals.css): court ink ground, chalk text, clay accent. Deliberately dark-only, like the app. */
+:root {
+  --bg: #14110d;          /* court ink */
+  --surface: #1c1813;
+  --surface-2: #26211a;
+  --border: #332c22;
+  --text: #f4eee4;        /* chalk */
+  --muted: #a89c8a;
+  --accent: #d9662c;      /* clay */
+  --near: #f0a63c;        /* near player */
+  --far: #3c8cff;         /* far player */
+  --ball: #e8f24a;        /* felt */
+  --good: #8fb388;
+  --bad: #e5695b;
+  --font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: 14px; letter-spacing: -0.005em; }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; padding-block: 16px; padding-inline: 16px; min-height: 100%; box-sizing: border-box; }
+@media (max-width: 980px) { .app { grid-template-columns: minmax(0, 1fr); } }
+
+header.top { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: 22px; margin: 0; letter-spacing: -0.02em; text-wrap: balance; }
+.sub { color: var(--muted); font-size: 13px; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.tab { font: 600 13px var(--font-body); color: var(--text); background: transparent; border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+.tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tab:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.stage-col { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.stage { position: relative; aspect-ratio: 16 / 9; max-width: 100%; background: #0d0b08; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+.stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.views { position: absolute; top: 10px; left: 10px; display: flex; gap: 6px; flex-wrap: wrap; max-width: calc(100% - 20px); }
+.view { font: 500 12px var(--font-body); color: var(--text); background: rgba(20, 17, 13, 0.72); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; cursor: pointer; backdrop-filter: blur(4px); }
+.view.on { border-color: var(--accent); color: #fff; }
+.hud { position: absolute; left: 12px; bottom: 12px; font: 500 13px var(--font-data); color: var(--text); background: rgba(20, 17, 13, 0.72); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; pointer-events: none; display: grid; gap: 2px; }
+.hud:empty { display: none; }
+.bodytoggle { position: absolute; top: auto; left: auto; right: 12px; bottom: 52px; }
+.legend { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 12px; font-size: 12px; color: var(--muted); background: rgba(20, 17, 13, 0.72); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+.transport { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.play { width: 38px; height: 38px; border-radius: 50%; border: none; background: var(--accent); color: #fff; font-size: 14px; cursor: pointer; flex: none; }
+.scrub { flex: 1 1 240px; min-width: 0; position: relative; }
+.scrub input { width: 100%; accent-color: var(--accent); }
+.marks { position: relative; height: 14px; }
+.mark { position: absolute; top: 2px; width: 2px; height: 10px; border-radius: 1px; transform: translateX(-1px); }
+.time { font: 500 13px var(--font-data); font-variant-numeric: tabular-nums; color: var(--muted); min-width: 92px; text-align: right; }
+.speeds { display: flex; gap: 4px; }
+.speed { font: 500 12px var(--font-data); background: transparent; color: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 4px 7px; cursor: pointer; }
+.speed.on { color: var(--text); border-color: var(--accent); }
+
+aside { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+section h2 { font-family: var(--font-display); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; }
+.shots { display: grid; gap: 6px; }
+.shot { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; cursor: pointer; text-align: left; color: var(--text); font: inherit; }
+.shot:hover { border-color: #4a3f31; }
+.shot.now { border-color: var(--accent); }
+.shot .who { width: 10px; height: 10px; border-radius: 50%; }
+.shot .main { font-weight: 600; }
+.shot .meta { grid-column: 2 / -1; color: var(--muted); font: 12px var(--font-data); font-variant-numeric: tabular-nums; }
+.pill { font: 600 11px var(--font-body); border-radius: 999px; padding: 2px 8px; letter-spacing: 0.02em; }
+.pill.in { background: rgba(143, 179, 136, 0.18); color: var(--good); }
+.pill.out { background: rgba(229, 105, 91, 0.18); color: var(--bad); }
+.shot .doubt { color: #e5b65b; }
+.pill.net { background: rgba(229, 105, 91, 0.18); color: var(--bad); }
+.pill.close { background: rgba(229, 182, 91, 0.18); color: #e5b65b; }
+.pill.none { background: var(--surface-2); color: var(--muted); }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.stat .k { color: var(--muted); font-size: 12px; display: flex; align-items: center; }
+.stat .v { font: 600 18px var(--font-data); font-variant-numeric: tabular-nums; margin-top: 4px; }
+.stat .v small { font: 500 12px var(--font-body); color: var(--muted); margin-left: 3px; }
+.notes { color: var(--muted); font-size: 13px; line-height: 1.55; display: grid; gap: 8px; }
+.notes p { margin: 0; max-width: 62ch; }
+.notes b { color: var(--text); font-weight: 600; }
+.conf { display: grid; gap: 6px; }
+.conf div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 8px; font-size: 13px; }
+.conf .lvl { font: 600 12px var(--font-body); }
+.lvl.hi { color: var(--good); } .lvl.mid { color: #e5b65b; } .lvl.lo { color: var(--bad); }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div>
+      <h1 id="title">Short test</h1>
+      <div class="sub" id="subtitle">3D replay rebuilt from one phone</div>
+    </div>
+    <div class="tabs" role="tablist" id="tabs"></div>
+  </header>
+
+  <div class="stage-col">
+    <div class="stage" id="stage">
+      <div class="views" id="views"></div>
+      <div class="hud" id="hud"></div>
+      <button class="view bodytoggle" id="bodytoggle" hidden>Show skeletons</button>
+      <div class="legend">
+        <span><span class="dot" style="background: var(--near)"></span>Near</span>
+        <span><span class="dot" style="background: var(--far)"></span>Far</span>
+        <span><span class="dot" style="background: var(--ball)"></span>Ball</span>
+      </div>
+    </div>
+    <div class="transport">
+      <button class="play" id="play" aria-label="Play">▶</button>
+      <div class="scrub">
+        <input type="range" id="scrub" min="0" max="1000" value="0" aria-label="Position in rally">
+        <div class="marks" id="marks"></div>
+      </div>
+      <div class="speeds" id="speeds"></div>
+      <div class="time" id="time">0:00.0</div>
+    </div>
+  </div>
+
+  <aside>
+    <section>
+      <h2>Rally</h2>
+      <div class="stats" id="stats"></div>
+    </section>
+    <section>
+      <h2>Shots</h2>
+      <div class="shots" id="shots"></div>
+    </section>
+    <section>
+      <h2>How far to trust it</h2>
+      <div class="conf" id="conf"></div>
+    </section>
+    <section class="notes" id="notes"></section>
+  </aside>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const DATA = /*__DATA__*/null;
+
+// Court coordinates (metres): x across (+ = right from the phone), y along (+ = away), z up.
+// three.js is y-up, so court (x, y, z) -> scene (x, z, -y).
+const S = (x, y, z) => new THREE.Vector3(x, z, -y);
+const C = { HL: 11.885, SV: 6.4, D: 5.485, SG: 4.115, POST: 6.4, POSTH: 1.07, NETC: 0.914 };
+const COLORS = { near: 0xf0a63c, far: 0x3c8cff, ball: 0xe8f24a, line: 0xf4eee4, clay: 0x8f3f22, clayOut: 0x7a3620 };
+const BONES = [[0,1],[1,2],[2,3],[0,4],[4,5],[5,6],[0,7],[7,8],[8,9],[9,10],[8,11],[11,12],[12,13],[8,14],[14,15],[15,16]];
+
+const stageEl = document.getElementById('stage');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+stageEl.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0b08);
+scene.fog = new THREE.Fog(0x0d0b08, 45, 90);
+const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 200);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.495;
+
+scene.add(new THREE.HemisphereLight(0xfff4e6, 0x2a1a10, 0.75));
+const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+sun.position.set(-12, 25, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -20, right: 20, top: 20, bottom: -20, near: 1, far: 60 });
+scene.add(sun);
+
+// Clay, lines, net.
+function plane(w, h, color, y = 0) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ color }));
+  m.rotation.x = -Math.PI / 2; m.position.y = y; m.receiveShadow = true; return m;
+}
+scene.add(plane(40, 60, COLORS.clayOut, -0.01));
+scene.add(plane(2 * (C.D + 3.5), 2 * (C.HL + 6.4), COLORS.clay, -0.005));
+const lineMat = new THREE.MeshBasicMaterial({ color: COLORS.line });
+function courtLine(x1, y1, x2, y2, w = 0.05) {
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  const g = new THREE.PlaneGeometry(len + w, w);
+  const m = new THREE.Mesh(g, lineMat);
+  m.rotation.x = -Math.PI / 2;
+  m.rotation.z = Math.atan2(y2 - y1, x2 - x1);
+  m.position.copy(S((x1 + x2) / 2, (y1 + y2) / 2, 0.002));
+  scene.add(m);
+}
+[[-C.D, C.HL, C.D, C.HL, 0.1], [-C.D, -C.HL, C.D, -C.HL, 0.1], [-C.D, -C.HL, -C.D, C.HL], [C.D, -C.HL, C.D, C.HL],
+ [-C.SG, -C.HL, -C.SG, C.HL], [C.SG, -C.HL, C.SG, C.HL], [-C.SG, C.SV, C.SG, C.SV], [-C.SG, -C.SV, C.SG, -C.SV],
+ [0, -C.SV, 0, C.SV], [0, C.HL, 0, C.HL - 0.1], [0, -C.HL, 0, -C.HL + 0.1]].forEach(l => courtLine(...l));
+{
+  const shape = new THREE.Shape();
+  shape.moveTo(-C.POST, 0); shape.lineTo(C.POST, 0); shape.lineTo(C.POST, C.POSTH);
+  shape.quadraticCurveTo(0, C.NETC - 0.08, -C.POST, C.POSTH); shape.lineTo(-C.POST, 0);
+  const net = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: 0x1b1b1b, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
+  scene.add(net);
+  const tape = new THREE.Line(new THREE.BufferGeometry().setFromPoints(new THREE.QuadraticBezierCurve3(S(-C.POST, 0, C.POSTH), S(0, 0, C.NETC - 0.08), S(C.POST, 0, C.POSTH)).getPoints(30)), new THREE.LineBasicMaterial({ color: 0xffffff }));
+  scene.add(tape);
+  for (const x of [-C.POST, C.POST]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, C.POSTH, 10), new THREE.MeshLambertMaterial({ color: 0xdedede }));
+    post.position.copy(S(x, 0, C.POSTH / 2)); post.castShadow = true; scene.add(post);
+  }
+}
+
+// The phone, where the calibration put it.
+let phone = null;
+function addPhone() {
+  const cam = DATA.camera;
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.08, 0.01), new THREE.MeshLambertMaterial({ color: 0xd9662c }));
+  g.add(body);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, cam.position[2], 8), new THREE.MeshLambertMaterial({ color: 0x6b6258 }));
+  pole.position.y = -cam.position[2] / 2; g.add(pole);
+  g.position.copy(S(...cam.position));
+  const fwd = new THREE.Vector3(cam.rotation[6], cam.rotation[7], cam.rotation[8]);
+  g.lookAt(g.position.clone().add(S(fwd.x, fwd.y, fwd.z)));
+  scene.add(g);
+  phone = g;
+}
+
+// Players: bones as tubes, joints as spheres.
+function makePlayer(color) {
+  const mat = new THREE.MeshLambertMaterial({ color });
+  const g = new THREE.Group();
+  const bones = BONES.map(() => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 8), mat); m.castShadow = true; g.add(m); return m; });
+  const joints = Array.from({ length: 17 }, (_, i) => { const m = new THREE.Mesh(new THREE.SphereGeometry(i === 10 ? 0.11 : 0.045, 12, 10), mat); m.castShadow = true; g.add(m); return m; });
+  scene.add(g);
+  return { g, bones, joints };
+}
+const players = { near: makePlayer(COLORS.near), far: makePlayer(COLORS.far) };
+
+// Body meshes (SAM 3D Body): one geometry per player, vertices updated per frame.
+const meshes = {};
+let showBodies = true;
+function makeMesh(color) {
+  const g = new THREE.BufferGeometry();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.75, metalness: 0.0 }));
+  m.castShadow = true; m.frustumCulled = false; m.visible = false;
+  scene.add(m);
+  return m;
+}
+meshes.near = makeMesh(COLORS.near); meshes.far = makeMesh(COLORS.far);
+function decodeBodies(b) {
+  if (!b || b._ready) return;
+  const bin = atob(b.verts); const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  b.mm = new Int16Array(bytes.buffer);
+  b._ready = true;
+}
+function poseMesh(side, frame) {
+  const m = meshes[side], b = R.bodies && R.bodies[side];
+  if (!showBodies || !b) { m.visible = false; return false; }
+  decodeBodies(b);
+  const fr = b.frames;
+  if (frame < fr[0] - 3 || frame > fr[fr.length - 1] + 3) { m.visible = false; return false; }
+  let i = 0; while (i < fr.length - 1 && fr[i + 1] <= frame) i++;
+  const j = Math.min(i + 1, fr.length - 1);
+  // Blend between processed frames, but not across gaps where the player was lost.
+  const w = (j > i && fr[j] - fr[i] <= 4) ? Math.min(Math.max((frame - fr[i]) / (fr[j] - fr[i]), 0), 1) : 0;
+  const n = b.nverts, a0 = i * n * 3, a1 = j * n * 3;
+  if (m.userData.side !== side || m.userData.rally !== R.idx) {
+    m.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+    m.geometry.setIndex(b.faces);
+    m.userData.side = side; m.userData.rally = R.idx;
+  }
+  const pos = m.geometry.attributes.position.array;
+  for (let k = 0; k < n; k++) {
+    const o = k * 3;
+    const x = ((1 - w) * b.mm[a0 + o] + w * b.mm[a1 + o]) / 1000;
+    const y = ((1 - w) * b.mm[a0 + o + 1] + w * b.mm[a1 + o + 1]) / 1000;
+    const z = ((1 - w) * b.mm[a0 + o + 2] + w * b.mm[a1 + o + 2]) / 1000;
+    pos[o] = x; pos[o + 1] = z; pos[o + 2] = -y; // court (x, y, z) -> scene (x, z, -y)
+  }
+  m.geometry.attributes.position.needsUpdate = true;
+  m.geometry.computeVertexNormals();
+  m.visible = true;
+  return true;
+}
+const up = new THREE.Vector3(0, 1, 0);
+function posePlayer(p, J) {
+  if (!J) { p.g.visible = false; return; }
+  p.g.visible = true;
+  const pts = J.map(j => S(j[0], j[1], j[2]));
+  pts.forEach((v, i) => p.joints[i].position.copy(v));
+  BONES.forEach(([a, b], k) => {
+    const m = p.bones[k], va = pts[a], vb = pts[b];
+    const d = vb.clone().sub(va), len = d.length();
+    m.position.copy(va).addScaledVector(d, 0.5);
+    m.scale.set(1, len, 1);
+    m.quaternion.setFromUnitVectors(up, d.normalize());
+  });
+}
+
+// Ball, its shadow, trail, bounce marks.
+const ball = new THREE.Mesh(new THREE.SphereGeometry(0.06, 16, 12), new THREE.MeshBasicMaterial({ color: COLORS.ball }));
+scene.add(ball);
+const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.07, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.45 }));
+shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+const drop = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineDashedMaterial({ color: 0xe8f24a, dashSize: 0.08, gapSize: 0.08, transparent: true, opacity: 0.6 }));
+scene.add(drop);
+let rallyObjects = [];
+
+// State.
+let R = null, t = 0, playing = false, rate = 0.5, last = null, view = 'broadcast';
+
+function fmt(s) { const m = Math.floor(s / 60); return `${m}:${(s - m * 60).toFixed(1).padStart(4, '0')}`; }
+function sampleAt(samples, tt) {
+  if (tt < samples[0][0] || tt > samples[samples.length - 1][0]) return null;
+  let lo = 0, hi = samples.length - 1;
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (samples[mid][0] <= tt) lo = mid; else hi = mid; }
+  const a = samples[lo], b = samples[hi], w = b[0] > a[0] ? (tt - a[0]) / (b[0] - a[0]) : 0;
+  return [a[1] + w * (b[1] - a[1]), a[2] + w * (b[2] - a[2]), a[3] + w * (b[3] - a[3])];
+}
+function jointsAt(sk, frame) {
+  if (!sk) return null;
+  const i = sk.index[Math.round(frame)];
+  return i === undefined ? null : sk.joints[i];
+}
+
+function loadRally(k) {
+  R = DATA.rallies[k];
+  rallyObjects.forEach(o => scene.remove(o)); rallyObjects = [];
+  for (const side of ['near', 'far']) {
+    const sk = R.skeletons[side];
+    if (sk) { sk.index = {}; sk.frames.forEach((f, i) => sk.index[f] = i); }
+  }
+  for (const s of R.shots) {
+    const pts = s.samples.map(q => S(q[1], q[2], q[3]));
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: s.hitter === 'near' ? COLORS.near : COLORS.far, transparent: true, opacity: 0.55 }));
+    scene.add(line); rallyObjects.push(line);
+    if (s.bounce) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.2, 28), new THREE.MeshBasicMaterial({ color: ({ in: 0x8fb388, out: 0xe5695b }[s.landing] ?? 0xe5b65b), side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2; ring.position.copy(S(s.bounce[1], s.bounce[2], 0.01));
+      scene.add(ring); rallyObjects.push(ring);
+    }
+  }
+  t = R.start;
+  const hasBodies = R.bodies && Object.keys(R.bodies).length > 0;
+  document.getElementById('bodytoggle').hidden = !hasBodies;
+  document.querySelectorAll('.tab').forEach((b, i) => b.setAttribute('aria-selected', String(i === k)));
+  renderSide();
+  renderMarks();
+  update();
+}
+
+function update() {
+  const frame = t * R.fps;
+  for (const side of ['near', 'far']) {
+    const meshShown = poseMesh(side, frame);
+    posePlayer(players[side], meshShown ? null : jointsAt(R.skeletons[side], frame));
+  }
+  let shotNow = null, p = null;
+  for (const s of R.shots) { const q = sampleAt(s.samples, t); if (q) { p = q; shotNow = s; } }
+  ball.visible = shadow.visible = drop.visible = !!p;
+  const hud = document.getElementById('hud');
+  if (p) {
+    ball.position.copy(S(...p)); shadow.position.copy(S(p[0], p[1], 0.004));
+    drop.geometry.setFromPoints([S(p[0], p[1], 0.004), S(...p)]); drop.computeLineDistances();
+    hud.innerHTML = `<span>${shotNow.hitter === 'near' ? 'Near' : 'Far'} player · ${shotNow.speed_kmh.toFixed(0)} km/h off the racket</span><span>Ball ${p[2].toFixed(2)} m up</span>`;
+  } else hud.innerHTML = '';
+  document.querySelectorAll('.shot').forEach((el, i) => el.classList.toggle('now', R.shots[i] === shotNow));
+  const span = R.end - R.start;
+  document.getElementById('scrub').value = String(Math.round(((t - R.start) / span) * 1000));
+  document.getElementById('time').textContent = `${fmt(t)} / ${fmt(R.end)}`;
+}
+
+function renderSide() {
+  const st = R.stats;
+  const cell = (k, v, unit, dot) => `<div class="stat"><div class="k">${dot ? `<span class="dot" style="background:var(--${dot})"></span>` : ''}${k}</div><div class="v">${v}<small>${unit}</small></div></div>`;
+  document.getElementById('stats').innerHTML = [
+    cell('Length', st.duration.toFixed(1), 's'),
+    cell('Shots tracked', st.shots, ''),
+    cell('Fastest shot', st.fastest ? st.fastest.toFixed(0) : '–', 'km/h'),
+    cell('Lowest over net', st.lowestNet != null ? st.lowestNet.toFixed(2) : '–', 'm'),
+    cell('Ran', st.near.distance.toFixed(1), 'm', 'near'),
+    cell('Ran', st.far.distance != null ? st.far.distance.toFixed(1) : '–', 'm', 'far'),
+    cell('Top speed', st.near.topSpeed.toFixed(1), 'm/s', 'near'),
+    cell('Top speed', st.far.topSpeed != null ? st.far.topSpeed.toFixed(1) : '–', 'm/s', 'far'),
+  ].join('');
+  document.getElementById('shots').innerHTML = R.shots.map((s, i) => {
+    const b = s.bounce ? `bounce ${s.bounce[1] >= 0 ? '+' : ''}${s.bounce[1].toFixed(1)}, ${s.bounce[2] >= 0 ? '+' : ''}${s.bounce[2].toFixed(1)} m` : (s.landing === 'net' ? 'into the net' : 'taken before it bounced');
+    const net = s.net_clearance_m != null ? ` · net +${s.net_clearance_m.toFixed(2)} m` : '';
+    const pill = s.landing ? `<span class="pill ${s.landing}">${s.landing.toUpperCase()}</span>` : '<span class="pill none">–</span>';
+    const doubt = s.doubtful ? `<span class="meta doubt">Unsure: ${s.doubtful}</span>` : '';
+    return `<button class="shot" data-i="${i}"><span class="who" style="background:var(--${s.hitter})"></span><span class="main">${fmt(s.t0)} · ${s.hitter === 'near' ? 'Near' : 'Far'} · ${s.speed_kmh.toFixed(0)} km/h</span>${pill}<span class="meta">${b}${net} · fit ${s.rms_px.toFixed(1)} px</span>${doubt}</button>`;
+  }).join('') || '<p class="sub">No shots could be fitted in this rally.</p>';
+  document.querySelectorAll('.shot').forEach(el => el.addEventListener('click', () => { t = R.shots[+el.dataset.i].t0; playing = false; syncPlay(); update(); }));
+  const lvl = (c) => `<span class="lvl ${c[0]}">${c[1]}</span>`;
+  document.getElementById('conf').innerHTML = DATA.confidence.map(c => `<div>${lvl(c.level)}<span>${c.what}</span></div>`).join('');
+  document.getElementById('notes').innerHTML = DATA.notes.map(n => `<p>${n}</p>`).join('');
+}
+
+function renderMarks() {
+  const span = R.end - R.start;
+  document.getElementById('marks').innerHTML = R.shots.map(s => {
+    const hit = `<span class="mark" title="${s.hitter} hit" style="left:${((s.t0 - R.start) / span) * 100}%;background:var(--${s.hitter})"></span>`;
+    const bo = s.bounce ? `<span class="mark" title="bounce" style="left:${((s.bounce[0] - R.start) / span) * 100}%;background:${({ in: 'var(--good)', out: 'var(--bad)' }[s.landing] ?? '#e5b65b')};height:6px;top:4px"></span>` : '';
+    return hit + bo;
+  }).join('');
+}
+
+// Views. "Phone" is the calibrated camera itself: the replay lines up with the video.
+const VIEWS = {
+  phone: 'From the phone', broadcast: 'Broadcast', top: 'Top down', side: 'Side on', far: 'Far end',
+};
+function setView(v) {
+  view = v;
+  if (phone) phone.visible = v !== 'phone'; // you're looking through it
+  document.querySelectorAll('.view').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  const cam = DATA.camera;
+  if (v === 'phone') {
+    camera.position.copy(S(...cam.position));
+    camera.fov = 2 * Math.atan(cam.height / 2 / cam.f) * 180 / Math.PI;
+    const fwd = [cam.rotation[6], cam.rotation[7], cam.rotation[8]];
+    controls.target.copy(S(cam.position[0] + fwd[0] * 10, cam.position[1] + fwd[1] * 10, cam.position[2] + fwd[2] * 10));
+  } else {
+    camera.fov = 45;
+    const presets = { broadcast: [[0, -25, 9], [0, 1, 0]], top: [[0, -0.01, 34], [0, 0, 0]], side: [[22, 0, 4], [0, 0, 0.5]], far: [[0, 22, 5], [0, -2, 0]] };
+    const [pos, tgt] = presets[v];
+    camera.position.copy(S(...pos)); controls.target.copy(S(...tgt));
+  }
+  camera.updateProjectionMatrix(); controls.update();
+}
+
+function resize() {
+  const w = stageEl.clientWidth, h = stageEl.clientHeight;
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+function syncPlay() { const b = document.getElementById('play'); b.textContent = playing ? '❚❚' : '▶'; b.setAttribute('aria-label', playing ? 'Pause' : 'Play'); }
+
+function loop(now) {
+  if (playing && last != null) {
+    t += ((now - last) / 1000) * rate;
+    if (t > R.end) t = R.start;
+    update();
+  }
+  last = now;
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+
+function boot() {
+  document.getElementById('title').textContent = DATA.title;
+  document.getElementById('subtitle').textContent = DATA.subtitle;
+  document.getElementById('tabs').innerHTML = DATA.rallies.map((r, i) => `<button class="tab" role="tab" data-i="${i}">Rally ${i + 1} · ${fmt(r.start)}</button>`).join('');
+  document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => loadRally(+b.dataset.i)));
+  document.getElementById('views').innerHTML = Object.entries(VIEWS).map(([k, l]) => `<button class="view" data-v="${k}">${l}</button>`).join('');
+  document.querySelectorAll('.view').forEach(b => b.addEventListener('click', () => setView(b.dataset.v)));
+  document.getElementById('speeds').innerHTML = [0.25, 0.5, 1].map(r => `<button class="speed${r === rate ? ' on' : ''}" data-r="${r}">${r}×</button>`).join('');
+  document.querySelectorAll('.speed').forEach(b => b.addEventListener('click', () => { rate = +b.dataset.r; document.querySelectorAll('.speed').forEach(x => x.classList.toggle('on', x === b)); }));
+  document.getElementById('bodytoggle').addEventListener('click', e => {
+    showBodies = !showBodies;
+    e.target.textContent = showBodies ? 'Show skeletons' : 'Show bodies';
+    update();
+  });
+  document.getElementById('play').addEventListener('click', () => { playing = !playing; syncPlay(); });
+  document.getElementById('scrub').addEventListener('input', e => { t = R.start + (+e.target.value / 1000) * (R.end - R.start); update(); });
+  window.addEventListener('keydown', e => {
+    if (e.key === ' ') { playing = !playing; syncPlay(); e.preventDefault(); }
+    else if (e.key === ',' || e.key === '.') { t += (e.key === '.' ? 1 : -1) / R.fps; playing = false; syncPlay(); update(); }
+  });
+  addPhone();
+  new ResizeObserver(resize).observe(stageEl);
+  resize();
+  setView('broadcast');
+  loadRally(0);
+  requestAnimationFrame(loop);
+}
+boot();
+</script>

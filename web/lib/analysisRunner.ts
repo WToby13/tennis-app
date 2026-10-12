@@ -1,4 +1,5 @@
 import { track } from "./analytics/server";
+import { isOjoTask } from "./ojoEngine";
 import { assumedDurationS } from "./analysisProxy";
 import { config } from "./config";
 import type { MetadataStore, Video, VideoSegment } from "./metadata/types";
@@ -371,6 +372,9 @@ export async function advanceAnalysis(
   video: Video,
   opts?: { stubTaskId?: string; onStub?: () => Omit<VideoSegment, "id">[] },
 ): Promise<Video> {
+  // Our own engine's jobs are finished by the analysis worker posting its
+  // result, not by polling TwelveLabs (lib/ojoEngine.ts).
+  if (isOjoTask(video.analysisTaskId)) return video;
   const after = await advanceOneStep(store, video, opts);
 
   // A run finishes on whichever poll happens to catch it, and that is as likely

@@ -69,3 +69,30 @@ variable "transcoder_disk_gib" {
   type        = number
   default     = 60
 }
+
+# --- Analysis worker (analysis_worker.tf) ------------------------------------
+
+variable "worker_app_url" {
+  description = "The web app's public URL, which the analysis worker calls (e.g. https://ojotennis.com)."
+  type        = string
+  default     = "https://example.invalid"
+}
+
+variable "analysis_worker_secret" {
+  description = "Shared secret the worker presents to /api/worker/*; set the same value as ANALYSIS_WORKER_SECRET in the app."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "worker_instance_types" {
+  description = "GPU instance types for the analysis worker (spot)."
+  type        = list(string)
+  default     = ["g6.xlarge", "g5.xlarge"]
+}
+
+variable "worker_max_vcpus" {
+  description = "Upper bound on concurrent worker vCPUs (4 per match): caps spend."
+  type        = number
+  default     = 16
+}

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { CourtCalibration } from "../court/solve";
 import { randomToken } from "../util";
 import type {
   AnalysisPlayers,
@@ -37,6 +38,7 @@ interface Row {
   analyzed_at: string | null;
   analysis_players: AnalysisPlayers | null;
   has_analysis_proxy: boolean | null;
+  court_calibration: CourtCalibration | null;
 }
 
 function toVideo(r: Row): Video {
@@ -62,6 +64,7 @@ function toVideo(r: Row): Video {
     analyzedAt: r.analyzed_at,
     analysisPlayers: r.analysis_players ?? null,
     hasAnalysisProxy: r.has_analysis_proxy ?? false,
+    courtCalibration: r.court_calibration ?? null,
   };
 }
 
@@ -87,6 +90,7 @@ function toRow(patch: Partial<Video>): Partial<Row> {
   if (patch.analyzedAt !== undefined) row.analyzed_at = patch.analyzedAt;
   if (patch.analysisPlayers !== undefined) row.analysis_players = patch.analysisPlayers;
   if (patch.hasAnalysisProxy !== undefined) row.has_analysis_proxy = patch.hasAnalysisProxy;
+  if (patch.courtCalibration !== undefined) row.court_calibration = patch.courtCalibration;
   return row;
 }
 
@@ -113,7 +117,10 @@ export class SupabaseMetadataStore implements MetadataStore {
     // policy (can_view_video), whose STABLE re-query of `videos` can't see the
     // just-inserted row in its own snapshot → 0 rows → error. We already have the
     // full row, so insert (INSERT policy only) and return it.
-    const { error } = await this.supabase.from("videos").insert({ id: video.id, ...toRow(video) });
+    // A new match is never calibrated, and leaving the column out keeps uploads
+    // working on a database that hasn't had 0022_court_calibration.sql yet.
+    const { court_calibration: _uncalibrated, ...row } = toRow(video);
+    const { error } = await this.supabase.from("videos").insert({ id: video.id, ...row });
     if (error) throw new Error(`create video failed: ${error.message}`);
     return video;
   }

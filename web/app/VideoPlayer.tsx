@@ -61,6 +61,7 @@ export function VideoPlayer({
   onPause,
   onTimeChange,
   onLoadedMetadata,
+  overlay,
 }: {
   src: string;
   poster?: string;
@@ -83,6 +84,8 @@ export function VideoPlayer({
   onPause: () => void;
   onTimeChange: (seconds: number) => void;
   onLoadedMetadata: (el: HTMLVideoElement) => void;
+  /** Drawn over the picture, under the controls (e.g. our tracking). */
+  overlay?: React.ReactNode;
 }) {
   const [duration, setDuration] = useState(0);
   const [buffered, setBuffered] = useState(0);
@@ -184,6 +187,8 @@ export function VideoPlayer({
           onLoadedMetadata(e.currentTarget);
         }}
       />
+
+      {overlay}
 
       {/* A paused match with the mouse away shows one big target rather than the
           whole control bar, which is what a poster frame wants. */}

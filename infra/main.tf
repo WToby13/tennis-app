@@ -100,6 +100,49 @@ data "aws_cloudfront_cache_policy" "optimized" {
   name = "Managed-CachingOptimized"
 }
 
+# CORS on playback responses, so the web app may read a video's pixels — the
+# court calibration panel draws a frame to a canvas and snaps pins to the
+# painted lines (web/lib/court/snap.ts). Playback itself never needed this; a
+# <video> without `crossorigin` plays cross-origin regardless. Headers are added
+# at the edge after the cache, keyed on the request's Origin, so one cached
+# object serves every origin. Same origins as the bucket's upload CORS.
+resource "aws_cloudfront_response_headers_policy" "videos_cors" {
+  name    = "${local.name}-videos-cors"
+  comment = "CORS for reading video frames in the web app"
+
+  cors_config {
+    access_control_allow_credentials = false
+    origin_override                  = true
+    access_control_max_age_sec       = 3000
+
+    access_control_allow_origins {
+      items = var.allowed_origins
+    }
+    access_control_allow_methods {
+      items = ["GET", "HEAD"]
+    }
+    # Range is how a video element fetches; it only needs listing when a
+    # browser treats a multi-range request as non-simple.
+    access_control_allow_headers {
+      items = ["Range"]
+    }
+    access_control_expose_headers {
+      items = ["Content-Length", "Content-Range", "Accept-Ranges"]
+    }
+  }
+
+  # The player fetches without CORS and the calibration panel with it, for the
+  # same URL. Vary: Origin stops the browser reusing the first (no CORS
+  # headers) for the second, which would fail the panel's pixel reads.
+  custom_headers_config {
+    items {
+      header   = "Vary"
+      value    = "Origin"
+      override = false
+    }
+  }
+}
+
 resource "aws_cloudfront_distribution" "videos" {
   enabled     = true
   comment     = "${local.name} video playback"
@@ -112,12 +155,13 @@ resource "aws_cloudfront_distribution" "videos" {
   }
 
   default_cache_behavior {
-    target_origin_id       = "s3-videos"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD"]
-    cached_methods         = ["GET", "HEAD"]
-    compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
+    target_origin_id           = "s3-videos"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.videos_cors.id
 
     # Only requests carrying a valid signature from this key group are served.
     trusted_key_groups = [aws_cloudfront_key_group.videos.id]

@@ -1,0 +1,12 @@
+-- Court calibration: where the camera was relative to the court, solved from
+-- landmarks the owner placed on one frame (web/lib/court/solve.ts). The first
+-- input to the 3D replay pipeline — see docs/3D_REPLAY.md §5, Stage 1.
+-- Owner-editable via the existing owner-only videos UPDATE policy, so no new
+-- policy is needed; readable wherever the match is.
+-- Run in the Supabase SQL editor after 0021_content_filter.sql.
+--
+-- Shape: CourtCalibration in web/lib/court/solve.ts — the placed landmarks plus
+-- the solved camera (focal length, rotation, translation), ground homography and
+-- fit quality. The server re-solves from the landmarks on every save, so the
+-- camera here always matches them.
+alter table public.videos add column if not exists court_calibration jsonb;

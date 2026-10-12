@@ -119,6 +119,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     analysisStatus: video.analysisStatus,
     analysisError: video.analysisError,
     analysisPlayers: video.analysisPlayers,
+    courtCalibration: video.courtCalibration,
     // The derived upload/analysis/share model — see lib/matchStatus.ts. Additive:
     // the individual fields above stay for existing clients.
     matchStatus: deriveMatchStatus(video, {
@@ -130,6 +131,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     // Owner-only trigger (local no-auth mode has no owner, so it's allowed there
     // too — matches the analyze route's own authorization).
     canAnalyze: !userId || isOwner,
+    // Court calibration writes the videos row, which RLS keeps to the owner.
+    canCalibrate: !userId || isOwner,
   });
 }
 
