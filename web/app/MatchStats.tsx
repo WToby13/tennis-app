@@ -232,6 +232,7 @@ function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void
         </span>
       </div>
 
+      <div className="mstats-body">
       <div className="mstats-cards">
         {cards.map(([label, p, c]) => (
           <div key={label} className="mstats-card" style={{ borderTopColor: c }}>
@@ -260,6 +261,7 @@ function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void
         ))}
       </div>
 
+      <div className="mstats-pair">
       {/* Placement: struck (left) → bounced (right). */}
       <div className="mstats-block">
         <div className="mstats-block-head">
@@ -270,8 +272,8 @@ function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void
         <div>
           <Court label="Where each shot was hit from (left) and where it bounced (right)">
             <Lines />
-            <text x={U(-HALF / 2)} y={18} textAnchor="middle" className="mstats-courtlabel">HIT FROM</text>
-            <text x={U(HALF / 2)} y={18} textAnchor="middle" className="mstats-courtlabel">BOUNCED</text>
+            <text x={U(-HALF / 2)} y={24} textAnchor="middle" className="mstats-courtlabel">HIT FROM</text>
+            <text x={U(HALF / 2)} y={24} textAnchor="middle" className="mstats-courtlabel">BOUNCED</text>
             {hotShot && (() => {
               const { s, from, at } = hotShot;
               const end = at ?? [from![0] * 0.15, 0];
@@ -279,7 +281,7 @@ function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void
                 <line
                   x1={U(clamp(from![1], -HALF - PAD_L + 0.4, 0))} y1={V(clamp(from![0], -DOUBLES - PAD_W + 0.4, DOUBLES + PAD_W - 0.4))}
                   x2={U(end[1])} y2={V(end[0])}
-                  stroke={colourOf(playerOf(s))} strokeWidth={2.5} strokeDasharray={at ? undefined : "5 4"} pointerEvents="none"
+                  stroke={colourOf(playerOf(s))} strokeWidth={3.5} strokeDasharray={at ? undefined : "7 6"} pointerEvents="none"
                 />
               );
             })()}
@@ -310,21 +312,21 @@ function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void
                     }
                   }}
                 >
-                  <circle cx={hx} cy={hy} r={10} fill="transparent" />
+                  <circle cx={hx} cy={hy} r={12} fill="transparent" />
                   {isOut(s) ? (
-                    <Cross x={hx} y={hy} r={4.5} colour={c} />
+                    <Cross x={hx} y={hy} r={6.5} colour={c} width={3} />
                   ) : isIn(s) ? (
-                    <circle cx={hx} cy={hy} r={5} fill="none" stroke={c} strokeWidth={2.5} />
+                    <circle cx={hx} cy={hy} r={7} fill="none" stroke={c} strokeWidth={3} />
                   ) : (
-                    <circle cx={hx} cy={hy} r={2.5} fill={c} />
+                    <circle cx={hx} cy={hy} r={3.5} fill={c} />
                   )}
                   {bounceShown && (
                     <>
-                      <circle cx={bx} cy={by} r={10} fill="transparent" />
+                      <circle cx={bx} cy={by} r={12} fill="transparent" />
                       {s.landing === "out" ? (
-                        <Cross x={bx} y={by} r={4.5} colour={c} />
+                        <Cross x={bx} y={by} r={6.5} colour={c} width={3} />
                       ) : (
-                        <circle cx={bx} cy={by} r={5} fill={c} stroke="var(--court-ink)" strokeWidth={1.2} />
+                        <circle cx={bx} cy={by} r={7} fill={c} stroke="var(--court-ink)" strokeWidth={1.5} />
                       )}
                     </>
                   )}
@@ -362,28 +364,9 @@ function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void
         placed={placed.filter(({ s }) => passes(zoneSel, playerOf(s), strokeOf(s), s.role, groups))}
       />
 
-      {stats.rallies.length > 0 && (
-        <div className="mstats-best">
-          <h4 className="muted">Best rallies</h4>
-          <ol>
-            {[...stats.rallies]
-              .filter((r) => r.shots >= 3)
-              .sort((a, b) => b.intensity - a.intensity)
-              .slice(0, 5)
-              .map((r) => (
-                <li key={r.idx}>
-                  <button type="button" onClick={() => onSeek(Math.max(0, r.start - 1))}>
-                    <span className="mstats-best-time">{mmss(r.start)}</span>
-                    <span>{r.shots} shots</span>
-                    <span>{r.maxSpeed != null ? `${Math.round(r.maxSpeed)} km/h top` : ""}</span>
-                    <span>{r.run ? `${Math.round(r.run)} m run` : ""}</span>
-                    {r.high && <span className="mstats-hot">High intensity</span>}
-                  </button>
-                </li>
-              ))}
-          </ol>
-        </div>
-      )}
+      </div>
+
+      <BestRallies stats={stats} onSeek={onSeek} byPerson={byPerson} playerOf={playerOf} colourOf={colourOf} name={(w) => players.find(([v]) => v === w)?.[1] ?? "Unknown"} />
 
       {stats.games && stats.games.length > 0 && (
         <div className="mstats-games">
@@ -407,6 +390,7 @@ function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void
           </div>
         </div>
       )}
+      </div>
     </section>
   );
 }
@@ -511,16 +495,16 @@ function PositionAndZones({
             const n = inn + o;
             return (
               <g key={z} pointerEvents="none" opacity={n ? 1 : 0.55}>
-                <rect x={cx - 34} y={cy - 18} width={68} height={38} rx={6} fill="var(--zone)" opacity={0.9} />
-                <text x={cx} y={cy + 1} textAnchor="middle" className="mstats-zonepct">{n ? `${Math.round((100 * inn) / n)}% in` : "–"}</text>
-                <text x={cx} y={cy + 15} textAnchor="middle" className="mstats-zonen">
+                <rect x={cx - 44} y={cy - 23} width={88} height={48} rx={7} fill="var(--zone)" opacity={0.9} />
+                <text x={cx} y={cy + 2} textAnchor="middle" className="mstats-zonepct">{n ? `${Math.round((100 * inn) / n)}% in` : "–"}</text>
+                <text x={cx} y={cy + 19} textAnchor="middle" className="mstats-zonen">
                   {n ? `${inn} in · ${o} out` : "no shots"}
                 </text>
               </g>
             );
           })}
-          <text x={U(-HALF / 2)} y={18} textAnchor="middle" className="mstats-courtlabel">POSITION IN POINTS</text>
-          <text x={U(HALF / 2)} y={18} textAnchor="middle" className="mstats-courtlabel">HIT FROM, AND HOW MANY WENT IN</text>
+          <text x={U(-HALF / 2)} y={24} textAnchor="middle" className="mstats-courtlabel">POSITION IN POINTS</text>
+          <text x={U(HALF / 2)} y={24} textAnchor="middle" className="mstats-courtlabel">HIT FROM · % IN</text>
         </Court>
       </div>
       <p className="mstats-caption">
@@ -551,4 +535,157 @@ function sumGrids(m: Movement | undefined, sel: Selection) {
     max = Math.max(max, v);
   });
   return max ? { cells, max, cell: m.cell } : null;
+}
+
+// --- Best rallies ------------------------------------------------------------------
+
+/**
+ * The most intense rallies, and the one picked drawn on a court: player A's end
+ * on the left, B's on the right, each shot from where it was struck to where
+ * it bounced, and on to the next contact.
+ */
+function BestRallies({
+  stats,
+  onSeek,
+  byPerson,
+  playerOf,
+  colourOf,
+  name,
+}: {
+  stats: Stats;
+  onSeek: (s: number) => void;
+  byPerson: boolean;
+  playerOf: (s: Shot) => string | undefined;
+  colourOf: (who: string | undefined) => string;
+  name: (who: string | undefined) => string;
+}) {
+  const best = useMemo(
+    () => [...stats.rallies].filter((r) => r.shots >= 3).sort((a, b) => b.intensity - a.intensity).slice(0, 5),
+    [stats],
+  );
+  const [picked, setPicked] = useState<number | null>(null);
+  const rally = best.find((r) => r.idx === picked) ?? best[0];
+  if (!rally) return null;
+
+  const shots = stats.shots.filter((s) => s.rally === rally.idx && s.from).sort((a, b) => a.t - b.t);
+  // Turn the court so player A (or the camera end) is on the left.
+  const left = byPerson
+    ? shots.find((s) => s.player === "A")?.hitter ?? (shots.find((s) => s.player === "B")?.hitter === "near" ? "far" : "near")
+    : "near";
+  const turn = (p: [number, number]): [number, number] => (left === "near" ? p : [-p[0], -p[1]]);
+  const inside = (p: [number, number]): [number, number] => [
+    clamp(p[0], -DOUBLES - PAD_W + 0.5, DOUBLES + PAD_W - 0.5),
+    clamp(p[1], -HALF - PAD_L + 0.5, HALF + PAD_L - 0.5),
+  ];
+  const steps = shots.map((s) => {
+    const hit = inside(turn(s.from!));
+    // A bounce on the hitter's own side is the fit failing; leave it out.
+    let bounce = s.bounce ? turn(s.bounce) : null;
+    if (bounce && Math.sign(bounce[1]) === Math.sign(hit[1])) bounce = null;
+    if (bounce && (Math.abs(bounce[0]) > DOUBLES + PAD_W - 0.3 || Math.abs(bounce[1]) > HALF + PAD_L - 0.3)) bounce = null;
+    return { s, hit, bounce, c: colourOf(playerOf(s)) };
+  });
+  const P = ([x, y]: [number, number]) => [U(y), V(x)] as const;
+  const leftWho = byPerson ? "A" : "near", rightWho = byPerson ? "B" : "far";
+
+  return (
+    <div className="mstats-block">
+      <div className="mstats-block-head">
+        <h4>Best rallies</h4>
+        <span className="muted">tap one to play it</span>
+      </div>
+      <div className="mstats-pair">
+        <ol className="mstats-best">
+          {best.map((r, k) => (
+            <li key={r.idx}>
+              <button
+                type="button"
+                className={r.idx === rally.idx ? "on" : ""}
+                aria-pressed={r.idx === rally.idx}
+                onMouseEnter={() => setPicked(r.idx)}
+                onFocus={() => setPicked(r.idx)}
+                onClick={() => {
+                  setPicked(r.idx);
+                  onSeek(Math.max(0, r.start - 1));
+                }}
+              >
+                <span className="mstats-best-rank">{k + 1}</span>
+                <span className="mstats-best-main">
+                  <b>{mmss(r.start)}</b> · {r.shots} shots
+                  {r.high && <span className="mstats-hot">High intensity</span>}
+                </span>
+                <span className="mstats-best-sub muted">
+                  {[r.maxSpeed != null ? `${Math.round(r.maxSpeed)} km/h top` : null, r.run ? `${Math.round(r.run)} m run` : null]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ol>
+        <div className="mstats-block">
+          <Court label={`Rally at ${mmss(rally.start)}: ${name(leftWho)} on the left, ${name(rightWho)} on the right`}>
+            <Lines />
+            <text x={U(-HALF / 2)} y={24} textAnchor="middle" className="mstats-courtlabel" style={{ fill: colourOf(leftWho), opacity: 1 }}>
+              {name(leftWho).toUpperCase()}
+            </text>
+            <text x={U(HALF / 2)} y={24} textAnchor="middle" className="mstats-courtlabel" style={{ fill: colourOf(rightWho), opacity: 1 }}>
+              {name(rightWho).toUpperCase()}
+            </text>
+            {/* The ball's path: struck → bounce (solid), bounce → next contact (dashed). */}
+            {steps.map(({ hit, bounce, c }, k) => {
+              const next = steps[k + 1]?.hit;
+              const [hx, hy] = P(hit);
+              const segs: React.ReactNode[] = [];
+              if (bounce) {
+                const [bx, by] = P(bounce);
+                segs.push(<line key="a" x1={hx} y1={hy} x2={bx} y2={by} stroke={c} strokeWidth={3} />);
+                if (next) {
+                  const [nx, ny] = P(next);
+                  segs.push(<line key="b" x1={bx} y1={by} x2={nx} y2={ny} stroke={c} strokeWidth={2} strokeDasharray="6 6" opacity={0.8} />);
+                }
+              } else if (next) {
+                const [nx, ny] = P(next);
+                segs.push(<line key="a" x1={hx} y1={hy} x2={nx} y2={ny} stroke={c} strokeWidth={3} />);
+              }
+              return <g key={k} pointerEvents="none">{segs}</g>;
+            })}
+            {steps.map(({ s, hit, bounce, c }, k) => {
+              const [hx, hy] = P(hit);
+              return (
+                <g
+                  key={k}
+                  className="mstats-shot"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Shot ${k + 1} by ${name(playerOf(s))}, ${Math.round(s.speed)} km/h, ${s.landing ?? "uncalled"}. Play it`}
+                  onClick={() => onSeek(Math.max(0, s.t - 1))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSeek(Math.max(0, s.t - 1));
+                    }
+                  }}
+                >
+                  {bounce &&
+                    (s.landing === "out" ? (
+                      <Cross x={P(bounce)[0]} y={P(bounce)[1]} r={6.5} colour={c} width={3} />
+                    ) : (
+                      <circle cx={P(bounce)[0]} cy={P(bounce)[1]} r={6.5} fill={c} stroke="var(--court-ink)" strokeWidth={1.5} />
+                    ))}
+                  <circle cx={hx} cy={hy} r={12} fill="var(--court-ink)" stroke={c} strokeWidth={3} />
+                  <text x={hx} y={hy + 5} textAnchor="middle" className="mstats-rallyn">{k + 1}</text>
+                </g>
+              );
+            })}
+          </Court>
+          <p className="mstats-caption">
+            {steps.length
+              ? `Numbered circles are where each shot was struck, dots where it bounced (× out), dashes the ball on to the next contact. ${steps.length} of ${rally.shots} shots tracked; tap one to play it.`
+              : "We couldn't follow the ball's flight in this rally closely enough to draw it."}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
