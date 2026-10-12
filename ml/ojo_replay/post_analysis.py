@@ -33,9 +33,68 @@ def match_stats(prefix: str) -> tuple[str, dict]:
         a["structure"] = json.loads((out / "structure.json").read_text())
     s = summarise(a)
     stats = {k: v for k, v in s.items() if k not in INTERNAL}
+    stats["movement"] = movement(out, a, a.get("structure"))
     stats["version"] = FIT_VERSION
     stats["generatedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     return meta["id"], stats
+
+
+# Where players stood during play, binned on their own half of the court, every
+# player drawn as if at the camera end (the far player's positions turned
+# round), so both read the same way. Metres from the net: x across, y back.
+CELL = 0.75
+GRID_X = (-7.5, 7.5)
+GRID_Y = (-16.5, 0.0)
+
+
+def movement(out: Path, a: dict, st: dict | None) -> dict:
+    """Counts of sampled player positions in play, per player (A / B, or the
+    end when we don't know who's who) and per role (serving / receiving)."""
+    import glob
+
+    import numpy as np
+
+    from .camera import Camera
+    from .players import feet_pixel
+
+    cam = Camera.from_calibration(json.loads((out / "calibration.json").read_text()))
+    fps = a["fps"]
+    point_of: dict[int, dict] = {}
+    for p in (st or {}).get("points", []):
+        for idx in p.get("rallies") or [p["rally"]]:
+            point_of[idx] = p
+    windows = [(int(r["startS"] * fps), int(r["endS"] * fps), r["idx"]) for r in a["rallies"]]
+    nx = int(round((GRID_X[1] - GRID_X[0]) / CELL))
+    ny = int(round((GRID_Y[1] - GRID_Y[0]) / CELL))
+    grids: dict[str, np.ndarray] = {}
+    seen = set()
+    for f in glob.glob(str(out / "rallies" / "*c4.players.json")):
+        for p in json.loads(Path(f).read_text())["players"]:
+            key = (p["frame"], p["side"])
+            if key in seen:
+                continue
+            seen.add(key)
+            idx = next((k for lo, hi, k in windows if lo <= p["frame"] <= hi), None)
+            if idx is None:
+                continue
+            uv = feet_pixel(np.array(p["box"]), np.array(p["keypoints"]))
+            x, y = cam.to_ground(uv[None])[0][:2]
+            if p["side"] == "far":
+                x, y = -x, -y
+            i, j = int((x - GRID_X[0]) / CELL), int((y - GRID_Y[0]) / CELL)
+            if not (0 <= i < nx and 0 <= j < ny):
+                continue
+            pt = point_of.get(idx)
+            if pt and pt.get("nearPlayer"):
+                who = pt["nearPlayer"] if p["side"] == "near" else ("B" if pt["nearPlayer"] == "A" else "A")
+            else:
+                who = p["side"]
+            end = pt.get("serverEnd") if pt else None
+            role = "any" if end is None else ("serving" if end == p["side"] else "receiving")
+            g = grids.setdefault(f"{who}:{role}", np.zeros((ny, nx), int))
+            g[j, i] += 1
+    return {"cell": CELL, "x0": GRID_X[0], "y0": GRID_Y[0], "nx": nx, "ny": ny,
+            "grids": {k: v.ravel().tolist() for k, v in grids.items()}}
 
 
 def build_tracks(prefix: str) -> dict:

@@ -121,12 +121,24 @@ def summarise(a: dict) -> dict:
         end = opener[r["idx"]]
         return abs(first[0]["t"] - s["t0"]) <= 0.5 and (end is None or end == s["hitter"])
 
+    # Which end served each stretch's point, for serving / receiving.
+    served_from = {}
+    for p in (a["structure"]["points"] if a.get("structure") else []):
+        for idx in p.get("rallies") or [p["rally"]]:
+            served_from[idx] = p.get("serverEnd")
+
     shots = []
     for r in rallies:
         for k, s in enumerate(r["shots"]):
             serve = is_serve(r, k, s)
+            end = served_from.get(r["idx"])
             shots.append({
                 "rally": r["idx"], "serve": serve, "hitter": s["hitter"], "t": s["t0"],
+                # Where it was struck (the fitted flight's start), metres.
+                "from": [round(s["p0"][0], 2), round(s["p0"][1], 2)],
+                "role": None if end is None else ("serving" if end == s["hitter"] else "receiving"),
+                # Forehand / backhand: not detected yet (labels first).
+                "stroke": None,
                 "speed": s["speed_kmh"], "bounce": s["bounce"][1:] if s.get("bounce") else None,
                 "landing": serve_call(s) if serve else s.get("landing"),
                 "net": s.get("net_clearance_m"),

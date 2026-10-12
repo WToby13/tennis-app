@@ -34,6 +34,12 @@ export interface Shot {
   t: number;
   speed: number;
   bounce: [number, number] | null;
+  /** Where it was struck, metres (court coordinates). */
+  from?: [number, number];
+  /** Whether the hitter was serving or receiving that point, if known. */
+  role?: "serving" | "receiving" | null;
+  /** Not detected yet; null until it is. */
+  stroke?: "forehand" | "backhand" | null;
   landing: "in" | "out" | "close" | "net" | null;
   net: number | null;
   doubt: string | null;
@@ -74,6 +80,21 @@ export interface MatchStats {
   far: PlayerStats;
   people: Record<Who, PlayerStats> | null;
   games: ServiceGame[] | null;
+  movement?: Movement;
+}
+
+/**
+ * Where players stood during play: counts of sampled positions on a grid over
+ * their own half, every player turned to the camera end (x across, y from the
+ * net back, negative). Keyed "A:serving", "B:receiving", "near:any", …
+ */
+export interface Movement {
+  cell: number;
+  x0: number;
+  y0: number;
+  nx: number;
+  ny: number;
+  grids: Record<string, number[]>;
 }
 
 /** A light shape check for what the worker posts; the worker is trusted, typos aren't. */
