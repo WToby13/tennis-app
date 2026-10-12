@@ -430,30 +430,29 @@ function PositionAndZones({
 }) {
   const heat = useMemo(() => sumGrids(stats.movement, sel), [stats.movement, sel]);
 
-  // Nine zones over the receiving half of the singles court: three deep (net
-  // to baseline) by three across. Shaded by how many shots landed in each.
-  const zoneOf = (x: number, y: number) => {
-    if (Math.abs(x) > SINGLES || y < 0 || y > HALF) return null;
-    const across = Math.min(2, Math.floor(((x + SINGLES) / (2 * SINGLES)) * 3));
-    const deep = Math.min(2, Math.floor((y / HALF) * 3));
-    return deep * 3 + across;
-  };
-  const counts = Array(9).fill(0) as number[];
+  // Nine zones for where shots were struck from, drawn on the right half as
+  // the hitter's own half reflected across the net (so it lines up with the
+  // heatmap): in front of the service line, between it and the baseline, and
+  // behind the baseline; by left / middle / right thirds of the singles width
+  // (the outer thirds run out to the edge). Each shows the shots hit from
+  // there and how many of them landed in.
+  const DEPTH = [0, SERVICE, HALF, HALF + PAD_L];
+  const ACROSS = [-DOUBLES - PAD_W, -SINGLES / 3, SINGLES / 3, DOUBLES + PAD_W];
+  const band = (edges: number[], v: number) => edges.findIndex((e, k) => k < edges.length - 1 && v >= e && v < edges[k + 1]);
+  const zones = Array.from({ length: 9 }, () => ({ inn: 0, out: 0 }));
   let landedIn = 0, out = 0, net = 0;
-  for (const { s, at } of placed) {
+  for (const { s, from } of placed) {
+    if (!from || !(isIn(s) || isOut(s))) continue;
     if (s.landing === "net") net++;
     else if (s.landing === "out") out++;
-    else if (at && isIn(s)) {
-      const z = zoneOf(at[0], at[1]);
-      if (z !== null) {
-        counts[z]++;
-        landedIn++;
-      }
-    }
+    else landedIn++;
+    const deep = band(DEPTH, -from[1]), across = band(ACROSS, from[0]);
+    if (deep < 0 || across < 0) continue;
+    if (isIn(s)) zones[deep * 3 + across].inn++;
+    else zones[deep * 3 + across].out++;
   }
   const called = landedIn + out + net;
-  const maxZone = Math.max(1, ...counts);
-  const zw = (2 * SINGLES) / 3, zd = HALF / 3;
+  const maxZone = Math.max(1, ...zones.map((z) => z.inn + z.out));
 
   return (
     <div className="mstats-block">
@@ -487,42 +486,47 @@ function PositionAndZones({
               </g>
             </g>
           )}
-          {counts.map((n, z) => {
+          {zones.map(({ inn, out: o }, z) => {
             const across = z % 3, deep = Math.floor(z / 3);
             return (
               <rect
                 key={z}
-                x={U(deep * zd)} y={V(-SINGLES + across * zw)} width={zd * S} height={zw * S}
-                fill="var(--zone)" opacity={0.08 + 0.62 * (n / maxZone)}
+                x={U(DEPTH[deep])} y={V(ACROSS[across])}
+                width={(DEPTH[deep + 1] - DEPTH[deep]) * S} height={(ACROSS[across + 1] - ACROSS[across]) * S}
+                fill="var(--zone)" opacity={0.06 + 0.6 * ((inn + o) / maxZone)}
               />
             );
           })}
           <Lines />
-          {[1, 2].map((k) => (
-            <g key={k} stroke="var(--court-line)" strokeOpacity={0.45} strokeDasharray="4 5" pointerEvents="none">
-              <line x1={U(k * zd)} y1={V(-SINGLES)} x2={U(k * zd)} y2={V(SINGLES)} />
-              <line x1={U(0)} y1={V(-SINGLES + k * zw)} x2={U(HALF)} y2={V(-SINGLES + k * zw)} />
-            </g>
-          ))}
-          {counts.map((n, z) => {
+          <g stroke="var(--court-line)" strokeOpacity={0.5} strokeDasharray="4 5" pointerEvents="none">
+            {[1, 2].map((k) => (
+              <line key={k} x1={U(0)} y1={V(ACROSS[k])} x2={U(DEPTH[3])} y2={V(ACROSS[k])} />
+            ))}
+            <line x1={U(SERVICE)} y1={V(ACROSS[0])} x2={U(SERVICE)} y2={V(ACROSS[3])} />
+            <line x1={U(HALF)} y1={V(ACROSS[0])} x2={U(HALF)} y2={V(ACROSS[3])} />
+          </g>
+          {zones.map(({ inn, out: o }, z) => {
             const across = z % 3, deep = Math.floor(z / 3);
-            const cx = U(deep * zd + zd / 2), cy = V(-SINGLES + across * zw + zw / 2);
-            const pct = landedIn ? Math.round((100 * n) / landedIn) : 0;
+            const cx = U((DEPTH[deep] + DEPTH[deep + 1]) / 2), cy = V((ACROSS[across] + ACROSS[across + 1]) / 2);
+            const n = inn + o;
             return (
-              <g key={z} pointerEvents="none">
-                <rect x={cx - 30} y={cy - 17} width={60} height={40} rx={6} fill="var(--zone)" opacity={0.85} />
-                <text x={cx} y={cy + 2} textAnchor="middle" className="mstats-zonepct">{pct}%</text>
-                <text x={cx} y={cy + 17} textAnchor="middle" className="mstats-zonen">{n} {n === 1 ? "shot" : "shots"}</text>
+              <g key={z} pointerEvents="none" opacity={n ? 1 : 0.55}>
+                <rect x={cx - 34} y={cy - 18} width={68} height={38} rx={6} fill="var(--zone)" opacity={0.9} />
+                <text x={cx} y={cy + 1} textAnchor="middle" className="mstats-zonepct">{n ? `${Math.round((100 * inn) / n)}% in` : "–"}</text>
+                <text x={cx} y={cy + 15} textAnchor="middle" className="mstats-zonen">
+                  {n ? `${inn} in · ${o} out` : "no shots"}
+                </text>
               </g>
             );
           })}
           <text x={U(-HALF / 2)} y={18} textAnchor="middle" className="mstats-courtlabel">POSITION IN POINTS</text>
-          <text x={U(HALF / 2)} y={18} textAnchor="middle" className="mstats-courtlabel">WHERE SHOTS LANDED IN</text>
+          <text x={U(HALF / 2)} y={18} textAnchor="middle" className="mstats-courtlabel">HIT FROM, AND HOW MANY WENT IN</text>
         </Court>
       </div>
       <p className="mstats-caption">
         Left: where they stood while the ball was in play, brighter for more time (the shot type filter doesn&rsquo;t apply
-        here). Right: of the shots that landed in, the share in each zone. Forehand and backhand aren&rsquo;t detected yet,
+        here). Right: their own half again, mirrored across the net, split into nine zones by where each shot was hit
+        from, with how many of those landed in (&ldquo;out&rdquo; includes the net). Brighter zones had more shots. Forehand and backhand aren&rsquo;t detected yet,
         so every rally shot counts as a forehand for now.
       </p>
     </div>
