@@ -16,7 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .camera import HALF_LENGTH, SERVICE, SINGLES
+from .camera import DOUBLES, HALF_LENGTH, SERVICE, SINGLES
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -56,6 +56,15 @@ def rank(values: list[float]) -> np.ndarray:
         return np.ones_like(v) * 0.5
     order = v.argsort().argsort()
     return order / (len(v) - 1)
+
+
+def lands_elsewhere(shot: dict) -> bool:
+    """A flight whose bounce is well off this court: a ball on the next court,
+    or one being knocked back after the point. Not a shot of this match."""
+    if not shot.get("bounce"):
+        return False
+    _, x, y = shot["bounce"]
+    return abs(x) > DOUBLES + 3.0 or abs(y) > HALF_LENGTH + 6.0
 
 
 def on_this_court(rally: dict) -> bool:
@@ -101,7 +110,8 @@ def summarise(a: dict) -> dict:
                 "rally": r["idx"], "serve": k == 0, "hitter": s["hitter"], "t": s["t0"],
                 "speed": s["speed_kmh"], "bounce": s["bounce"][1:] if s.get("bounce") else None,
                 "landing": serve_call(s) if k == 0 else s.get("landing"),
-                "net": s.get("net_clearance_m"), "doubt": s.get("doubtful"),
+                "net": s.get("net_clearance_m"),
+                "doubt": s.get("doubtful") or ("lands off this court" if lands_elsewhere(s) else None),
             })
     # Intensity: shots, pace and how far both players ran per second, each as a
     # rank within the match, averaged. "High" is the top sixth with 4+ shots.

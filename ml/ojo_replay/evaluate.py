@@ -9,7 +9,9 @@ labeller actually watched are scored. Reported:
 - hits: recall (labelled hits we fitted a shot for, within MATCH_S and from
   the same end) and precision (our shots inside watched time that match one);
 - serves: the serving end, on points both found;
-- points: labelled points we found a rally for.
+- points: labelled points we found a rally for;
+- calls: on bounces tagged in or out (I / O in the labeller), what our fitted
+  bounce nearest it (within MATCH_S) called. "close" is our "can't tell".
 """
 
 from __future__ import annotations
@@ -90,12 +92,26 @@ def main(prefix: str) -> None:
                 serve_n += 1
                 serve_ok += ours["serverEnd"] == serve["end"]
 
+    calls: dict[tuple[str, str], int] = {}
+    ours_b = [(s["bounce"][0], s.get("landing")) for r in a["rallies"] for s in r["shots"] if s.get("bounce")]
+    for e in labels["events"]:
+        if e["type"] != "bounce" or not e.get("call") or not seen(e["t"]):
+            continue
+        near = min(ours_b, key=lambda b: abs(b[0] - e["t"]), default=None)
+        got = near[1] if near and abs(near[0] - e["t"]) <= MATCH_S else "no bounce"
+        calls[(e["call"], got)] = calls.get((e["call"], got), 0) + 1
+
     watched_s = sum(hi - lo for lo, hi in watched)
     pct = lambda x: "–" if x is None else f"{100 * x:.0f}%"  # noqa: E731
     print(f"[{mid}] watched {watched_s / 60:.1f} min; {len(hits)} labelled hits in {len(pts)} points")
     print(f"  hits: recall {pct(recall)} ({found}/{len(hits)}), precision {pct(precision)} ({len(used)}/{len(shots)})")
     print(f"  points found: {pts_found}/{len(pts)}")
     print(f"  serving end right: {serve_ok}/{serve_n}")
+    if calls:
+        for truth in ("in", "out"):
+            row = {got: n for (t, got), n in calls.items() if t == truth}
+            if row:
+                print(f"  tagged {truth:3s} -> ours: " + ", ".join(f"{g} {n}" for g, n in sorted(row.items(), key=lambda x: -x[1])))
 
 
 if __name__ == "__main__":

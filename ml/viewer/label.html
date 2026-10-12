@@ -44,7 +44,7 @@ canvas { width: 100%; display: block; border-radius: 4px; background: var(--surf
 #overview { height: 22px; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.78rem; color: var(--muted); }
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-aside { display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 14px; min-height: 0; }
+aside { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); gap: 14px; min-height: 0; }
 .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 12px 14px; }
 .panel h2 { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; font-weight: 500; }
 .keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 0.86rem; }
@@ -84,7 +84,7 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--rule); border-bottom-w
         <span><i style="background:var(--far)"></i>hit, far end</span>
         <span><i style="background:var(--bounce)"></i>bounce</span>
         <span><i style="background:var(--fault)"></i>fault</span>
-        <span><i style="background:var(--end)"></i>point over</span>
+        <span><i style="background:var(--end)"></i>point over / net</span>
         <span><i style="background:var(--ours)"></i>our rally windows</span>
         <span><i style="background:var(--tl)"></i>TwelveLabs</span>
         <span><i style="background:var(--reviewed)"></i>watched</span>
@@ -99,10 +99,21 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--rule); border-bottom-w
         <kbd>W</kbd><span>Hit by the <b style="color:var(--far)">far-end</b> player</span>
         <kbd>B</kbd><span>Bounce (optional)</span>
         <kbd>F</kbd><span>Fault: that serve missed</span>
+        <kbd>X</kbd><span>Into the net (optional)</span>
         <kbd>E</kbd><span>Point over</span>
         <kbd>⌫</kbd><span>Delete the selected mark</span>
         <kbd>Z</kbd><span>Undo the last mark</span>
       </div>
+    </div>
+    <div class="panel">
+      <h2>Then, optionally, on that mark</h2>
+      <div class="keys">
+        <kbd>I</kbd><span>Bounce was <b>in</b> (singles court)</span>
+        <kbd>O</kbd><span>Bounce was <b>out</b></span>
+        <kbd>1</kbd><span>Hit was a forehand</span>
+        <kbd>2</kbd><span>Hit was a backhand</span>
+      </div>
+      <p class="empty" style="margin:8px 0 0">Applies to the selected mark (the one you just made, or click one in the list). Press again to clear.</p>
     </div>
     <div class="panel">
       <h2>Move</h2>
@@ -186,8 +197,18 @@ function mergeIntervals(iv) {
   return out.map(([a, b]) => [+a.toFixed(2), +b.toFixed(2)]);
 }
 
-const LABEL = { "hit:near": "Hit · camera end", "hit:far": "Hit · far end", bounce: "Bounce", fault: "Fault", end: "Point over" };
-const colorOf = (e, C) => e.type === "hit" ? C[e.end] : C[e.type];
+const LABEL = { "hit:near": "Hit · camera end", "hit:far": "Hit · far end", bounce: "Bounce", net: "Into the net", fault: "Fault", end: "Point over" };
+const colorOf = (e, C) => e.type === "hit" ? C[e.end] : C[e.type === "net" ? "end" : e.type];
+// Optional detail on a mark: a bounce's call, a hit's stroke.
+const detailOf = (e) => [e.stroke, e.call].filter(Boolean).join(" · ");
+
+function setDetail(key, value, type) {
+  const e = state.events[state.selected];
+  if (!e || e.type !== type) { flash(type === "bounce" ? "Select a bounce first" : "Select a hit first", COLORS().muted); return; }
+  if (e[key] === value) delete e[key]; else e[key] = value;
+  flash(e[key] ? `${type === "bounce" ? "Bounce" : "Hit"} · ${value}` : "Cleared", colorOf(e, COLORS()));
+  renderEvents(); save();
+}
 
 function add(type, end) {
   const t = video.currentTime;
@@ -220,7 +241,7 @@ function renderEvents() {
     let name = LABEL[e.type === "hit" ? `hit:${e.end}` : e.type];
     if (e.type === "hit" && firstHit) { name = name.replace("Hit", "Serve"); firstHit = false; }
     if (e.type === "fault") firstHit = true;
-    html += `<li data-i="${i}" class="${i === state.selected ? "sel" : ""}"><span class="t">${fmt(e.t)}</span><span class="tag" style="color:${colorOf(e, C)}">${name}</span><button class="x" data-del="${i}" aria-label="Delete this mark">✕</button></li>`;
+    html += `<li data-i="${i}" class="${i === state.selected ? "sel" : ""}"><span class="t">${fmt(e.t)}</span><span class="tag" style="color:${colorOf(e, C)}">${name}${detailOf(e) ? ` <span class="status">· ${detailOf(e)}</span>` : ""}</span><button class="x" data-del="${i}" aria-label="Delete this mark">✕</button></li>`;
     if (e.type === "end") { point++; firstHit = true; if (i < state.events.length - 1) html += `<li class="point-sep">Point ${point}</li>`; }
   });
   host.innerHTML = html + "</ol>";
@@ -334,6 +355,11 @@ document.addEventListener("keydown", (ev) => {
     q: () => add("hit", "near"),
     w: () => add("hit", "far"),
     b: () => add("bounce"),
+    x: () => add("net"),
+    i: () => setDetail("call", "in", "bounce"),
+    o: () => setDetail("call", "out", "bounce"),
+    1: () => setDetail("stroke", "forehand", "hit"),
+    2: () => setDetail("stroke", "backhand", "hit"),
     f: () => add("fault"),
     e: () => add("end"),
     n: () => jumpRally(1),

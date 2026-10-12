@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .analyze import FIT_VERSION
-from .report import summarise
+from .report import lands_elsewhere, summarise
 
 ROOT = Path(__file__).resolve().parents[1]
 INTERNAL = ("id", "title", "calibration", "compare", "detected", "timing", "cost", "settings")
@@ -96,7 +96,7 @@ def build_tracks(prefix: str) -> dict:
     for r in a["rallies"]:
         near = near_of.get(r["idx"])
         for s in r["shots"]:
-            if not s.get("bounce"):
+            if not s.get("bounce") or lands_elsewhere(s):
                 continue
             t, x, y = s["bounce"]
             uv = cam.project(np.array([[x, y, 0.0]]))[0]
