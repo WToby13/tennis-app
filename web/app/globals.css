@@ -2588,6 +2588,8 @@ video {
   gap: 14px;
   min-width: 0;
 }
+.calib-mode { display: flex; gap: 6px; flex-wrap: wrap; }
+.calib-mode .btn { flex: 1; }
 .calib-quality {
   background: var(--surface-2);
   border: 1px solid var(--border);

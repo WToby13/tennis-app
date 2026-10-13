@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CloseIcon } from "./icons";
-import { COURT_SEGMENTS, DEFAULT_SEQUENCE, LANDMARKS, LANDMARK_BY_ID } from "@/lib/court/model";
+import { COURT_SEGMENTS, DEFAULT_SEQUENCE, LANDMARKS, LANDMARK_BY_ID, QUICK_SEQUENCE } from "@/lib/court/model";
 import { snapToCrossing } from "@/lib/court/snap";
 import { projectSegment, solveCalibration, type CourtCalibration } from "@/lib/court/solve";
 
@@ -50,8 +50,12 @@ export function CourtCalibration({ videoId, src, startS, initial, onClose, onSav
   const [pins, setPins] = useState<Pins>(() =>
     Object.fromEntries((initial?.landmarks ?? []).map((l) => [l.id, { x: l.x, y: l.y }])),
   );
+  // Quick: three points, snapped onto the paint by the analysis. Full: four or
+  // more, checked against each other here.
+  const [mode, setMode] = useState<"quick" | "full">(() => (!initial || initial.quick ? "quick" : "full"));
+  const sequence = mode === "quick" ? QUICK_SEQUENCE : DEFAULT_SEQUENCE;
   const [activeId, setActiveId] = useState<string | null>(() =>
-    initial ? null : DEFAULT_SEQUENCE[0],
+    initial ? null : QUICK_SEQUENCE[0],
   );
   const [loupe, setLoupe] = useState<{ x: number; y: number } | null>(null);
   const [showLines, setShowLines] = useState(true);
@@ -146,7 +150,11 @@ export function CourtCalibration({ videoId, src, startS, initial, onClose, onSav
     [dims, canSnap, k],
   );
 
-  const nextUnplaced = (placed: Pins) => DEFAULT_SEQUENCE.find((id) => !placed[id]) ?? null;
+  const nextUnplaced = (placed: Pins, seq: string[] = sequence) => seq.find((id) => !placed[id]) ?? null;
+  const chooseMode = (m: "quick" | "full") => {
+    setMode(m);
+    setActiveId(nextUnplaced(pins, m === "quick" ? QUICK_SEQUENCE : DEFAULT_SEQUENCE));
+  };
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>, pinId?: string) => {
     const id = pinId ?? activeId;
@@ -187,8 +195,8 @@ export function CourtCalibration({ videoId, src, startS, initial, onClose, onSav
       setSnapNote(s ? "Snapped to the line crossing." : "No line crossing found nearby, so it stays where you dropped it.");
     }
     setPins(next);
-    // Walk the four corners in order; a point picked from the list is a one-off.
-    if (drag.isNew) setActiveId(DEFAULT_SEQUENCE.includes(drag.id) ? nextUnplaced(next) : null);
+    // Walk the mode's points in order; a point picked from the list is a one-off.
+    if (drag.isNew) setActiveId(sequence.includes(drag.id) ? nextUnplaced(next) : null);
   };
 
   const removePin = useCallback((id: string) => {
@@ -305,11 +313,15 @@ export function CourtCalibration({ videoId, src, startS, initial, onClose, onSav
           <div>
             <h2 style={{ fontSize: 18, margin: 0 }}>Calibrate the court</h2>
             <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
-              {initial?.source === "auto"
+              {initial?.source === "auto" && initial.fromClicks
+                ? "These pins were snapped onto the painted lines from your three points. Check every line sits on the paint; drag any pin that's off, then save."
+                : initial?.source === "auto"
                 ? initial.autoStatus === "auto"
                   ? "These pins were placed automatically and the court lines fit the paint. Check every line sits on the paint; drag any pin that's off, then save."
                   : "These pins were placed automatically, but the fit is uncertain. Check each one carefully and drag any that's off the landmark, then save."
-                : "Place at least four court points. The whole court is then redrawn over the frame, and if every line sits on the paint, the camera is right."}
+                : mode === "quick"
+                  ? "Quick: click the near-left and near-right singles corners and the near T. The court is drawn from those three, and when the match is analysed it's snapped onto the painted lines."
+                  : "Place at least four court points. The whole court is then redrawn over the frame, and if every line sits on the paint, the camera is right."}
               {initial?.source === "auto" && initial.moved
                 ? " The camera moved during this recording, so these pins only hold for part of it."
                 : ""}
@@ -457,12 +469,29 @@ export function CourtCalibration({ videoId, src, startS, initial, onClose, onSav
           </div>
 
           <aside className="calib-side">
-            <QualityCard placedCount={placedCount} solved={solved} />
+            <div className="calib-mode" role="group" aria-label="How many points">
+              <button
+                className={`btn btn-sm${mode === "quick" ? "" : " secondary"}`}
+                aria-pressed={mode === "quick"}
+                onClick={() => chooseMode("quick")}
+              >
+                Quick · 3 points
+              </button>
+              <button
+                className={`btn btn-sm${mode === "full" ? "" : " secondary"}`}
+                aria-pressed={mode === "full"}
+                onClick={() => chooseMode("full")}
+              >
+                Full · 4+ points
+              </button>
+            </div>
+            <QualityCard placedCount={placedCount} solved={solved} mode={mode} />
 
             <div className="calib-list">
               <p className="muted" style={{ fontSize: 12, margin: "0 0 6px" }}>
-                Use the outer (doubles) corners. If the court only has singles lines, use the
-                singles corners instead.
+                {mode === "quick"
+                  ? "Quick: the near singles corners and the near T. Any three other court points work too, as long as they're not on one line."
+                  : "Use the outer (doubles) corners. If the court only has singles lines, use the singles corners instead."}
               </p>
               {GROUPS.map((group) => (
                 <div key={group} className="calib-group">
@@ -523,15 +552,17 @@ export function CourtCalibration({ videoId, src, startS, initial, onClose, onSav
 function QualityCard({
   placedCount,
   solved,
+  mode,
 }: {
   placedCount: number;
   solved: ReturnType<typeof solveCalibration> | null;
+  mode: "quick" | "full";
 }) {
   if (!solved) {
     return (
       <div className="calib-quality">
         <span className="calib-badge none">Not calibrated</span>
-        <p>Place the four doubles corners to start.</p>
+        <p>{mode === "quick" ? "Click the near-left singles corner to start." : "Place the four doubles corners to start."}</p>
       </div>
     );
   }
@@ -546,16 +577,19 @@ function QualityCard({
   const c = solved.calibration;
   const [x, y, z] = c.camera.position;
   const behind = -HALF_LENGTH - y;
-  const verdict = {
+  const verdict = c.quick
+    ? "Quick court from three points and a typical ultra-wide lens. Check it's roughly on the court; the analysis snaps it onto the painted lines, and the refined pins then show here."
+    : {
     unchecked: "Fits, but unchecked. Four points always fit some camera. Add a fifth (a T, or a net-post top, which also pins down the lens) so mistakes show up.",
     good: "Good fit. Check that the redrawn lines sit on the paint across the whole court.",
     fair: "Rough fit. A pin is probably slightly off. Zoom in with the loupe and nudge it.",
     poor: "Poor fit. A pin is on the wrong landmark, or left and right are swapped.",
   }[c.quality];
+  const badge = c.quick ? "Quick" : c.quality === "unchecked" ? "Unchecked" : c.quality[0].toUpperCase() + c.quality.slice(1);
   return (
     <div className="calib-quality">
-      <span className={`calib-badge ${c.quality}`}>
-        {c.quality === "unchecked" ? "Unchecked" : c.quality[0].toUpperCase() + c.quality.slice(1)}
+      <span className={`calib-badge ${c.quick ? "fair" : c.quality}`}>
+        {badge}
         {c.redundancy > 0 && ` · ${c.rmsErrorPx.toFixed(1)} px`}
       </span>
       <p>{verdict}</p>

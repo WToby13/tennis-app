@@ -14,7 +14,17 @@ import { LANDMARK_BY_ID, type Vec3 } from "./model";
  * focal length on a grid; the best few seeds are refined against every landmark
  * (net-post tops included, which is what pins focal length down) by
  * Levenberg–Marquardt on reprojection error.
+ *
+ * Quick mode: exactly three court points (say the near singles corners and a T).
+ * Three points give six equations for seven unknowns, so the focal length is
+ * taken from the lens instead: phone ultra-wides sit near f = 0.39 × width
+ * (~104°). That rough court is saved as source "clicks"; the analysis worker
+ * then snaps it onto the painted lines (ml/ojo_replay/clicks.py) and posts the
+ * refined pins back.
  */
+
+/** Ultra-wide focal length as a fraction of the image width (ml autocal.LENS centre). */
+export const QUICK_FOCAL = 0.39;
 
 export interface PlacedLandmark {
   id: string;
@@ -71,7 +81,11 @@ export interface CourtCalibration {
    * `moved`: the camera moved during the recording, so one calibration can't
    * cover all of it.
    */
-  source?: "manual" | "auto";
+  source?: "manual" | "auto" | "clicks";
+  /** Solved from three points with the focal length assumed (see QUICK_FOCAL). */
+  quick?: boolean;
+  /** An automatic result snapped from the owner's three quick points. */
+  fromClicks?: boolean;
   autoStatus?: "auto" | "review";
   moved?: boolean;
 }
@@ -369,7 +383,7 @@ function residuals(pose: Pose, cx: number, cy: number, obs: Obs[]): number[] {
 const sumSq = (r: number[]) => r.reduce((s, x) => s + x * x, 0);
 
 /** Levenberg–Marquardt over (log f, rotation vector, translation). */
-function refine(start: Pose, cx: number, cy: number, obs: Obs[]): Pose {
+function refine(start: Pose, cx: number, cy: number, obs: Obs[], fixedFocal = false): Pose {
   const pack = (p: Pose) => [Math.log(p.f), ...toRodrigues(p.R), ...p.t];
   const unpack = (x: number[]): Pose => ({
     f: Math.exp(x[0]),
@@ -382,7 +396,7 @@ function refine(start: Pose, cx: number, cy: number, obs: Obs[]): Pose {
   let mu = 1e-3;
   for (let iter = 0; iter < 200; iter++) {
     const J: number[][] = r.map(() => new Array(7).fill(0));
-    for (let k = 0; k < 7; k++) {
+    for (let k = fixedFocal ? 1 : 0; k < 7; k++) {
       const h = 1e-6 * (1 + Math.abs(x[k]));
       const xp = x.slice();
       const xm = x.slice();
@@ -449,12 +463,62 @@ function hasGeneralFour(pts: Vec3[]): boolean {
 
 type Fit = { ok: true; pose: Pose; errors: { id: string; errorPx: number }[]; rms: number } | { ok: false; error: string };
 
+/** A camera at `pos` looking at the middle of the court, upright. */
+function lookingAtCourt(pos: Vec3, f: number): Pose {
+  const z = scale(sub([0, 0, 0], pos), 1 / norm(sub([0, 0, 0], pos)));
+  const xr = cross(z, [0, 0, 1]);
+  const x = scale(xr, 1 / norm(xr));
+  const y = cross(z, x);
+  const R = [...x, ...y, ...z];
+  return { f, R, t: [-(x[0] * pos[0] + x[1] * pos[1] + x[2] * pos[2]), -(y[0] * pos[0] + y[1] * pos[1] + y[2] * pos[2]), -(z[0] * pos[0] + z[1] * pos[1] + z[2] * pos[2])] };
+}
+
+/**
+ * Three ground points, focal length from the lens: the pose that puts them
+ * exactly on the clicks. Several upright starting cameras around the near end,
+ * refined; the best that sits above the court and behind the near baseline.
+ */
+function quickFit(obs: Obs[], W: number, H: number): Fit {
+  const cx = W / 2;
+  const cy = H / 2;
+  const f = QUICK_FOCAL * W;
+  let best: Pose | null = null;
+  let bestCost = Infinity;
+  for (const x of [-4, 0, 4])
+    for (const y of [-13, -17, -24])
+      for (const z of [1.5, 3, 5]) {
+        const pose = refine(lookingAtCourt([x, y, z], f), cx, cy, obs, true);
+        const c = cameraFor(pose, W, H).position;
+        if (!(c[2] > 0.3 && c[1] < 0)) continue;
+        const cost = sumSq(residuals(pose, cx, cy, obs));
+        if (cost < bestCost) {
+          best = pose;
+          bestCost = cost;
+        }
+      }
+  if (!best) return { ok: false, error: "Couldn't fit the court to these points. Check each is on the right landmark." };
+  const res = residuals(best, cx, cy, obs);
+  const errors = obs.map((o, i) => ({ id: o.id, errorPx: Math.hypot(res[2 * i], res[2 * i + 1]) }));
+  const rms = Math.sqrt(errors.reduce((s, e) => s + e.errorPx ** 2, 0) / errors.length);
+  return { ok: true, pose: best, errors, rms };
+}
+
 /** Best camera for a set of observations, or why there isn't one. */
 function fit(obs: Obs[], W: number, H: number): Fit {
   const ground = obs.filter((o) => o.world[2] === 0);
+  if (ground.length === 3 && obs.length === 3) {
+    const [a, b, c] = ground.map((o) => o.world);
+    if (Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) < 1e-3) {
+      return { ok: false, error: "These three points lie on one line. Use two corners and a T." };
+    }
+    return quickFit(obs, W, H);
+  }
+  if (ground.length < 3) {
+    const n = 3 - ground.length;
+    return { ok: false, error: `Place ${n} more point${n === 1 ? "" : "s"} on the court surface (three for a quick court, four or more for a checked one).` };
+  }
   if (ground.length < 4) {
-    const n = 4 - ground.length;
-    return { ok: false, error: `Place ${n} more point${n === 1 ? "" : "s"} on the court surface.` };
+    return { ok: false, error: "Place one more point on the court surface." };
   }
   if (!hasGeneralFour(ground.map((o) => o.world))) {
     return {
@@ -535,7 +599,8 @@ export function solveCalibration(input: SolveInput): SolveResult {
   if (!result.ok) return result;
   const { pose, errors, rms } = result;
   const camera = cameraFor(pose, W, H);
-  const redundancy = 2 * obs.length - 8;
+  const quick = obs.length === 3;
+  const redundancy = quick ? 0 : 2 * obs.length - 8;
 
   // Thresholds are for 1080p; scale with resolution.
   const s = H / 1080;
@@ -565,6 +630,9 @@ export function solveCalibration(input: SolveInput): SolveResult {
   }
 
   const warnings: string[] = [];
+  if (quick && rms > 2) {
+    warnings.push("These three points don't fit an ultra-wide camera exactly. Check each is on its landmark.");
+  }
   if (suspect) {
     const label = LANDMARK_BY_ID.get(suspect.id)?.label ?? suspect.id;
     warnings.push(
@@ -607,6 +675,7 @@ export function solveCalibration(input: SolveInput): SolveResult {
       suspect,
       warnings,
       solvedAt: new Date().toISOString(),
+      ...(quick ? { quick: true } : {}),
     },
   };
 }

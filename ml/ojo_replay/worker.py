@@ -6,8 +6,9 @@ Each job (POST /api/worker/jobs) is one match the owner asked to analyse with
 ANALYSIS_ENGINE=own. For each:
 
 1. download the recording (signed URL from the app);
-2. the court: the owner's calibration if they placed one, else automatic
-   detection, whose pins are posted back for the calibration panel;
+2. the court: the owner's calibration if they placed one (three quick points
+   are snapped onto the paint first), else automatic detection; either
+   result's pins are posted back for the calibration panel;
 3. ball, rallies, players, shots (analyze), then who is who, serves and games
    (structure);
 4. post stats, tracking and the rally breakdown (post_analysis), which
@@ -67,7 +68,30 @@ def handle(job: dict, keep: bool = False) -> None:
         subprocess.run(["curl", "-sS", "--fail", "-o", str(video), job["url"]], check=True)
 
     cal = job.get("courtCalibration")
-    if cal and cal.get("source") != "auto":
+    if cal and cal.get("source") == "clicks":
+        # The owner's quick three points: snap them onto the paint, keep the
+        # snapped court for the analysis and show its pins in the panel. If
+        # nothing on the paint agrees with the clicks, the clicks' own court.
+        from . import clicks
+
+        try:
+            found = clicks.calibrate(str(video), float(cal.get("frameS") or 0.0),
+                                     {p["id"]: (p["x"], p["y"]) for p in cal["landmarks"]}, str(out / "calibration.jpg"))
+        except Exception as e:
+            print(f"[worker] {short}: couldn't snap the quick court ({e}); using the clicks as they are", flush=True)
+            found = None
+        if found and found.get("snapped"):
+            (out / "calibration.json").write_text(json.dumps(found))
+            try:
+                _api(f"/api/worker/videos/{vid}/calibration", {
+                    "frameS": found["frameS"], "imageWidth": found["imageWidth"], "imageHeight": found["imageHeight"],
+                    "landmarks": found["landmarks"], "status": found["status"], "moved": False, "fromClicks": True,
+                })
+            except Exception as e:
+                print(f"[worker] {short}: couldn't post the snapped court: {e}", flush=True)
+        else:
+            (out / "calibration.json").write_text(json.dumps(cal))
+    elif cal and cal.get("source") != "auto":
         (out / "calibration.json").write_text(json.dumps({**cal, "source": "manual"}))
     else:
         found = autocal.calibrate(str(video), str(out / "calibration.jpg"))
