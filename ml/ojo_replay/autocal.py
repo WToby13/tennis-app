@@ -148,7 +148,7 @@ def find_lines(paint: np.ndarray, max_lines: int = 24) -> list[np.ndarray]:
     segs = cv2.HoughLinesP(paint * 255, 1, np.pi / 720, threshold=40, minLineLength=W // 25, maxLineGap=W // 100)
     if segs is None:
         return []
-    segs = segs[:, 0].astype(np.float64)
+    segs = segs.reshape(-1, 4).astype(np.float64)  # (N, 1, 4) before OpenCV 5, (N, 4) after
     ys, xs = np.nonzero(paint)
     pts = np.column_stack([xs, ys]).astype(np.float64)
     lines: list[np.ndarray] = []

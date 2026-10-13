@@ -1,10 +1,13 @@
-# Torch comes with the base image (CUDA build).
-ultralytics>=8.3
-opencv-python-headless>=4.10
-numpy>=1.26,<2.3
-scipy>=1.13
-pyyaml>=6
-omegaconf>=2.3
-lap>=0.5.12
-scikit-learn>=1.5
-joblib>=1.4
+# Torch comes with the base image (CUDA build). The rest are pinned to the
+# versions the pipeline was measured with (ml/.venv): a newer OpenCV changed
+# the shape HoughLinesP returns, and the hit classifier (models/hits.joblib) is
+# a scikit-learn pickle, which only loads reliably on the version that wrote it.
+ultralytics==8.4.174
+opencv-python==4.11.0.86
+numpy==1.26.4
+scipy==1.17.1
+pyyaml==6.0.3
+omegaconf==2.3.1
+lap==0.5.13
+scikit-learn==1.9.1
+joblib==1.6.0
