@@ -408,6 +408,13 @@ New route or panel on `/watch/:id`: **"3D"** toggle per rally.
 | WASB, TrackNet, RTMPose, LHM | check each repo | Our own fine-tuned weights are ours if the base allows |
 | Spark | MIT | fine |
 
+**Decided 2026-10-13:** VideoPose3D (CC BY-NC 4.0; weights trained on Human3.6M,
+research use) drives the 3D view's skeletons, in production too, while Ojo has no
+revenue of any kind: no paid tier, no ads, no sponsorship. It's credited in the
+view with a link to the licence. **Before Ojo makes money, swap it out**: SAM 3D
+Body is royalty-free for commercial use (the cost is GPU time; `body_sam.py` takes
+~3 s per player-frame on the M1), or license a body model.
+
 Recommendation: prototype with whatever works best. Build the product path on SAM 3D
 Body (MHR) plus our own ground-anchored fit, *or* budget for a Meshcapade licence.
 Avoid shipping anything GVHMR-derived. *(Not legal advice. Confirm before launch.)*
@@ -530,6 +537,39 @@ Each phase is independently useful and stops if its gate fails.
   in the web app behind a flag.
 - **Gate:** your playing group uses it on real matches. Track it with the existing
   analytics (`3d_view_opened`, time in 3D, preset used).
+- **Built (web + worker), 2026-10-13:** "3D view" on `/watch/:id` for every match our
+  own analysis has run on.
+  - **Scene** (`ml/ojo_replay/scene.py`): built from what the whole-match analysis
+    already cached, ~15 s a match, 1–3 MB:
+    - every fitted shot's flight, simulated again from its fitted launch;
+    - both players' feet where detected, and 3D skeletons lifted from their 2D
+      keypoints where VideoPose3D is installed (bridging detection gaps up to 1 s);
+    - the court's own surface: a clean plate warped top-down through the
+      calibration. Only the near half is the camera's (the far half is seen through
+      the net), so the far half is the near half turned round.
+  - **Skeletons stand on the detected feet**, not where pose3d's hip-ray placement
+    puts them. From behind the baseline that ray is shallow, so a few cm wrong in the
+    lifted legs moved the far player up to 1.7 m in depth. Now within 4 cm (near) /
+    9 cm (far) of the detected feet, median.
+  - **Storage:** the scene goes to `scenes/<id>.json` beside the thumbnails through a
+    presigned PUT; `match_analyses.scene_version` (migration `0024`) records it. It
+    can't go through the app: the scene grows with match length, past the host's
+    4.5 MB request limit.
+  - **Viewer** (`web/app/Replay3D.tsx`, three.js, loaded only when opened):
+    - the video is the clock, so play, scrub, frame-step, slow-mo and next rally
+      all drive the scene;
+    - presets ease between Phone (the AR overlay, through the calibrated camera),
+      Broadcast, Behind the hitter (follows each shot), Side on and Top down;
+    - dragging gives free orbit; a click plays and pauses;
+    - the video plays in a corner; a readout shows the shot's speed, net clearance
+      and ball height.
+  - **Not yet:**
+    - skeletons come from VideoPose3D (CC BY-NC 4.0, credited in the view): in
+      the worker image while Ojo earns nothing, to be replaced before it does
+      (§8). Without it a scene draws plain figures at the feet;
+    - body meshes;
+    - racket;
+    - `time in 3D` / preset analytics.
 
 ### Phase 5: Productionise (2 weeks)
 - GPU worker triggered after rally segmentation, Supabase tables, status, retries,
