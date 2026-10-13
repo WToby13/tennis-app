@@ -20,6 +20,8 @@ On a match's watch page:
   `ANALYSIS_ENGINE=own` produces).
 - **Show tracking** draws the ball, both players (A/B by kit colour) and each
   bounce with its speed over the playing video.
+- **3D view** rebuilds the match in 3D, synced to the video: orbit any shot,
+  or pick a camera (Phone lays the rebuild over the video itself).
 - **Shot analysis (Beta)** below: shot map (tap a bounce to jump there),
   per-player serve and rally speeds, in/net, first serves, distance run, and
   the service games.
@@ -29,6 +31,8 @@ On a match's watch page:
 1. Run `supabase/migrations/0023_match_analyses.sql` in the Supabase SQL editor
    (table `match_analyses`: stats + tracking per match, readable wherever the
    match is, written only by the service role).
+   Then `0024_match_scene.sql` (`scene_version`: the match has a 3D scene in
+   storage, for the watch page's **3D view**).
 2. Set `ANALYSIS_WORKER_SECRET` in Vercel (`openssl rand -hex 32`).
 3. Deploy (merge #4 → #5 → #6).
 

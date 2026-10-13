@@ -54,6 +54,19 @@ export async function writeLocalThumbnail(videoId: string, bytes: Buffer): Promi
   await fs.writeFile(localThumbnailPath(videoId), bytes);
 }
 
+const SCENES_DIR = path.join(DATA_DIR, "scenes");
+
+/** Absolute path to a match's 3D scene, for the local scene route. */
+export function localScenePath(videoId: string) {
+  return path.join(SCENES_DIR, `${videoId}.json`);
+}
+
+/** Write a scene's bytes to disk. Called by the local scene route. */
+export async function writeLocalScene(videoId: string, bytes: Buffer): Promise<void> {
+  await fs.mkdir(SCENES_DIR, { recursive: true });
+  await fs.writeFile(localScenePath(videoId), bytes);
+}
+
 export class LocalStorageAdapter implements StorageAdapter {
   async initiateMultipart(key: string): Promise<{ uploadId: string }> {
     const uploadId = randomUUID();
@@ -127,7 +140,16 @@ export class LocalStorageAdapter implements StorageAdapter {
     await Promise.all([
       fs.rm(localVideoPath(key), { force: true }),
       fs.rm(localThumbnailPath(videoId), { force: true }),
+      fs.rm(localScenePath(videoId), { force: true }),
     ]);
+  }
+
+  async getSceneUploadUrl(videoId: string) {
+    return { url: `/api/local-storage/scene/${videoId}`, method: "PUT" as const };
+  }
+
+  async getSceneUrl(videoId: string): Promise<string> {
+    return `/api/local-storage/scene/${videoId}`;
   }
 
   // Analysis proxies exist to satisfy a remote API's size limit, and local mode

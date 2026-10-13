@@ -1,6 +1,7 @@
 # The analysis worker (ojo_replay.worker) for an NVIDIA GPU, e.g. AWS Batch on
 # g6.xlarge (infra/analysis_worker.tf). Build with ./build.sh, which stages the
-# code, our hit classifier, the model weights and the pinned WASB source.
+# code, our hit classifier, the model weights and the pinned WASB and
+# VideoPose3D sources.
 FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
 RUN apt-get update \
@@ -11,7 +12,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Model weights and vendored WASB live where the pipeline looks for them.
+# Model weights and vendored WASB and VideoPose3D live where the pipeline looks for them.
 COPY cache/ /app/.cache/
 COPY models/ /app/models/
 COPY ojo_replay/ /app/ojo_replay/

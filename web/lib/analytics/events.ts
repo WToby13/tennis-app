@@ -42,6 +42,10 @@ export const EVENT_NAMES = [
   "analysis_started",
   "analysis_ready",
   "analysis_failed",
+
+  // --- 3D replay (docs/3D_REPLAY.md, Phase 4: does the group use it?) ---
+  /** The 3D view was opened on a match. */
+  "3d_view_opened",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];

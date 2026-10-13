@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -15,8 +16,12 @@ import { VideoPlayer } from "../../VideoPlayer";
 import { CloseIcon, CommentIcon, EditIcon, ShareIcon } from "../../icons";
 import { track } from "@/lib/analytics/client";
 import type { CourtCalibration as Calibration } from "@/lib/court/solve";
+import { isMatchScene, type MatchScene } from "@/lib/matchScene";
 import type { MatchTracks } from "@/lib/matchStats";
 import { formatDate, formatDuration, formatSize } from "@/lib/matchFormat";
+
+// three.js is a few hundred kB: loaded when someone opens the 3D view, not with the page.
+const Replay3D = dynamic(() => import("../../Replay3D").then((m) => m.Replay3D), { ssr: false });
 
 interface Author {
   id: string;
@@ -106,6 +111,10 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   const [showTracks, setShowTracks] = useState(false);
   const [tracks, setTracks] = useState<MatchTracks | null>(null);
   const [hasAnalysis, setHasAnalysis] = useState(false);
+  const [show3d, setShow3d] = useState(false);
+  const [scene, setScene] = useState<MatchScene | null>(null);
+  /** Fetching the scene, or why there isn't one to show. */
+  const [sceneState, setSceneState] = useState<"idle" | "loading" | "none" | "error">("idle");
 
   const shareToken = () =>
     typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("s");
@@ -589,6 +598,35 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
               {showTracks ? "Hide tracking" : "Show tracking"}
             </button>
           )}
+          {hasAnalysis && ready && sceneState !== "none" && (
+            <button
+              className={`btn secondary ${show3d ? "on" : ""}`}
+              aria-pressed={show3d}
+              disabled={sceneState === "loading"}
+              onClick={async () => {
+                if (show3d) return setShow3d(false);
+                if (!scene) {
+                  setSceneState("loading");
+                  const loaded = await loadScene(id);
+                  if (!isMatchScene(loaded)) {
+                    setSceneState(loaded === null ? "none" : "error");
+                    return;
+                  }
+                  setScene(loaded);
+                  setSceneState("idle");
+                }
+                setShow3d(true);
+                track("3d_view_opened", {}, { videoId: id });
+              }}
+              title={
+                sceneState === "error"
+                  ? "The 3D view couldn't load. Try again."
+                  : "The match rebuilt in 3D: orbit round any shot, synced to the video"
+              }
+            >
+              {sceneState === "loading" ? "Loading 3D…" : show3d ? "Back to video" : "3D view"}
+            </button>
+          )}
           {canCalibrate && ready && (
             <button
               className={`btn secondary calib-open ${courtCalibration ? "on" : ""}`}
@@ -638,7 +676,13 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 setCurrentTime(el.currentTime);
                 setMetadataReady(true);
               }}
-              overlay={showTracks && tracks ? <TrackOverlay tracks={tracks} videoRef={videoRef} /> : null}
+              overlay={
+                show3d && scene ? (
+                  <Replay3D scene={scene} videoRef={videoRef} onTogglePlay={togglePlay} />
+                ) : showTracks && tracks ? (
+                  <TrackOverlay tracks={tracks} videoRef={videoRef} />
+                ) : null
+              }
             />
           ) : (
             <div className="placeholder">
@@ -802,4 +846,22 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
       )}
     </>
   );
+}
+
+/**
+ * The match's 3D scene: inline (development files), or from the storage URL
+ * the API hands out. null when the match has none; undefined when it failed.
+ */
+async function loadScene(id: string): Promise<unknown> {
+  try {
+    const res = await fetch(`/api/videos/${id}/match-scene`);
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as { scene?: unknown; url?: string | null };
+    if (data.scene) return data.scene;
+    if (!data.url) return null;
+    const file = await fetch(data.url);
+    return file.ok ? await file.json() : undefined;
+  } catch {
+    return undefined;
+  }
 }

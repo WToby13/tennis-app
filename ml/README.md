@@ -72,6 +72,7 @@ The same models over a whole recording, for shot stats instead of a replay:
 | Report | `report.py` + `viewer/analysis.html` | Shot maps, serve/shot speeds, in/out, distance run, rally intensity, timings → cost | – |
 | To the app | `post_analysis.py` | Stats, tracking (ball/players/bounces in pixels) and the rally breakdown → `/api/worker/videos/:id/analysis` (`--out <dir>` for local) | – |
 | Worker | `worker.py`, `docker/` | Claims queued matches from the app, runs everything above, posts results; CUDA image for AWS Batch (`infra/analysis_worker.tf`) | – |
+| 3D scene | `scene.py` | The match for the app's 3D view: each shot's flight (re-simulated from its fitted launch), players on their detected feet with 3D skeletons (VideoPose3D, where installed), and the court's surface warped top-down from a clean plate. Uploaded by `post_analysis.py` to storage (`/api/worker/videos/:id/scene`); `--out <dir>` for local | ~15 s / match |
 | Demo | `demo_local.py` | Loads analysed matches into the app's local mode (see docs/OWN_ANALYSIS_LAUNCH.md §0) | – |
 | Ground truth | `viewer/label.html` + `label-server.mjs`, `evaluate.py` | Tag hits/faults/point ends by keyboard; score the pipeline against the tags | – |
 

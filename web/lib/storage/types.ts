@@ -68,11 +68,27 @@ export interface StorageAdapter {
    * flag.
    */
   analysisProxyExists(videoId: string): Promise<boolean>;
+
+  // --- 3D scene --------------------------------------------------------------
+  // The match rebuilt in 3D (lib/matchScene.ts), written by the analysis worker
+  // and read by the watch page's 3D view. A few MB, so it goes straight to
+  // storage rather than through the app.
+
+  /** URL + method the analysis worker uploads a match's scene (JSON) to. */
+  getSceneUploadUrl(videoId: string): Promise<{ url: string; method: "PUT" }>;
+
+  /** A URL the browser fetches the scene from (CORS-readable). */
+  getSceneUrl(videoId: string): Promise<string>;
 }
 
 /** The storage object key for a video's poster thumbnail. Deterministic — no DB column needed. */
 export function thumbnailKey(videoId: string): string {
   return `thumbnails/${videoId}.jpg`;
+}
+
+/** Where a match's 3D scene lives. Deterministic, like thumbnails. */
+export function sceneKey(videoId: string): string {
+  return `scenes/${videoId}.json`;
 }
 
 /** Where a match's (temporary) analysis proxy lives. Deterministic, like thumbnails. */
