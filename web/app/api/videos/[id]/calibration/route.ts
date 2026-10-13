@@ -17,7 +17,9 @@ export const runtime = "nodejs";
  *
  * Only the pins are taken from the request. The camera is solved again here,
  * so what's stored always follows from the pins, whatever a client computed.
- * A save here is a person's, so it replaces any automatic calibration.
+ * A save here is a person's, so it replaces any automatic calibration. Three
+ * pins make a quick court (source "clicks"), which the analysis worker snaps
+ * onto the painted lines and replaces with the refined pins.
  */
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -33,7 +35,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const solved = solveCalibration(parsed);
   if (!solved.ok) return badRequest(solved.error);
 
-  const calibration = { ...solved.calibration, source: "manual" as const };
+  const calibration = { ...solved.calibration, source: solved.calibration.quick ? ("clicks" as const) : ("manual" as const) };
   await store.update(id, { courtCalibration: calibration });
   return json({ calibration });
 }

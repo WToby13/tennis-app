@@ -17,7 +17,9 @@ export const runtime = "nodejs";
  * during the recording).
  *
  * The camera is solved from the pins exactly as for a hand save. A calibration
- * a person placed is never replaced (409): theirs is the better one.
+ * a person placed is never replaced (409): theirs is the better one. The
+ * exception is a quick three-point court (source "clicks"): the worker snaps it
+ * onto the paint and posts the result here with `fromClicks: true`.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = workerAuthError(req, "worker/calibration");
@@ -29,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const video = await store.get(id);
   if (!video) return notFound("Video not found");
   const existing = video.courtCalibration;
-  if (existing && existing.source !== "auto") {
+  if (existing && existing.source !== "auto" && existing.source !== "clicks") {
     return json({ error: "This match was calibrated by hand; keeping that." }, { status: 409 });
   }
 
@@ -44,6 +46,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     source: "auto" as const,
     autoStatus: body?.status === "auto" ? ("auto" as const) : ("review" as const),
     moved: body?.moved === true,
+    ...(body?.fromClicks === true ? { fromClicks: true } : {}),
   };
   await store.update(id, { courtCalibration: calibration });
   return json({ calibration });

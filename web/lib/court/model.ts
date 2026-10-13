@@ -67,6 +67,13 @@ export const LANDMARK_BY_ID: ReadonlyMap<string, Landmark> = new Map(
 );
 
 /** The four the panel walks you through first — they frame the whole court. */
+/**
+ * Quick mode: three points anyone can find at a glance, near the camera where
+ * the paint is biggest. The solver fills in the lens; the analysis snaps the
+ * rest onto the painted lines (lib/court/solve.ts, QUICK_FOCAL).
+ */
+export const QUICK_SEQUENCE = ["near_left_singles", "near_right_singles", "near_t"];
+
 export const DEFAULT_SEQUENCE = [
   "far_left_doubles",
   "far_right_doubles",
