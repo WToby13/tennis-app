@@ -78,9 +78,20 @@ def main(prefix: str) -> None:
     pts_found = sum(any(lo - 1 <= p[0]["t"] <= hi + 1 for lo, hi in windows) for p in pts)
 
     serve_ok = serve_n = 0
+    st_found = st_false = st_n = None
     st_path = ROOT / "out" / "analysis" / mid / "structure.json"
     if st_path.exists():
         st = json.loads(st_path.read_text())
+        # The breakdown's points (structure.json) against the tagged ones: a
+        # tagged point is found when one of ours covers a third of it; one of
+        # ours is false when four fifths of it is outside every tagged point.
+        tagged = [(min(e["t"] for e in p if e["type"] == "hit") - 0.5, p[-1]["t"] + 0.3)
+                  for p in pts if any(e["type"] == "hit" for e in p)]
+        ours_pts = [(q["start"], q["end_s"]) for q in st["points"] if seen(q["start"])]
+        ov = lambda a0, a1, b0, b1: max(0.0, min(a1, b1) - max(a0, b0))  # noqa: E731
+        st_n = len(ours_pts)
+        st_found = sum(any(ov(a0, a1, t0, t1) > (t1 - t0) / 3 for a0, a1 in ours_pts) for t0, t1 in tagged)
+        st_false = sum(sum(ov(a0, a1, t0, t1) for t0, t1 in tagged) < 0.2 * (a1 - a0) for a0, a1 in ours_pts)
         for p in pts:
             serve = next((e for e in p if e["type"] == "hit"), None)
             if not serve:
@@ -107,6 +118,8 @@ def main(prefix: str) -> None:
     print(f"  hits: recall {pct(recall)} ({found}/{len(hits)}), precision {pct(precision)} ({len(used)}/{len(shots)})")
     print(f"  points found: {pts_found}/{len(pts)}")
     print(f"  serving end right: {serve_ok}/{serve_n}")
+    if st_n is not None:
+        print(f"  breakdown points: {st_found}/{len(pts)} tagged points found, {st_false} of our {st_n} between points")
     if calls:
         for truth in ("in", "out"):
             row = {got: n for (t, got), n in calls.items() if t == truth}
