@@ -12,7 +12,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { getSignedUrl as getSignedCloudFrontUrl } from "@aws-sdk/cloudfront-signer";
 import { config } from "../config";
-import { analysisProxyKey, thumbnailKey, type StorageAdapter, type UploadedPart } from "./types";
+import { analysisProxyKey, sceneKey, thumbnailKey, type StorageAdapter, type UploadedPart } from "./types";
 
 /**
  * How often a signed playback/thumbnail URL is allowed to change. Signing with a
@@ -117,7 +117,7 @@ export class S3StorageAdapter implements StorageAdapter {
     // The proxy would otherwise outlive the match by up to 48 hours (it's the
     // lifecycle rule that normally removes it, not this app). Deleting a match
     // must take its bytes with it, so this removes it now.
-    await Promise.all([del(key), del(thumbnailKey(videoId)), del(analysisProxyKey(videoId))]);
+    await Promise.all([del(key), del(thumbnailKey(videoId)), del(analysisProxyKey(videoId)), del(sceneKey(videoId))]);
   }
 
   async getThumbnailUploadUrl(videoId: string) {
@@ -146,6 +146,23 @@ export class S3StorageAdapter implements StorageAdapter {
       privateKey,
       dateLessThan: stableExpiry(signedUrlTtlSeconds).toISOString(),
     });
+  }
+
+  async getSceneUploadUrl(videoId: string) {
+    const url = await getSignedUrl(
+      this.client,
+      new PutObjectCommand({ Bucket: this.bucket, Key: sceneKey(videoId), ContentType: "application/json" }),
+      { expiresIn: 3600 },
+    );
+    return { url, method: "PUT" as const };
+  }
+
+  async getSceneUrl(videoId: string): Promise<string> {
+    const { domain, signUrls, keyPairId, privateKey, signedUrlTtlSeconds } = config.cloudfront;
+    if (!domain) throw new Error("CLOUDFRONT_DOMAIN is not set");
+    const url = `https://${domain}/${sceneKey(videoId)}`;
+    if (!signUrls) return url;
+    return getSignedCloudFrontUrl({ url, keyPairId, privateKey, dateLessThan: stableExpiry(signedUrlTtlSeconds).toISOString() });
   }
 
   async getAnalysisProxyUploadUrl(videoId: string) {

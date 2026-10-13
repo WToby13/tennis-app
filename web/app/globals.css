@@ -2826,3 +2826,47 @@ video {
 .mstats-best-sub { font-size: 12px; }
 .mstats-hot { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
 .mstats-rallyn { font: 700 14px var(--font-sans); fill: var(--court-line); pointer-events: none; }
+
+/* The 3D view (Replay3D.tsx): the match rebuilt in 3D over the video, which
+   keeps playing underneath as its clock. The player's controls stay on top
+   (z-index 2); the canvas takes drags (orbit) and clicks (play/pause). */
+.r3d { position: absolute; inset: 0; z-index: 1; line-height: normal; }
+.r3d-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.r3d-canvas:active { cursor: grabbing; }
+.r3d-views {
+  position: absolute; top: 10px; left: 10px; right: 30%; z-index: 1;
+  display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none;
+}
+.r3d-view {
+  pointer-events: auto; font: 500 12px var(--font-sans); color: var(--text);
+  background: rgba(15, 12, 9, 0.72); border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 10px; cursor: pointer; backdrop-filter: blur(4px);
+}
+.r3d-view.on { border-color: var(--accent); color: #fff; }
+span.r3d-view { cursor: default; }
+.r3d-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.r3d-info {
+  position: absolute; left: 10px; top: 46px; z-index: 1; pointer-events: none;
+  display: grid; justify-items: start; gap: 6px;
+}
+.r3d-credit { pointer-events: auto; font: 400 11px var(--font-sans); color: var(--muted); }
+.r3d-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.r3d-hud {
+  font: 500 12px var(--font-sans); font-variant-numeric: tabular-nums; color: var(--text);
+  background: rgba(15, 12, 9, 0.72); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px;
+}
+.r3d-pip {
+  position: absolute; top: 10px; right: 10px; z-index: 1; width: 24%; min-width: 120px;
+  border: 1px solid var(--border); border-radius: 8px; background: #000; cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.r3d-pip:hover { border-color: var(--accent); }
+@media (max-width: 640px) {
+  .r3d-views { right: 10px; }
+  .r3d-view { padding: 4px 8px; font-size: 11px; }
+  .r3d-info { top: auto; bottom: 10px; }
+  .r3d-pip { top: auto; bottom: 10px; right: 10px; width: 30%; min-width: 0; }
+}
+/* In 3D the middle of the picture is where the hitter is framed, and a click on
+   the scene already plays and pauses: no big centre button over it. */
+.pv:has(.r3d) .pv-center-play { display: none; }
