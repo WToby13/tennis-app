@@ -62,6 +62,12 @@ export interface MatchScene {
   };
   /** The real court's surface, top-down, centred on the court: row 0 is the far end. */
   court: { texture: string; halfWidth: number; halfLength: number } | null;
+  /**
+   * The recording's surroundings (version 3+): the clean plate as a JPEG data
+   * URL, projected by the viewer through the phone onto walls at the fences
+   * (half-width, half-length in metres), and the sky's colour (RGB) above them.
+   */
+  surroundings?: { plate: string; halfWidth: number; halfLength: number; sky: [number, number, number] } | null;
   /** What the skeletons were lifted with, or null when there are none. */
   body: string | null;
   rallies: SceneRally[];

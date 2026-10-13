@@ -2846,6 +2846,7 @@ video {
 }
 .r3d-view.on { border-color: var(--accent); color: #fff; }
 span.r3d-view { cursor: default; }
+.r3d-sep { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--border); }
 .r3d-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .r3d-info {
   position: absolute; left: 10px; top: 46px; z-index: 1; pointer-events: none;
