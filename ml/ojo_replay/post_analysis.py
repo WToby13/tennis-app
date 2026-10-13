@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .analyze import FIT_VERSION
 from .report import lands_elsewhere, summarise
+from .scene import build_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 INTERNAL = ("id", "title", "calibration", "compare", "detected", "timing", "cost", "settings")
@@ -228,18 +229,51 @@ def main(prefix: str, *flags: str) -> None:
         (d / f"{video_id}.json").write_text(json.dumps(stats))
         (d / f"{video_id}.tracks.json").write_text(json.dumps(tracks))
         (d / f"{video_id}.segments.json").write_text(json.dumps(segments))
-        print("wrote", d / f"{video_id}.json", "and .tracks.json")
+        (d / f"{video_id}.scene.json").write_text(json.dumps(build_scene(prefix)[1], separators=(",", ":")))
+        print("wrote", d / f"{video_id}.json", ".tracks.json and .scene.json")
         return
+    if _post(f"/api/worker/videos/{video_id}/analysis", body) is not None:
+        post_scene(prefix, video_id)
+
+
+def post_scene(prefix: str, video_id: str) -> None:
+    """The 3D scene goes to storage, not through the app: a match's is a few MB
+    and grows with its length, past what the host accepts in a request. The app
+    hands out an upload URL, then records the scene once it's there. A failure
+    here leaves the stats saved, without a 3D view."""
+    from .scene import VERSION
+
+    scene = build_scene(prefix)[1]
+    data = json.dumps(scene, separators=(",", ":")).encode()
+    print(f"scene: {len(data) / 1e6:.1f} MB")
+    up = _post(f"/api/worker/videos/{video_id}/scene", json.dumps({"step": "upload"}).encode())
+    if not up:
+        return
+    url = up["url"] if up["url"].startswith("http") else os.environ["OJO_APP_URL"].rstrip("/") + up["url"]
+    req = urllib.request.Request(url, data=data, method=up.get("method", "PUT"), headers={"content-type": "application/json"})
+    try:
+        urllib.request.urlopen(req, timeout=300).read()
+    except urllib.error.HTTPError as e:
+        print(f"scene upload {e.code}: {e.read().decode()[:200]}")
+        return
+    _post(f"/api/worker/videos/{video_id}/scene",
+          json.dumps({"step": "saved", "version": VERSION, "rallies": len(scene["rallies"])}).encode())
+
+
+def _post(path: str, body: bytes) -> dict | None:
     req = urllib.request.Request(
-        f"{os.environ['OJO_APP_URL'].rstrip('/')}/api/worker/videos/{video_id}/analysis",
+        f"{os.environ['OJO_APP_URL'].rstrip('/')}{path}",
         data=body, method="POST",
         headers={"content-type": "application/json", "authorization": f"Bearer {os.environ['ANALYSIS_WORKER_SECRET']}"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            print("saved:", r.read().decode()[:200])
+        with urllib.request.urlopen(req, timeout=120) as r:
+            text = r.read().decode()
+            print("saved:", text[:200])
+            return json.loads(text or "{}")
     except urllib.error.HTTPError as e:
         print(f"{e.code}: {e.read().decode()[:200]}")
+        return None
 
 
 if __name__ == "__main__":

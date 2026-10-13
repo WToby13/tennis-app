@@ -49,6 +49,7 @@ class Shot:
     n_obs: int = 0
     landing: str | None = None  # "in" | "out" | "close" (singles court), "net", or None
     doubtful: str | None = None  # why this shot's numbers shouldn't be trusted, if so
+    bounce_coef: list[float] | None = None  # fitted e, mu: with p0 and v0, the path again (scene.py)
 
 
 # How close to a line a bounce has to be before the fit can't call it. A bounce
@@ -553,6 +554,7 @@ def reconstruct(
             speed_kmh=round(float(np.linalg.norm(x[3:6]) * 3.6), 1),
             rms_px=round(float(np.sqrt(np.mean(np.minimum(err, 60) ** 2))), 2),
             n_obs=int(len(err)),
+            bounce_coef=np.round(x[6:8], 3).tolist(),
         )
         if net_t is not None and (bounce_t is None or net_t < bounce_t):
             shot.landing = "net"

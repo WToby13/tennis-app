@@ -13,6 +13,7 @@ the camera's viewpoint and stands on the court rather than floating.
 
 from __future__ import annotations
 
+import functools
 import sys
 from pathlib import Path
 
@@ -34,6 +35,7 @@ FEET = [3, 6]
 RECEPTIVE = 243
 
 
+@functools.cache
 def _load(device: str):
     sys.path.insert(0, str(VENDOR))
     from common.model import TemporalModel  # noqa: E402
@@ -125,8 +127,12 @@ def place_on_court(cam: Camera, joints_virtual: np.ndarray, hip_px: np.ndarray) 
     return root[:, None, :] + rel
 
 
-def skeletons(cam: Camera, players: list[dict], first: int, last: int, device: str = "cpu") -> dict[str, dict]:
-    """Per side: frame numbers and (T, 17, 3) court-space joints."""
+def skeletons(
+    cam: Camera, players: list[dict], first: int, last: int, device: str = "cpu", reach: int = 5
+) -> dict[str, dict]:
+    """Per side: frame numbers and (T, 17, 3) court-space joints, on frames within
+    `reach` frames of a detection (between detections the keypoints are
+    interpolated, so further out is a guess)."""
     out: dict[str, dict] = {}
     all_frames = np.arange(first, last + 1)
     for side in ("near", "far"):
@@ -140,7 +146,7 @@ def skeletons(cam: Camera, players: list[dict], first: int, last: int, device: s
         hips = (seq[:, 11] + seq[:, 12]) / 2  # COCO hips
         joints = place_on_court(cam, rel, hips)
         # Only report frames near a real detection; long gaps are guesses.
-        near_detection = np.array([np.min(np.abs(frames - f)) <= 5 for f in all_frames])
+        near_detection = np.array([np.min(np.abs(frames - f)) <= reach for f in all_frames])
         out[side] = {
             "frames": all_frames[near_detection].tolist(),
             "joints": np.round(joints[near_detection], 3).tolist(),

@@ -5,8 +5,8 @@
 
 For each match: links the downloaded recording into web/.data, adds (or
 updates) its row in the local store with our analysis as its rally breakdown
-(as ANALYSIS_ENGINE=own would), and writes its stats and tracking where the
-app's MATCH_STATS_DIR reads them. Touches only local files.
+(as ANALYSIS_ENGINE=own would), and writes its stats, tracking and 3D scene
+where the app's MATCH_STATS_DIR reads them. Touches only local files.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .post_analysis import build_segments, build_tracks, match_stats
+from .scene import build_scene
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT.parent / "web"
@@ -42,6 +43,7 @@ def main(*prefixes: str) -> None:
         video_id, stats = match_stats(prefix)
         (STATS_DIR / f"{vid}.json").write_text(json.dumps(stats))
         (STATS_DIR / f"{vid}.tracks.json").write_text(json.dumps(build_tracks(prefix)))
+        (STATS_DIR / f"{vid}.scene.json").write_text(json.dumps(build_scene(prefix)[1], separators=(",", ":")))
         breakdown = build_segments(prefix)
         row = next((v for v in db if v["id"] == vid), None) or {
             "id": vid, "ownerId": None, "uploadId": None, "partSizeBytes": 8388608, "visibility": "private",
