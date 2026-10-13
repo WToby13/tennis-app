@@ -171,7 +171,7 @@ resource "aws_batch_compute_environment" "analysis" {
 
     # The ECS GPU-optimized AMI (NVIDIA driver and container toolkit included).
     ec2_configuration {
-      image_type = "ECS_AL2_NVIDIA"
+      image_type = "ECS_AL2023_NVIDIA"
     }
   }
 
