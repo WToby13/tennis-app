@@ -1,3 +1,4 @@
+import { SparkRenderer, SplatFileType, SplatMesh } from "@sparkjsdev/spark";
 import * as THREE from "three";
 import type { MatchScene } from "@/lib/matchScene";
 
@@ -164,9 +165,40 @@ function projectedMaterial(scene: MatchScene, plate: THREE.Texture, sky: THREE.C
   });
 }
 
-export function buildRecordedCourt(scene: MatchScene, renderer: THREE.WebGLRenderer): BuiltVenue {
+/**
+ * The court's surroundings as a Gaussian splat (ml/ojo_replay/venue_splat.py),
+ * if it has one: fetched from `url` and drawn in place of the projected walls,
+ * which stand in until it has loaded, and for courts that have none.
+ */
+function loadSplat(url: string, group: THREE.Group, walls: THREE.Group | null, renderer: THREE.WebGLRenderer, alive: () => boolean) {
+  fetch(url)
+    .then(async (res) => {
+      if (!res.ok || !alive()) return;
+      const fileType = res.headers.get("x-splat-format") === "spz" ? SplatFileType.SPZ : SplatFileType.PLY;
+      const fileBytes = new Uint8Array(await res.arrayBuffer());
+      if (!alive()) return;
+      group.add(new SparkRenderer({ renderer }));
+      const splat = new SplatMesh({
+        fileBytes,
+        fileType,
+        onLoad: () => {
+          if (!walls) return;
+          walls.visible = false;
+          walls.userData.replaced = true;
+        },
+      });
+      // Court coordinates are z up; three.js is y up: (x, y, z) -> (x, z, -y).
+      splat.rotation.x = -Math.PI / 2;
+      group.add(splat);
+    })
+    .catch(() => {});
+}
+
+export function buildRecordedCourt(scene: MatchScene, renderer: THREE.WebGLRenderer, splatUrl?: string): BuiltVenue {
   const group = new THREE.Group();
   const extra: { dispose: () => void }[] = [];
+  let disposed = false;
+  let walls: THREE.Group | null = null;
   const su = scene.surroundings;
   const sky = su ? new THREE.Color().setRGB(su.sky[0] / 255, su.sky[1] / 255, su.sky[2] / 255, THREE.SRGBColorSpace) : new THREE.Color(0x14110d);
 
@@ -195,16 +227,18 @@ export function buildRecordedCourt(scene: MatchScene, renderer: THREE.WebGLRende
 
   if (su) {
     // Shown once the plate has decoded: before that they'd be black.
-    const walls = new THREE.Group();
-    walls.visible = false;
-    const plate = new THREE.TextureLoader().load(su.plate, () => (walls.visible = true));
+    const w = (walls = new THREE.Group());
+    w.visible = false;
+    // Unless a splat has already taken their place.
+    const plate = new THREE.TextureLoader().load(su.plate, () => (w.visible = !w.userData.replaced));
     plate.colorSpace = THREE.SRGBColorSpace;
     const mat = projectedMaterial(scene, plate, sky);
     // Tall enough that, from inside, there's wall wherever the phone saw anything.
     const height = 30;
-    for (const side of ["far", "near", "left", "right"] as const) walls.add(wall(side, su.halfWidth, su.halfLength, height, mat));
-    group.add(walls);
+    for (const side of ["far", "near", "left", "right"] as const) w.add(wall(side, su.halfWidth, su.halfLength, height, mat));
+    group.add(w);
   }
+  if (splatUrl) loadSplat(splatUrl, group, walls, renderer, () => !disposed);
 
   // The phone, where the calibration put it.
   const c = scene.camera;
@@ -223,7 +257,13 @@ export function buildRecordedCourt(scene: MatchScene, renderer: THREE.WebGLRende
     group,
     background: su ? sky : new THREE.Color(0x14110d),
     fog: su ? new THREE.Fog(sky.getHex(), 60, 160) : new THREE.Fog(0x14110d, 45, 110),
-    dispose: () => disposeAll(group, extra),
+    dispose: () => {
+      disposed = true;
+      group.traverse((o) => {
+        if (o instanceof SplatMesh || o instanceof SparkRenderer) o.dispose();
+      });
+      disposeAll(group, extra);
+    },
   };
 }
 

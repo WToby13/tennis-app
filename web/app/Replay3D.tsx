@@ -88,10 +88,13 @@ function ballAt(s: SceneShot, t: number, fps: number): [number, number, number] 
 
 export function Replay3D({
   scene,
+  videoId,
   videoRef,
   onTogglePlay,
 }: {
   scene: MatchScene;
+  /** For the match's venue splat (/api/videos/:id/match-venue). */
+  videoId: string;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   onTogglePlay: () => void;
 }) {
@@ -156,7 +159,7 @@ export function Replay3D({
         ground.remove(venue.built.group);
         venue.built.dispose();
       }
-      const built = name === "stadium" ? buildStadium() : buildRecordedCourt(scene, renderer);
+      const built = name === "stadium" ? buildStadium() : buildRecordedCourt(scene, renderer, `/api/videos/${videoId}/match-venue`);
       ground.add(built.group);
       venue = { name, built };
       lastView = null; // background and fog follow the venue
@@ -561,7 +564,7 @@ export function Replay3D({
       renderer.dispose();
       el.remove();
     };
-  }, [scene, videoRef]);
+  }, [scene, videoId, videoRef]);
 
   return (
     <div className={`r3d ${view === "phone" ? "r3d-ar" : ""}`} ref={hostRef}>
