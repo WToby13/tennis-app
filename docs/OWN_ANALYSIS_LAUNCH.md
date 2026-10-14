@@ -16,7 +16,7 @@ cd .. && MATCH_STATS_DIR=../ml/out/match-stats npm --prefix web run dev:local
 ```
 
 On a match's watch page:
-- **AI breakdown** shows our rallies, servers and service games (what
+- **AI Analysis** (formerly "AI breakdown") shows our rallies, servers and service games (what
   `ANALYSIS_ENGINE=own` produces).
 - **Show tracking** draws the ball, both players (A/B by kit colour) and each
   bounce with its speed over the playing video.
@@ -72,7 +72,7 @@ for queued matches (useful on the Mac before Batch is up).
 
 ## 4. Switch the breakdown to our engine
 
-Set `ANALYSIS_ENGINE=own` in Vercel and redeploy. "AI breakdown" then queues
+Set `ANALYSIS_ENGINE=own` in Vercel and redeploy. "AI Analysis" then queues
 the match (`ojo:queued`), the app submits a Batch job, the worker claims it,
 analyses it and posts the result, which fills the same rally breakdown
 TwelveLabs did and finishes the run. Failures show the owner a message.

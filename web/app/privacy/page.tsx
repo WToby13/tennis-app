@@ -58,7 +58,7 @@ export default function PrivacyPage() {
         do not. Concretely: that a recording finished, that an upload started, finished or failed
         and how big it was, that a match was shared and by which route, that a shared link was
         opened, that an account was created, that playback started and roughly how long it ran,
-        and that an AI breakdown was requested and how it turned out. Each is stored with the time
+        and that an AI analysis was requested and how it turned out. Each is stored with the time
         it happened and, when you are signed in, with your account.
       </p>
       <p>
@@ -88,7 +88,7 @@ export default function PrivacyPage() {
           showing your library. Lawful basis: performance of our contract with you.
         </li>
         <li>
-          <strong>To produce the AI breakdown</strong>, when you ask for one on a specific match.
+          <strong>To produce the AI analysis</strong>, when you ask for one on a specific match.
           Lawful basis: performance of our contract, on your request.
         </li>
         <li>

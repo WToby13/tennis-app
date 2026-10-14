@@ -577,7 +577,7 @@ export function RallySegments({
       </button>
     ) : (
       <button className="btn" onClick={openSetup}>
-        AI Breakdown <span className="beta-badge">Beta</span>
+        AI Analysis <span className="beta-badge">Beta</span>
       </button>
     )
   ) : null;
@@ -590,7 +590,7 @@ export function RallySegments({
     <section className={`segments ${editing ? "is-editing" : ""}`}>
       <div className="segments-head">
         <h3>
-          AI breakdown
+          AI analysis
           {segments.length > 0 && (
             <span className="seg-count">
               {segments.length} {segments.length === 1 ? "rally" : "rallies"}
@@ -912,7 +912,7 @@ export function RallySegments({
         <div className="modal-overlay" onClick={() => setSetupOpen(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h2 style={{ fontSize: 18 }}>AI breakdown</h2>
+              <h2 style={{ fontSize: 18 }}>AI analysis</h2>
               <button className="modal-close" aria-label="Close" onClick={() => setSetupOpen(false)}>
                 <CloseIcon size={20} />
               </button>
@@ -984,7 +984,7 @@ export function RallySegments({
                 </>
               ) : (
                 <button className="btn" onClick={run} disabled={busy}>
-                  Run AI breakdown
+                  Run AI analysis
                 </button>
               )}
             </div>

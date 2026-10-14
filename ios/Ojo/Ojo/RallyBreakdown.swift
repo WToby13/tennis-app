@@ -227,7 +227,7 @@ struct RallyBreakdown: View {
             default:
                 Text("Split this match into service games and rallies, so you can jump straight to any point.")
                     .font(.footnote).foregroundStyle(Theme.muted)
-                runButton(label: "Run AI breakdown")
+                runButton(label: "Run AI analysis")
             }
         }
         .padding(.horizontal, 16)
@@ -235,7 +235,7 @@ struct RallyBreakdown: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("AI Breakdown").font(.headline).foregroundStyle(Theme.text)
+            Text("AI Analysis").font(.headline).foregroundStyle(Theme.text)
             Text("BETA")
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(Theme.accent)

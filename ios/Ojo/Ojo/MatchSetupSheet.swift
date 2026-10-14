@@ -210,7 +210,7 @@ struct MatchSetupSheet: View {
                 manageSection
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(purpose == .beforeUpload ? "Set up this match" : "AI breakdown")
+            .navigationTitle(purpose == .beforeUpload ? "Set up this match" : "AI analysis")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -452,7 +452,7 @@ struct MatchSetupSheet: View {
     }
 
     private var primaryTitle: String {
-        purpose == .beforeUpload ? "Upload & AI Breakdown" : "Run AI Breakdown"
+        purpose == .beforeUpload ? "Upload & AI Analysis" : "Run AI Analysis"
     }
 
     private var secondaryTitle: String {
