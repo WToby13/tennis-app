@@ -107,6 +107,7 @@ export function RallySegments({
   participantNames,
   onSeek,
   onPlayersNamed,
+  onPlayersChange,
   currentTime = 0,
 }: {
   videoId: string;
@@ -121,6 +122,8 @@ export function RallySegments({
   onSeek: (seconds: number) => void;
   /** Names the owner entered here, to tag on the match as players. */
   onPlayersNamed?: (names: string[]) => void;
+  /** The names on each slot whenever they change (saved, edited or swapped). */
+  onPlayersChange?: (players: Players) => void;
   /** Playback position, so the playhead tracks the video across every lane. */
   currentTime?: number;
 }) {
@@ -276,6 +279,10 @@ export function RallySegments({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId, p1Name, p2Name]);
+
+  useEffect(() => {
+    onPlayersChange?.(players);
+  }, [players, onPlayersChange]);
 
   const swap = useCallback(() => {
     setP1Name(p2Name);
