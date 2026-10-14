@@ -14,6 +14,19 @@
  * it, then "ojo:running:<when>". The TwelveLabs poller leaves those alone.
  */
 export const OJO_QUEUED = "ojo:queued";
+
+/**
+ * Our analysis labels the match timeline (the rally breakdown, kind "rally")
+ * wherever a worker has posted one, whichever engine ran. TwelveLabs' breakdown
+ * is kept alongside under this kind: archived when ours replaces it, and where
+ * a TwelveLabs run finishes on a match that already has ours.
+ */
+export const TWELVELABS_KIND = "rally_twelvelabs";
+
+/** Whether a breakdown is ours (build_segments marks each segment). */
+export function isOurBreakdown(segments: { metadata?: Record<string, unknown> | null }[]): boolean {
+  return segments.some((s) => s.metadata?.source === "ojo");
+}
 export const OJO_RUNNING = "ojo:running:";
 
 /** Claimed but not finished after this long: offered to a worker again. */

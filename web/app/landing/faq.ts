@@ -32,7 +32,7 @@ export const FAQ: FaqItem[] = [
   },
   {
     q: "Does Ojo find the points automatically?",
-    a: "Yes. Ojo's AI breakdown watches the recording and marks where each rally starts and ends, then groups those rallies into service games — so you can jump straight from point to point instead of scrubbing through the changeovers and the time you spent picking up balls.",
+    a: "Yes. Ojo's AI analysis watches the recording and marks where each rally starts and ends, then groups those rallies into service games — so you can jump straight from point to point instead of scrubbing through the changeovers and the time you spent picking up balls.",
   },
   {
     q: "Who can see my tennis videos?",

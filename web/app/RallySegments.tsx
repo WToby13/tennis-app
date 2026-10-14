@@ -107,6 +107,7 @@ export function RallySegments({
   participantNames,
   onSeek,
   onPlayersNamed,
+  onPlayersChange,
   currentTime = 0,
 }: {
   videoId: string;
@@ -121,6 +122,8 @@ export function RallySegments({
   onSeek: (seconds: number) => void;
   /** Names the owner entered here, to tag on the match as players. */
   onPlayersNamed?: (names: string[]) => void;
+  /** The names on each slot whenever they change (saved, edited or swapped). */
+  onPlayersChange?: (players: Players) => void;
   /** Playback position, so the playhead tracks the video across every lane. */
   currentTime?: number;
 }) {
@@ -276,6 +279,10 @@ export function RallySegments({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId, p1Name, p2Name]);
+
+  useEffect(() => {
+    onPlayersChange?.(players);
+  }, [players, onPlayersChange]);
 
   const swap = useCallback(() => {
     setP1Name(p2Name);
@@ -577,7 +584,7 @@ export function RallySegments({
       </button>
     ) : (
       <button className="btn" onClick={openSetup}>
-        AI Breakdown <span className="beta-badge">Beta</span>
+        AI Analysis <span className="beta-badge">Beta</span>
       </button>
     )
   ) : null;
@@ -590,7 +597,7 @@ export function RallySegments({
     <section className={`segments ${editing ? "is-editing" : ""}`}>
       <div className="segments-head">
         <h3>
-          AI breakdown
+          AI analysis
           {segments.length > 0 && (
             <span className="seg-count">
               {segments.length} {segments.length === 1 ? "rally" : "rallies"}
@@ -912,7 +919,7 @@ export function RallySegments({
         <div className="modal-overlay" onClick={() => setSetupOpen(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h2 style={{ fontSize: 18 }}>AI breakdown</h2>
+              <h2 style={{ fontSize: 18 }}>AI analysis</h2>
               <button className="modal-close" aria-label="Close" onClick={() => setSetupOpen(false)}>
                 <CloseIcon size={20} />
               </button>
@@ -984,7 +991,7 @@ export function RallySegments({
                 </>
               ) : (
                 <button className="btn" onClick={run} disabled={busy}>
-                  Run AI breakdown
+                  Run AI analysis
                 </button>
               )}
             </div>

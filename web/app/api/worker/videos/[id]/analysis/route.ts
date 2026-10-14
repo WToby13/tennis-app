@@ -1,7 +1,7 @@
 import { isMatchStats } from "@/lib/matchStats";
 import { metadata } from "@/lib/metadata";
 import { RALLY_KIND } from "@/lib/twelvelabs/rally";
-import { isOjoTask } from "@/lib/ojoEngine";
+import { TWELVELABS_KIND, isOjoTask, isOurBreakdown } from "@/lib/ojoEngine";
 import { getSupabaseServiceRole, serviceRoleConfigured } from "@/lib/supabase/service";
 import { badRequest, json, notFound } from "@/lib/util";
 import { workerAuthError } from "@/lib/worker";
@@ -15,8 +15,10 @@ const MAX_BYTES = 8_000_000; // stats are tens of kB; tracks ~0.8 MB per half ho
  * any earlier run). Authorization: Bearer ANALYSIS_WORKER_SECRET.
  *
  * With `segments` (rallies with game, server, ends and shots, in the shape the
- * rally breakdown reads) and a run our engine owns (lib/ojoEngine.ts), it also
- * fills the rally breakdown and finishes the run, as TwelveLabs' result did.
+ * rally breakdown reads) it also labels the match timeline (lib/ojoEngine.ts):
+ * a TwelveLabs breakdown already there is archived (TWELVELABS_KIND), not lost.
+ * A run our engine owns is finished; a match with no run in progress is marked
+ * analysed; a TwelveLabs run still going is left to finish (into the archive).
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = workerAuthError(req, "worker/analysis");
@@ -55,7 +57,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const store = metadata(db, null, true);
   const row = await store.get(id);
   let breakdown = false;
-  if (row && isOjoTask(row.analysisTaskId) && Array.isArray(segments)) {
+  if (row && Array.isArray(segments) && segments.length) {
     const clean = segments
       .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")
       .map((s, i) => ({
@@ -65,13 +67,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         endS: typeof s.endS === "number" ? s.endS : null,
         metadata: (s.metadata && typeof s.metadata === "object" ? s.metadata : {}) as Record<string, unknown>,
       }));
+    const current = await store.getSegments(id, RALLY_KIND);
+    if (current.length && !isOurBreakdown(current)) {
+      await store.replaceSegments(id, TWELVELABS_KIND, current.map(({ id: _id, ...s }) => ({ ...s, kind: TWELVELABS_KIND })));
+    }
     await store.replaceSegments(id, RALLY_KIND, clean);
-    await store.update(id, {
-      analysisStatus: "ready",
-      analyzedAt: new Date().toISOString(),
-      analysisError: null,
-      analysisTaskId: null,
-    });
+    const ours = isOjoTask(row.analysisTaskId);
+    if (ours || row.analysisStatus !== "processing") {
+      await store.update(id, {
+        analysisStatus: "ready",
+        analyzedAt: new Date().toISOString(),
+        analysisError: null,
+        ...(ours ? { analysisTaskId: null } : {}),
+      });
+    }
     breakdown = true;
   }
   return json({ ok: true, shots: stats.shots.length, tracks: Boolean(tracks), breakdown });

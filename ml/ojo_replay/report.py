@@ -103,6 +103,12 @@ def summarise(a: dict) -> dict:
     # on this court dropped far more real play than noise. (Kept for the record:
     # on_this_court.)
     rallies = detected
+    # With points built from serves (play.points), stretches outside every
+    # point are feeds and knock-backs: not shots of the match.
+    st = a.get("structure") or {}
+    if st.get("pointsFrom") == "serves":
+        spans = [(p["start"], p["end_s"]) for p in st["points"]]
+        rallies = [r for r in detected if any(min(r["endS"], b) - max(r["startS"], s0) > 0.3 for s0, b in spans)]
     # A serve is the first contact of a point, not merely the first shot we
     # fitted in a stretch of play: when the serve itself wasn't fitted, that's
     # a rally ball, and judging it against the service box called it out.

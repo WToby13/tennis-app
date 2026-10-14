@@ -18,6 +18,9 @@ struct MainTabView: View {
     @State private var tab: MainTab = .home
     @State private var showCamera = false
     @State private var libraryPath = NavigationPath()
+    @State private var homePath = NavigationPath()
+    /// A match opened from a link on the website, waiting for this screen.
+    @ObservedObject private var links = DeepLinks.shared
     /// Set by fullscreen surfaces (the immersive Watch screen) that want the
     /// whole screen — see `ChromeState`.
     @ObservedObject private var chrome = ChromeState.shared
@@ -56,6 +59,18 @@ struct MainTabView: View {
             for: UIResponder.keyboardWillShowNotification)) { _ in keyboardUp = true }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillHideNotification)) { _ in keyboardUp = false }
+        // A match from a website link opens on Home, over whatever was there.
+        // Keyed on the link, so it also runs when this screen first appears
+        // with one already waiting (opened while signed out).
+        .task(id: links.pending) {
+            guard let match = links.pending else { return }
+            links.pending = nil
+            await links.claim(match)
+            showCamera = false
+            tab = .home
+            homePath = NavigationPath()
+            homePath.append(WatchTarget.video(id: match.id))
+        }
         .fullScreenCover(isPresented: $showCamera) {
             CameraScreen(library: library) { recording in
                 // Stop → jump straight to the new match's Watch screen to review,
@@ -70,7 +85,7 @@ struct MainTabView: View {
     @ViewBuilder private var selectedTab: some View {
         switch tab {
         case .home:
-            NavigationStack {
+            NavigationStack(path: $homePath) {
                 FeedView().ojoDestinations(library: library)
             }
         case .library:

@@ -1,5 +1,5 @@
 import { track } from "./analytics/server";
-import { isOjoTask } from "./ojoEngine";
+import { TWELVELABS_KIND, isOjoTask, isOurBreakdown } from "./ojoEngine";
 import { assumedDurationS } from "./analysisProxy";
 import { config } from "./config";
 import type { MetadataStore, Video, VideoSegment } from "./metadata/types";
@@ -122,7 +122,10 @@ export async function finalizeReady(
     });
   }
 
-  await store.replaceSegments(id, RALLY_KIND, segments);
+  // Our analysis labels the timeline when it has one; TwelveLabs' result then
+  // goes alongside it (lib/ojoEngine.ts) rather than replacing it.
+  const ours = isOurBreakdown(await store.getSegments(id, RALLY_KIND));
+  await store.replaceSegments(id, ours ? TWELVELABS_KIND : RALLY_KIND, ours ? segments.map((x) => ({ ...x, kind: TWELVELABS_KIND })) : segments);
   return store.update(id, {
     analysisStatus: "ready",
     analyzedAt: new Date().toISOString(),

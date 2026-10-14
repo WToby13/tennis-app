@@ -341,7 +341,11 @@ def main(prefix: str) -> None:
     files = sorted(glob.glob(str(out / "rallies" / "*c4.players.json")))
     windows = [(int(Path(f).name.split("-")[0]), int(Path(f).name.split("-")[1]), f) for f in files]
     stretches = a["rallies"]
-    spans = a.get("points") or [{"startS": r["startS"], "endS": r["endS"]} for r in stretches]
+    # Points start with a serve (play.points): feeds and knock-backs between
+    # points are left out, and windows that ran points together are cut apart.
+    from . import play
+
+    spans = play.points(a, play.players_by_frame(out))
 
     entries, kits = [], []
     for k, span in enumerate(spans):
@@ -354,24 +358,38 @@ def main(prefix: str) -> None:
              for p in json.loads(Path(f).read_text())["players"] if lo <= p["frame"] <= hi}.values(),
             key=lambda p: p["frame"],
         )
+        shots = [sh for sh in shots if s0 - 0.5 <= sh["t0"] <= s1]
         point = {"startS": s0, "endS": s1, "shots": shots}
         sv = serve(point, players, fps, ball)
         kits.append(rally_kits(video, players))
-        entries.append({**sv, "start": s0, "end_s": s1, "rally": k, "rallies": [r["idx"] for r in inside], "shots": shots})
+        entries.append({**sv, "start": s0, "end_s": s1, "rally": k, "rallies": [r["idx"] for r in inside], "shots": shots,
+                        "served": span.get("served", False), "hits": span.get("hits")})
     # A first serve that missed (the serve alone, out or into the net) and the
-    # second serve from the same end shortly after are one point.
+    # second serve from the same end shortly after are one point. A serve seen
+    # (play.points) with nothing hit after it, and another serve soon after,
+    # is the same: the fault's bounce is rarely fitted, so "out" is rarely known.
     points, point_kits = [], []
     for i, (e, k) in enumerate(zip(entries, kits)):
         nxt = entries[i + 1] if i + 1 < len(entries) else None
         lone_miss = len(e["shots"]) == 1 and e["shots"][0].get("landing") in ("out", "net") and e["from"] == "first shot"
-        if lone_miss and nxt and nxt["start"] - e["end_s"] < 30 and nxt["end"] in (e["end"], None):
+        unreturned = e["served"] and (e["hits"] or 0) <= 1 and len(e["shots"]) <= 1
+        if (lone_miss and nxt and nxt["start"] - e["end_s"] < 30 and nxt["end"] in (e["end"], None)) or (
+                unreturned and nxt and nxt["served"] and nxt["start"] - e["end_s"] < 12 and nxt["end"] in (e["end"], None)):
             nxt["fault"] = True
             nxt["faultRally"] = e["rally"]
+            nxt["start"] = e["start"]  # the point (and its clip) starts at the first serve
             continue
         points.append(e)
         point_kits.append(k)
     kits = point_kits
     orient, A, B = identities(kits)
+    # A is the player at the camera end on the first point their kit is seen:
+    # the app's "Player 1 (starts near)", so the names the owner gives line up
+    # with the breakdown, the shot analysis and the tracking alike.
+    first = next((o for o in orient if o is not None), None)
+    if first is not None and first < 0.5:
+        orient = [None if o is None else 1.0 - o for o in orient]
+        A, B = B, A
     for p, o in zip(points, orient):
         p["pNearA"] = o
     gaps = [999.0] + [points[i]["start"] - points[i - 1]["end_s"] for i in range(1, len(points))]
@@ -396,6 +414,7 @@ def main(prefix: str) -> None:
         "regular": regular,
         "structureAgreement": round(agree, 2),
         "points": [{**{k: v for k, v in p.items() if k != "shots"}, **q} for p, q in zip(points, fit["points"])],
+        "pointsFrom": "serves",
     }
     (out / "structure.json").write_text(json.dumps(result))
 

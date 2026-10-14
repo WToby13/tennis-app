@@ -114,7 +114,7 @@ enum MatchAction: Hashable {
         switch self {
         case .upload: return "Upload"
         case .retryUpload: return "Retry upload"
-        case .aiBreakdown: return "AI Breakdown"
+        case .aiBreakdown: return "AI Analysis"
         case .uploading: return "Uploading…"
         case .watch: return "Watch"
         case .share: return "Share"

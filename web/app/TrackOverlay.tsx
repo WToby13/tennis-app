@@ -31,9 +31,12 @@ function floorIndex(arr: number[], x: number): number {
 export function TrackOverlay({
   tracks,
   videoRef,
+  names,
 }: {
   tracks: MatchTracks;
   videoRef: React.RefObject<HTMLVideoElement | null>;
+  /** The owner's names for A and B; a first name labels each player's box. */
+  names?: { A: string | null; B: string | null };
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -81,7 +84,8 @@ export function TrackOverlay({
         g.strokeRect(X(x1), Y(y1), (x2 - x1) * s, (y2 - y1) * s);
         if (P.who[j]) {
           g.fillStyle = c;
-          g.fillText(P.who[j], X(x1), Y(y1) - 5);
+          const who = P.who[j] as "A" | "B";
+          g.fillText(names?.[who]?.split(/\s+/)[0] || (who === "A" ? "P1" : "P2"), X(x1), Y(y1) - 5);
         }
       }
 
@@ -124,7 +128,7 @@ export function TrackOverlay({
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [tracks, videoRef]);
+  }, [tracks, videoRef, names]);
 
   return <canvas ref={canvasRef} className="track-overlay" aria-hidden="true" />;
 }
