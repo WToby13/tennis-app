@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
 import { Shell } from "./Shell";
 import { WebAnalytics } from "./WebAnalytics";
-import { SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
+import { APP_STORE_ID, SITE_DESCRIPTION, SITE_NAME, SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 // Self-hosted at build time by next/font: no render-blocking request to
@@ -70,6 +70,9 @@ export const metadata: Metadata = {
     },
   },
   appleWebApp: { capable: true, title: SITE_NAME, statusBarStyle: "black-translucent" },
+  // Safari on iPhone shows its own "Open" / "Get" banner for the app; a match's
+  // page points it at that match (watch/[id]/page.tsx). Other browsers get AppBanner.
+  itunes: { appId: APP_STORE_ID },
   formatDetection: { telephone: false },
 };
 

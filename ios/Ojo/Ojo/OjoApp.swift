@@ -23,6 +23,8 @@ struct OjoApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // A match link from the website (DeepLinks); held through sign-in.
+                .onOpenURL { DeepLinks.shared.handle($0) }
         }
         .onChange(of: scenePhase) { _, phase in
             // On return to foreground, finalize any uploads that finished while away.
