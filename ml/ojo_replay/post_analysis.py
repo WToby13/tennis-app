@@ -177,7 +177,8 @@ def build_tracks(prefix: str) -> dict:
 def build_segments(prefix: str) -> list[dict]:
     """The rally breakdown in the shape the app reads (what TwelveLabs' smoothed
     output had): per point, its time span, game, server and receiver (player_1 =
-    A, player_2 = B, the two kits), which end served, who was at the camera end,
+    A, the player at the camera end on the first point; player_2 = B), which
+    end served, who was at the camera end,
     and how many shots."""
     meta = json.loads(next((ROOT / ".cache" / "matches").glob(prefix + "*.json")).read_text())
     out = ROOT / "out" / "analysis" / meta["id"][:8]

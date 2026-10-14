@@ -383,6 +383,13 @@ def main(prefix: str) -> None:
         point_kits.append(k)
     kits = point_kits
     orient, A, B = identities(kits)
+    # A is the player at the camera end on the first point their kit is seen:
+    # the app's "Player 1 (starts near)", so the names the owner gives line up
+    # with the breakdown, the shot analysis and the tracking alike.
+    first = next((o for o in orient if o is not None), None)
+    if first is not None and first < 0.5:
+        orient = [None if o is None else 1.0 - o for o in orient]
+        A, B = B, A
     for p, o in zip(points, orient):
         p["pNearA"] = o
     gaps = [999.0] + [points[i]["start"] - points[i - 1]["end_s"] for i in range(1, len(points))]

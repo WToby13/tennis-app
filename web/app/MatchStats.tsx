@@ -147,13 +147,24 @@ function Cross({ x, y, r, colour, width = 2.5 }: { x: number; y: number; r: numb
 
 // --- Main ----------------------------------------------------------------------
 
+/** The owner's names for players A (player_1, starts at the camera end) and B. */
+export type PlayerNames = { A: string | null; B: string | null };
+
+const nameOf = (names: PlayerNames | undefined, who: "A" | "B") =>
+  names?.[who] || (who === "A" ? "Player 1" : "Player 2");
+/** Short label for tight spots: a first name, or P1 / P2. */
+const shortOf = (names: PlayerNames | undefined, who: "A" | "B") =>
+  names?.[who]?.split(/\s+/)[0] || (who === "A" ? "P1" : "P2");
+
 export function MatchStats({
   videoId,
   onSeek,
   onLoaded,
+  names,
 }: {
   videoId: string;
   onSeek: (s: number) => void;
+  names?: PlayerNames;
   /** Whether this match has an analysis, once known (the page shows tracking then). */
   onLoaded?: (has: boolean) => void;
 }) {
@@ -175,13 +186,13 @@ export function MatchStats({
   }, [videoId, onLoaded]);
 
   if (!stats) return null;
-  return <Analysis stats={stats} onSeek={onSeek} />;
+  return <Analysis stats={stats} onSeek={onSeek} names={names} />;
 }
 
-function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void }) {
+function Analysis({ stats, onSeek, names }: { stats: Stats; onSeek: (s: number) => void; names?: PlayerNames }) {
   const byPerson = Boolean(stats.people);
   const players: [string, string][] = byPerson
-    ? [["A", "Player A"], ["B", "Player B"]]
+    ? [["A", nameOf(names, "A")], ["B", nameOf(names, "B")]]
     : [["near", "Camera end"], ["far", "Far end"]];
   const playerOf = (s: Shot) => (byPerson ? s.player : s.hitter);
   const colourOf = (who: string | undefined) =>
@@ -218,7 +229,7 @@ function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void
   };
 
   const cards: [string, PlayerStats, string][] = byPerson
-    ? [["Player A", stats.people!.A, "var(--player-a)"], ["Player B", stats.people!.B, "var(--player-b)"]]
+    ? [[nameOf(names, "A"), stats.people!.A, "var(--player-a)"], [nameOf(names, "B"), stats.people!.B, "var(--player-b)"]]
     : [["Camera end", stats.near, "var(--player-a)"], ["Far end", stats.far, "var(--player-b)"]];
 
   return (
@@ -379,9 +390,9 @@ function Analysis({ stats, onSeek }: { stats: Stats; onSeek: (s: number) => void
                   className="mstats-game"
                   style={{ borderTopColor: g.server === "A" ? "var(--player-a)" : "var(--player-b)" }}
                   onClick={() => onSeek(Math.max(0, g.start - 2))}
-                  title={`Game ${i + 1} at ${mmss(g.start)}: player ${g.server} served from the ${g.serverEnd === "near" ? "camera" : "far"} end`}
+                  title={`Game ${i + 1} at ${mmss(g.start)}: ${nameOf(names, g.server === "A" ? "A" : "B")} served from the ${g.serverEnd === "near" ? "camera" : "far"} end`}
                 >
-                  <b>{g.server}</b>
+                  <b>{shortOf(names, g.server === "A" ? "A" : "B")}</b>
                   <span>{g.points} pts</span>
                 </button>
                 {g.changeoverAfter && <span className="mstats-swap" title="Players change ends">⇄</span>}

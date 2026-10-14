@@ -102,6 +102,12 @@ export function WatchPage({ params }: { params: Promise<{ id: string }> }) {
     player_1: string | null;
     player_2: string | null;
   } | null>(null);
+  // Our analysis calls the two players A and B: A is player_1 (the one who
+  // starts at the camera end), so the owner's names label both.
+  const playerNames = useMemo(
+    () => ({ A: analysisPlayers?.player_1 ?? null, B: analysisPlayers?.player_2 ?? null }),
+    [analysisPlayers],
+  );
   // Court calibration — the first input to the 3D replay (docs/3D_REPLAY.md).
   const [courtCalibration, setCourtCalibration] = useState<Calibration | null>(null);
   const [canCalibrate, setCanCalibrate] = useState(false);
@@ -680,7 +686,7 @@ export function WatchPage({ params }: { params: Promise<{ id: string }> }) {
                 show3d && scene ? (
                   <Replay3D scene={scene} videoRef={videoRef} onTogglePlay={togglePlay} />
                 ) : showTracks && tracks ? (
-                  <TrackOverlay tracks={tracks} videoRef={videoRef} />
+                  <TrackOverlay tracks={tracks} videoRef={videoRef} names={playerNames} />
                 ) : null
               }
             />
@@ -718,10 +724,11 @@ export function WatchPage({ params }: { params: Promise<{ id: string }> }) {
             ]}
             onSeek={seekTo}
             onPlayersNamed={tagPlayers}
+            onPlayersChange={setAnalysisPlayers}
             currentTime={currentTime}
           />
         )}
-        {ready && <MatchStats videoId={id} onSeek={seekTo} onLoaded={setHasAnalysis} />}
+        {ready && <MatchStats videoId={id} onSeek={seekTo} onLoaded={setHasAnalysis} names={playerNames} />}
       </div>
 
       <div className="watch-below">
