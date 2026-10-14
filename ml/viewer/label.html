@@ -11,7 +11,7 @@
    keys and the current point. Built to be driven from the keyboard. */
 :root {
   --bg: #f3f5f3; --surface: #ffffff; --ink: #18211d; --muted: #5a6862; --rule: #dce2de;
-  --accent: #23614d; --near: #e07a2e; --far: #2f78cf; --bounce: #8a6d3b; --fault: #b7791f; --end: #c2453b;
+  --accent: #23614d; --near: #e07a2e; --far: #2f78cf; --bounce: #8a6d3b; --fault: #b7791f; --end: #c2453b; --game: #7a4fb5;
   --ours: #23614d; --tl: #8b5cc4; --reviewed: #cfe3d8;
   --display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --body: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
@@ -85,6 +85,7 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--rule); border-bottom-w
         <span><i style="background:var(--bounce)"></i>bounce</span>
         <span><i style="background:var(--fault)"></i>fault</span>
         <span><i style="background:var(--end)"></i>point over / net</span>
+        <span><i style="background:var(--game)"></i>game over</span>
         <span><i style="background:var(--ours)"></i>our rally windows</span>
         <span><i style="background:var(--tl)"></i>TwelveLabs</span>
         <span><i style="background:var(--reviewed)"></i>watched</span>
@@ -101,6 +102,7 @@ kbd { font: 500 12px var(--mono); border: 1px solid var(--rule); border-bottom-w
         <kbd>F</kbd><span>Fault: that serve missed</span>
         <kbd>X</kbd><span>Into the net (optional)</span>
         <kbd>E</kbd><span>Point over</span>
+        <kbd>G</kbd><span>Game over (after the point over): the server changes or the players change ends</span>
         <kbd>⌫</kbd><span>Delete the selected mark</span>
         <kbd>Z</kbd><span>Undo the last mark</span>
       </div>
@@ -135,7 +137,7 @@ const $ = (id) => document.getElementById(id);
 const video = $("video"), zoom = $("zoom"), overview = $("overview");
 const COLORS = () => {
   const cs = getComputedStyle(document.documentElement), v = (n) => cs.getPropertyValue(n).trim();
-  return { near: v("--near"), far: v("--far"), bounce: v("--bounce"), fault: v("--fault"), end: v("--end"),
+  return { near: v("--near"), far: v("--far"), bounce: v("--bounce"), fault: v("--fault"), end: v("--end"), game: v("--game"),
            ours: v("--ours"), tl: v("--tl"), reviewed: v("--reviewed"), ink: v("--ink"), muted: v("--muted"), rule: v("--rule") };
 };
 const SPEEDS = [0.25, 0.5, 1, 2];
@@ -197,7 +199,7 @@ function mergeIntervals(iv) {
   return out.map(([a, b]) => [+a.toFixed(2), +b.toFixed(2)]);
 }
 
-const LABEL = { "hit:near": "Hit · camera end", "hit:far": "Hit · far end", bounce: "Bounce", net: "Into the net", fault: "Fault", end: "Point over" };
+const LABEL = { "hit:near": "Hit · camera end", "hit:far": "Hit · far end", bounce: "Bounce", net: "Into the net", fault: "Fault", end: "Point over", game: "Game over" };
 const colorOf = (e, C) => e.type === "hit" ? C[e.end] : C[e.type === "net" ? "end" : e.type];
 // Optional detail on a mark: a bounce's call, a hit's stroke.
 const detailOf = (e) => [e.stroke, e.call].filter(Boolean).join(" · ");
@@ -362,6 +364,7 @@ document.addEventListener("keydown", (ev) => {
     2: () => setDetail("stroke", "backhand", "hit"),
     f: () => add("fault"),
     e: () => add("end"),
+    g: () => add("game"),
     n: () => jumpRally(1),
     p: () => jumpRally(-1),
     z: () => {
