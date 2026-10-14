@@ -92,7 +92,7 @@ export function MatchCard({
         setStatus((s) => ({ ...s, analysis: "processing" }));
       } else {
         setStatus((s) => ({ ...s, analysis: "failed" }));
-        setError(data.error ?? "Couldn't start the AI breakdown.");
+        setError(data.error ?? "Couldn't start the AI analysis.");
       }
     } finally {
       setBusy(false);
@@ -177,7 +177,7 @@ export function MatchCard({
 
           {status.analysis === "ready" && (
             <Link href={`/watch/${video.id}`} className="btn secondary btn-sm">
-              AI Breakdown
+              AI Analysis
             </Link>
           )}
           {isOwner && status.analysis !== "ready" && (
@@ -195,7 +195,7 @@ export function MatchCard({
                 ? "Analysing…"
                 : status.analysis === "failed"
                   ? "Retry AI"
-                  : "AI Breakdown"}
+                  : "AI Analysis"}
             </button>
           )}
 

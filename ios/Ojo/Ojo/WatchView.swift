@@ -350,7 +350,7 @@ struct WatchView: View {
     private func uploadActions(_ rec: Recording) -> some View {
         VStack(spacing: 8) {
             Button { setupOpen = true } label: {
-                Label("AI Breakdown", systemImage: "sparkles")
+                Label("AI Analysis", systemImage: "sparkles")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)

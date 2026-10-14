@@ -42,7 +42,7 @@ const FEATURES = [
   },
   {
     h: "The points, found for you",
-    p: "Ojo's AI breakdown marks where each rally starts and ends and groups them into service games, so you can jump point to point instead of scrubbing past the ball-collecting.",
+    p: "Ojo's AI analysis marks where each rally starts and ends and groups them into service games, so you can jump point to point instead of scrubbing past the ball-collecting.",
   },
   {
     h: "Private until you decide",
