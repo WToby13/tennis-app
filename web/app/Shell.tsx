@@ -1,6 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { Suspense } from "react";
+import { AppBanner } from "./AppBanner";
 import { Sidebar } from "./Sidebar";
 
 /**
@@ -35,22 +37,39 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isBare = NO_CHROME_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
-  if (isBare) return <main className="public-main">{children}</main>;
+  // Reads the query string (a match's share token), so it needs its own
+  // Suspense boundary to keep static pages static.
+  const banner = (
+    <Suspense fallback={null}>
+      <AppBanner />
+    </Suspense>
+  );
+
+  if (isBare)
+    return (
+      <>
+        {banner}
+        <main className="public-main">{children}</main>
+      </>
+    );
 
   // The watch page is full-bleed (theater video), so it opts out of the
   // centered, padded content column and manages its own layout.
   const isWatch = pathname.startsWith("/watch/");
 
   return (
-    <div className="app-shell">
-      <Sidebar />
-      {isWatch ? (
-        <main className="app-main watch-main">{children}</main>
-      ) : (
-        <main className="app-main">
-          <div className="app-content">{children}</div>
-        </main>
-      )}
-    </div>
+    <>
+      {banner}
+      <div className="app-shell">
+        <Sidebar />
+        {isWatch ? (
+          <main className="app-main watch-main">{children}</main>
+        ) : (
+          <main className="app-main">
+            <div className="app-content">{children}</div>
+          </main>
+        )}
+      </div>
+    </>
   );
 }

@@ -17,3 +17,18 @@ export const SITE_DESCRIPTION =
 
 /** Shown under the wordmark on the social card. */
 export const SITE_TAGLINE = "Record · Review · Share";
+
+/** The iPhone app on the App Store (Ojo Tennis, com.ojotennis.app). */
+export const APP_STORE_ID = "6805535843";
+export const APP_STORE_URL = `https://apps.apple.com/app/id${APP_STORE_ID}`;
+
+/**
+ * A link that opens the iPhone app at the same place: `ojo://watch/<id>` for a
+ * match (with its share token, so a shared private match opens too), else the
+ * app's home. The app reads these in ios/Ojo/Ojo/DeepLinks.swift.
+ */
+export function appLink(pathname: string, shareToken?: string | null): string {
+  const match = pathname.match(/^\/watch\/([0-9a-f-]{36})/i);
+  if (!match) return "ojo://open";
+  return `ojo://watch/${match[1]}${shareToken ? `?s=${encodeURIComponent(shareToken)}` : ""}`;
+}
