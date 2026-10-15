@@ -2844,6 +2844,7 @@ video {
 }
 .r3d-view.on { border-color: var(--accent); color: #fff; }
 span.r3d-view { cursor: default; }
+.r3d-sep { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--border); }
 .r3d-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .r3d-info {
   position: absolute; left: 10px; top: 46px; z-index: 1; pointer-events: none;
@@ -2862,7 +2863,11 @@ span.r3d-view { cursor: default; }
 }
 .r3d-pip:hover { border-color: var(--accent); }
 @media (max-width: 640px) {
-  .r3d-views { right: 10px; }
+  /* One row that scrolls sideways: wrapped, the cameras and venues took three
+     rows of a 170 px picture and the last went under the controls. */
+  .r3d-views { right: 10px; flex-wrap: nowrap; overflow-x: auto; pointer-events: auto; scrollbar-width: none; }
+  .r3d-views::-webkit-scrollbar { display: none; }
+  .r3d-view, .r3d-sep { flex: none; }
   .r3d-view { padding: 4px 8px; font-size: 11px; }
   .r3d-info { top: auto; bottom: 10px; }
   .r3d-pip { top: auto; bottom: 10px; right: 10px; width: 30%; min-width: 0; }

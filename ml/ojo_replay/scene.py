@@ -38,7 +38,7 @@ from .ball3d import fly_bounce
 from .camera import Camera
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = 2  # 2: joints as int8 offsets from an int16 root
+VERSION = 3  # 2: joints as int8 offsets from an int16 root; 3: surroundings
 # The fit's bounce coefficients, for shots fitted before they were kept.
 BOUNCE_DEFAULT = (0.75, 0.7)
 # Skeletons every this many frames (10 fps at 30): the 2D keypoints they come
@@ -47,7 +47,13 @@ SKELETON_STEP = 3
 # Gaps in a player's detections bridged, in frames (about a second).
 BRIDGE = 30
 # The ground the texture covers, metres: the court plus run-off.
-TEX_X, TEX_Y, TEX_RES = 9.0, 17.5, 0.04  # half-width, half-length, metres per pixel
+# The ground the texture covers, metres: the court and its run-off out to the
+# fences. Across, a club court's usual 3.5 m beyond the doubles lines; along,
+# out to the phone, which in every recording so far was on the back fence
+# (17.2-19.7 m behind centre court).
+TEX_X, TEX_RES = 9.0, 0.04  # half-width, metres per pixel
+MIN_HALF_LENGTH = 17.0
+PLATE_WIDTH = 1280  # the backdrop's resolution: the walls are seen from far off
 
 
 def _cm(a) -> list[int]:
@@ -155,15 +161,16 @@ def players_3d(cam: Camera, players: list[dict], first: int, last: int, lift) ->
     return out
 
 
-def court_texture(cam: Camera, plate: np.ndarray) -> str:
+def court_texture(cam: Camera, plate: np.ndarray, half_length: float) -> str:
     """The plate warped top-down over the court and run-off, as a JPEG data URL.
     Row 0 is the far end (+y), column 0 the left (-x). Ground the camera didn't
     see takes the surface's median colour.
 
     Only the near half is the camera's: the far half is seen through the net,
     whose tape, posts and the fence behind smear across it once warped flat. A
-    court is the same turned half round, so the far half is the near half rotated."""
-    w, h = int(2 * TEX_X / TEX_RES), int(TEX_Y / TEX_RES)
+    court is the same mirrored across the net, so the far half is the near half
+    mirrored: what's beside the court stays on its own side."""
+    w, h = int(2 * TEX_X / TEX_RES), int(half_length / TEX_RES)
     xs = -TEX_X + (np.arange(w) + 0.5) * TEX_RES
     ys = -(np.arange(h) + 0.5) * TEX_RES
     gx, gy = np.meshgrid(xs, ys)
@@ -181,9 +188,26 @@ def court_texture(cam: Camera, plate: np.ndarray) -> str:
     # Soften the edge of what the camera saw into the fill colour.
     mask = cv2.GaussianBlur(seen.astype(np.float32), (0, 0), 6)[..., None]
     img = (img * mask + fill * (1 - mask)).astype(np.uint8)
-    img = np.vstack([img[::-1, ::-1], img])
+    img = np.vstack([img[::-1], img])
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 78])
     return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
+
+
+def surroundings(plate: np.ndarray, half_length: float) -> dict:
+    """What the 3D view needs to wrap the court in the recording's own
+    surroundings: the plate (fences, trees, buildings, sky), which the viewer
+    projects back through the calibrated phone onto walls standing at the
+    fences, and the sky's colour for above them."""
+    h, w = plate.shape[:2]
+    small = cv2.resize(plate, (PLATE_WIDTH, round(h * PLATE_WIDTH / w)), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    sky = np.median(plate[: max(1, h // 12)].reshape(-1, 3), axis=0)[::-1]  # BGR -> RGB
+    return {
+        "plate": "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode(),
+        "halfWidth": TEX_X,
+        "halfLength": half_length,
+        "sky": [int(c) for c in sky],
+    }
 
 
 def plate_for(short: str, cal: dict) -> np.ndarray | None:
@@ -240,6 +264,7 @@ def build_scene(prefix: str) -> tuple[str, dict]:
               f"{ {k: len(v['f']) for k, v in rallies[-1]['players'].items()} } detections", flush=True)
 
     plate = plate_for(short, cal)
+    half_length = round(max(MIN_HALF_LENGTH, -float(cam.position[1])), 2)
     c = cal["camera"]
     scene = {
         "version": VERSION,
@@ -247,7 +272,8 @@ def build_scene(prefix: str) -> tuple[str, dict]:
         "camera": {"position": np.round(cam.position, 3).tolist(), "rotation": np.ravel(c["rotation"]).tolist(),
                    "f": c["f"], "cx": c["cx"], "cy": c["cy"], "width": cal["imageWidth"], "height": cal["imageHeight"]},
         "court": None if plate is None else {
-            "texture": court_texture(cam, plate), "halfWidth": TEX_X, "halfLength": TEX_Y},
+            "texture": court_texture(cam, plate, half_length), "halfWidth": TEX_X, "halfLength": half_length},
+        "surroundings": None if plate is None else surroundings(plate, half_length),
         "body": "videopose3d" if lift else None,
         "rallies": rallies,
     }
