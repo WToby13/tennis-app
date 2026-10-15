@@ -510,7 +510,7 @@ export function Replay3D({
 
       figures.near.group.visible = figures.far.group.visible = false;
       ball.visible = shadow.visible = trail.visible = false;
-      let label = R ? "" : "Between points";
+      let label = R && !R.between ? "" : "Between points";
       if (R) {
         const feet = { near: posePlayer("near", frame), far: posePlayer("far", frame) };
         if (cutouts) {
@@ -605,6 +605,8 @@ export function Replay3D({
 
   return (
     <div className={`r3d ${view === "phone" ? "r3d-ar" : ""}`} ref={hostRef}>
+      {/* Cameras and venues, with the readout under them however many rows they wrap to. */}
+      <div className="r3d-top">
       <div className="r3d-views" role="toolbar" aria-label="3D camera">
         {VIEWS.map(([v, label]) => (
           <button
@@ -663,6 +665,7 @@ export function Replay3D({
             )
           </div>
         )}
+      </div>
       </div>
       {view !== "phone" && (
         <canvas

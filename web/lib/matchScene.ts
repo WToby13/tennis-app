@@ -43,6 +43,12 @@ export interface SceneRally {
   idx: number;
   start: number;
   end: number;
+  /**
+   * Between points (version 5+): players walking, fetching balls, changing
+   * ends, from detections two a second. No shots. Split at a change of ends,
+   * so `who` holds for the whole stretch.
+   */
+  between?: boolean;
   /** Which player (A/B, by kit) was at each end, "" if unknown. */
   who: Record<End, Who | "">;
   shots: SceneShot[];

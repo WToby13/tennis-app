@@ -38,7 +38,7 @@ from .ball3d import fly_bounce
 from .camera import Camera
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = 4  # 2: joints as int8 offsets from an int16 root; 3: surroundings; 4: players' boxes
+VERSION = 5  # 2: joints as int8 offsets; 3: surroundings; 4: players' boxes; 5: between points
 # The fit's bounce coefficients, for shots fitted before they were kept.
 BOUNCE_DEFAULT = (0.75, 0.7)
 # Skeletons every this many frames (10 fps at 30): the 2D keypoints they come
@@ -227,6 +227,88 @@ def plate_for(short: str, cal: dict) -> np.ndarray | None:
     return autocal.clean_plate(frames) if len(frames) >= 3 else None
 
 
+OTHER = {"A": "B", "B": "A"}
+
+
+def between_points(out: Path, a: dict, near_of: dict[int, str], fps: float, cam: Camera) -> list[dict]:
+    """The stretches between rallies (walking back, fetching balls, changing
+    ends), from the album pass's detections (albums.py, two a second), so the
+    view isn't empty between points.
+
+    Who's who is followed from the last point's assignment by movement: each
+    detection goes to whichever of the two was last closest. At a change of
+    ends the players walk past each other, so near and far swap people; each
+    stretch is split there, and every piece has one fixed who-is-where, as a
+    rally does."""
+    files = sorted((out / "albums").glob("between-s*.json"))
+    if not files:
+        return []
+    dets = sorted(json.loads(files[0].read_text()), key=lambda d: d["frame"])
+    rs = sorted(a["rallies"], key=lambda r: r["startS"])
+    if not rs:
+        return []
+    entries: list[dict] = []
+    for prev, nxt in [(None, rs[0]), *zip(rs, rs[1:]), (rs[-1], None)]:
+        t0 = prev["endS"] if prev else 0.0
+        t1 = nxt["startS"] if nxt else a["durationS"]
+        f0, f1 = int(t0 * fps) + 1, int(t1 * fps) - 1
+        ds = [d for d in dets if f0 <= d["frame"] <= f1]
+        if t1 - t0 < 1.0 or not ds:
+            continue
+        near = (near_of.get(prev["idx"]) if prev else "") or (near_of.get(nxt["idx"]) if nxt else "") or ""
+        last: dict[str, np.ndarray | None] = {"A": None, "B": None}
+        holders: dict[str, str] = {}
+        by_frame: dict[int, list[dict]] = {}
+        for d in ds:
+            by_frame.setdefault(d["frame"], []).append(d)
+        for f in sorted(by_frame):
+            group = by_frame[f]
+            default = {d["side"]: (near if d["side"] == "near" else OTHER.get(near, "")) for d in group}
+            if not near:
+                for d in group:
+                    d["who"] = ""
+                continue
+            if any(v is None for v in last.values()):
+                for d in group:
+                    d["who"] = default[d["side"]]
+            elif len(group) == 2:
+                pa, pb = (np.array(g["feet"]) for g in group)
+                keep = np.linalg.norm(pa - last["A"]) + np.linalg.norm(pb - last["B"])
+                swap = np.linalg.norm(pa - last["B"]) + np.linalg.norm(pb - last["A"])
+                group[0]["who"], group[1]["who"] = ("A", "B") if keep <= swap else ("B", "A")
+            else:
+                # One of them alone: they stay whoever held this end, unless
+                # clearly nearer the other (a lone detection flipped back and
+                # forth on stale positions otherwise).
+                d = group[0]
+                pos = np.array(d["feet"])
+                holder = holders.get(d["side"]) or default[d["side"]]
+                other = OTHER[holder]
+                d["who"] = other if np.linalg.norm(pos - last[other]) < 0.5 * np.linalg.norm(pos - last[holder]) else holder
+            for d in group:
+                holders[d["side"]] = d["who"]
+            for d in group:
+                if d["who"]:
+                    last[d["who"]] = np.array(d["feet"])
+        # Pieces with one who-is-where each.
+        pieces: list[tuple[str, list[dict]]] = []
+        for d in ds:
+            near_who = d["who"] if d["side"] == "near" else OTHER.get(d["who"], "")
+            if not pieces or pieces[-1][0] != near_who:
+                pieces.append((near_who, []))
+            pieces[-1][1].append(d)
+        for i, (near_who, group) in enumerate(pieces):
+            start = t0 if i == 0 else group[0]["frame"] / fps
+            end = t1 if i == len(pieces) - 1 else pieces[i + 1][1][0]["frame"] / fps
+            fa, fb = group[0]["frame"], group[-1]["frame"]
+            entries.append({
+                "idx": 100000 + len(entries), "start": round(start, 2), "end": round(end, 2), "between": True,
+                "who": {"near": near_who, "far": OTHER.get(near_who, "")},
+                "shots": [], "players": players_3d(cam, group, fa, fb, None),
+            })
+    return entries
+
+
 def build_scene(prefix: str) -> tuple[str, dict]:
     meta = json.loads(next((ROOT / ".cache" / "matches").glob(prefix + "*.json")).read_text())
     short = meta["id"][:8]
@@ -265,6 +347,10 @@ def build_scene(prefix: str) -> tuple[str, dict]:
         })
         print(f"[scene {short}] rally {r['idx']}: {len(shots)} shots, "
               f"{ {k: len(v['f']) for k, v in rallies[-1]['players'].items()} } detections", flush=True)
+
+    between = between_points(out, a, near_of, fps, cam)
+    print(f"[scene {short}] {len(between)} stretches between points", flush=True)
+    rallies = sorted(rallies + between, key=lambda r: r["start"])
 
     plate = plate_for(short, cal)
     half_length = round(max(MIN_HALF_LENGTH, -float(cam.position[1])), 2)
