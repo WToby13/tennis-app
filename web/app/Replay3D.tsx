@@ -6,7 +6,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { End } from "@/lib/matchStats";
 import type { MatchScene, SceneRally, SceneShot } from "@/lib/matchScene";
 import { PlayerCutouts, makeReadable } from "./Replay3DPeople";
-import { buildRecordedCourt, buildStadium, type BuiltVenue, type Venue } from "./Replay3DVenues";
+import { buildRecordedCourt, buildStadium, STADIUM_CREDIT, type BuiltVenue, type Venue } from "./Replay3DVenues";
 
 /**
  * The match in 3D, over the video: the court (wearing the real court's
@@ -46,7 +46,7 @@ const VIEWS: [View, string][] = [
 
 const VENUES: [Venue, string, string][] = [
   ["court", "Your court", "Where it was played, its surroundings taken from the video"],
-  ["stadium", "Stadium", "The same match on a big clay show court, in the style of Court Philippe-Chatrier"],
+  ["stadium", "Stadium", "The same match on your court's own surface, in a covered show-court stadium"],
 ];
 
 /** Index of the last element whose key <= x in a sorted array, or -1. */
@@ -165,7 +165,7 @@ export function Replay3D({
         ground.remove(venue.built.group);
         venue.built.dispose();
       }
-      const built = name === "stadium" ? buildStadium() : buildRecordedCourt(scene, renderer, `/api/videos/${videoId}/match-venue`);
+      const built = name === "stadium" ? buildStadium(scene, renderer) : buildRecordedCourt(scene, renderer, `/api/videos/${videoId}/match-venue`);
       ground.add(built.group);
       venue = { name, built };
       lastView = null; // background and fog follow the venue
@@ -663,6 +663,14 @@ export function Replay3D({
               CC BY-NC 4.0
             </a>
             )
+          </div>
+        )}
+        {/* CC BY 4.0 asks for credit wherever the model is shown. */}
+        {venue === "stadium" && (
+          <div className="r3d-credit">
+            <a href={STADIUM_CREDIT.href} target="_blank" rel="noreferrer">
+              {STADIUM_CREDIT.text}
+            </a>
           </div>
         )}
       </div>

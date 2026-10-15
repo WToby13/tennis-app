@@ -1,5 +1,7 @@
 import { SparkRenderer, SplatFileType, SplatMesh } from "@sparkjsdev/spark";
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
 import type { MatchScene } from "@/lib/matchScene";
 
 /**
@@ -9,10 +11,9 @@ import type { MatchScene } from "@/lib/matchScene";
  * - "court": the court it was recorded on. Its surface from the video, and its
  *   surroundings (fences, trees, buildings, sky) projected from the video back
  *   through the calibrated phone onto walls at the fences.
- * - "stadium": a big clay show court, in the style of Court Philippe-Chatrier:
- *   wide clay run-off, dark green walls, steep stands full of people, a roof
- *   ring overhead. Built from boxes and canvas textures; no photos or marks of
- *   any real venue.
+ * - "stadium": a covered show court (Estadio Parque Roca, Buenos Aires, from a
+ *   CC-BY model: credit in STADIUM_CREDIT), its clay swapped for the recorded
+ *   court's own surface and its walls carrying our boards.
  *
  * Court coordinates (metres: x across, y away from the phone, z up) map to
  * three.js as (x, z, -y), as in Replay3D.
@@ -194,16 +195,14 @@ function loadSplat(url: string, group: THREE.Group, walls: THREE.Group | null, r
     .catch(() => {});
 }
 
-export function buildRecordedCourt(scene: MatchScene, renderer: THREE.WebGLRenderer, splatUrl?: string): BuiltVenue {
-  const group = new THREE.Group();
-  const extra: { dispose: () => void }[] = [];
-  let disposed = false;
-  let walls: THREE.Group | null = null;
-  const su = scene.surroundings;
-  const sky = su ? new THREE.Color().setRGB(su.sky[0] / 255, su.sky[1] / 255, su.sky[2] / 255, THREE.SRGBColorSpace) : new THREE.Color(0x14110d);
-
+/**
+ * The recorded court's surface from the video, on a run-off of `runW` × `runL`
+ * metres that takes the texture's own edge colour (the texture covers the
+ * court and a little round it).
+ */
+function videoSurface(scene: MatchScene, renderer: THREE.WebGLRenderer, group: THREE.Group, runW: number, runL: number) {
   const surround = new THREE.MeshLambertMaterial({ color: 0x8a4a30 });
-  group.add(flat(400, 400, surround, -0.02)); // to the horizon, where the fog takes it
+  group.add(flat(runW, runL, surround, -0.02));
   if (scene.court) {
     const { halfWidth, halfLength } = scene.court;
     const tex = new THREE.TextureLoader().load(scene.court.texture, (t) => {
@@ -224,6 +223,17 @@ export function buildRecordedCourt(scene: MatchScene, renderer: THREE.WebGLRende
   } else {
     group.add(flat(2 * (D + 3.5), 2 * (HL + 6.4), new THREE.MeshLambertMaterial({ color: 0xa35a3a }), -0.01));
   }
+}
+
+export function buildRecordedCourt(scene: MatchScene, renderer: THREE.WebGLRenderer, splatUrl?: string): BuiltVenue {
+  const group = new THREE.Group();
+  const extra: { dispose: () => void }[] = [];
+  let disposed = false;
+  let walls: THREE.Group | null = null;
+  const su = scene.surroundings;
+  const sky = su ? new THREE.Color().setRGB(su.sky[0] / 255, su.sky[1] / 255, su.sky[2] / 255, THREE.SRGBColorSpace) : new THREE.Color(0x14110d);
+
+  videoSurface(scene, renderer, group, 400, 400); // to the horizon, where the fog takes it
 
   if (su) {
     // Shown once the plate has decoded: before that they'd be black.
@@ -270,63 +280,62 @@ export function buildRecordedCourt(scene: MatchScene, renderer: THREE.WebGLRende
 // ---------------------------------------------------------------------------
 // The stadium.
 
-/** A deterministic random stream, so the crowd sits the same every time. */
-function rng(seed: number) {
-  let s = seed >>> 0;
-  return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-}
+export const STADIUM_URL = "/venues/parque-roca.glb";
+/** CC-BY-4.0 asks for this wherever the model is shown. */
+export const STADIUM_CREDIT = {
+  text: "Stadium: “Estadio Parque Roca” by A1905, CC BY 4.0",
+  href: "https://sketchfab.com/3d-models/estadio-parque-roca-35eff25bb57f4cf1b8209e6fd2abc164",
+};
 
-/** Clay: an even orange-red with grain, brushed along the court, worn behind the baselines. */
-function clayTexture(hw: number, hl: number): THREE.CanvasTexture {
-  const px = 24; // per metre
+// Where the model's court is, in the model's own frame (metres, y up): the
+// net's line and the centre line, read off its clay texture and net. Its long
+// axis runs along the model's x.
+const MODEL_CENTRE = new THREE.Vector3(200.53, 0.91, -40.71);
+// What to leave out: its clay (the recorded court goes there) and its net
+// (Replay3D draws the net every venue shares).
+const HIDE = new Set(["material_22", "Fencing", "Color_H0", "Color_I0", "69_iron"]);
+// The inner faces of its green walls round the court, measured from the model
+// (our court metres; not quite symmetric): beside it for |y| < 22.8, behind it
+// for |x| < 8.4.
+const WALL = { left: -12.23, right: 12.49, sideLen: 22.8, near: -25.4, far: 25.58, endLen: 8.4 };
+// The recorded surface reaches the walls (the model's clay stopped short of them).
+const RUN = { w: WALL.right - WALL.left, l: WALL.far - WALL.near };
+
+const OJO_ORANGE = "#d9662c", OJO_GREEN = "#0d3b2a", OJO_CREAM = "#f4f1e8";
+
+/** Our board: dark green, the Ojo mark and name in cream and clay, repeating. */
+function ojoBoard(len: number, h: number): THREE.CanvasTexture {
+  const px = 96; // per metre
   const cv = document.createElement("canvas");
-  cv.width = Math.round(2 * hw * px);
-  cv.height = Math.round(2 * hl * px);
+  const unit = 9; // metres per repeat
+  cv.width = unit * px;
+  cv.height = Math.round(h * px);
   const g = cv.getContext("2d")!;
-  g.fillStyle = "#c0592f";
-  g.fillRect(0, 0, cv.width, cv.height);
-  const r = rng(7);
-  // Brush strokes along the court.
-  for (let i = 0; i < 900; i++) {
-    g.fillStyle = `rgba(${r() < 0.5 ? "150,62,30" : "214,112,66"},${0.05 + r() * 0.06})`;
-    g.fillRect(r() * cv.width, r() * cv.height, 1 + r() * 3, 40 + r() * 160);
-  }
-  // Grain.
-  for (let i = 0; i < 60000; i++) {
-    g.fillStyle = r() < 0.5 ? "rgba(120,50,24,0.35)" : "rgba(230,140,96,0.3)";
-    g.fillRect(r() * cv.width, r() * cv.height, 1, 1);
-  }
-  // Worn, lighter and smoother where the players stand behind each baseline.
-  for (const end of [-1, 1]) {
-    const cy = cv.height / 2 - end * (HL + 1.2) * px;
-    const grad = g.createRadialGradient(cv.width / 2, cy, 0, cv.width / 2, cy, 4.5 * px);
-    grad.addColorStop(0, "rgba(222,130,86,0.45)");
-    grad.addColorStop(1, "rgba(222,130,86,0)");
-    g.fillStyle = grad;
+  const t = new THREE.CanvasTexture(cv);
+  const draw = (logo?: HTMLImageElement) => {
+    g.fillStyle = OJO_GREEN;
     g.fillRect(0, 0, cv.width, cv.height);
-  }
-  const t = new THREE.CanvasTexture(cv);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
-}
-
-/** The dark green wall boards, our name on them in white. */
-function boardTexture(): THREE.CanvasTexture {
-  const cv = document.createElement("canvas");
-  cv.width = 1024;
-  cv.height = 96;
-  const g = cv.getContext("2d")!;
-  g.fillStyle = "#0e4a33";
-  g.fillRect(0, 0, cv.width, cv.height);
-  g.fillStyle = "#f4f1e8";
-  g.font = "700 46px system-ui, -apple-system, sans-serif";
-  g.textBaseline = "middle";
-  g.textAlign = "center";
-  g.fillText("OJO", cv.width * 0.25, cv.height / 2);
-  g.fillText("OJO TENNIS", cv.width * 0.72, cv.height / 2);
-  const t = new THREE.CanvasTexture(cv);
+    g.fillStyle = OJO_ORANGE;
+    g.fillRect(0, cv.height - 6, cv.width, 6);
+    const s = cv.height * 0.62, y = (cv.height - s) / 2 - 3;
+    for (const x0 of [0.06, 0.46]) {
+      const x = x0 * cv.width;
+      if (logo) g.drawImage(logo, x, y, s, s);
+      g.fillStyle = OJO_CREAM;
+      g.font = `800 ${Math.round(cv.height * 0.5)}px system-ui, -apple-system, "Helvetica Neue", sans-serif`;
+      g.textBaseline = "middle";
+      g.fillText(x0 < 0.5 ? "OJO" : "OJO TENNIS", x + s + cv.height * 0.22, cv.height / 2 - 2);
+    }
+    t.needsUpdate = true;
+  };
+  draw();
+  const img = new Image();
+  img.onload = () => draw(img);
+  img.src = "/logo.svg";
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = THREE.RepeatWrapping;
+  t.repeat.set(len / unit, 1);
+  t.anisotropy = 8;
   return t;
 }
 
@@ -346,156 +355,67 @@ function skyTexture(): THREE.CanvasTexture {
   return t;
 }
 
-export function buildStadium(): BuiltVenue {
+export function buildStadium(scene: MatchScene, renderer: THREE.WebGLRenderer): BuiltVenue {
   const group = new THREE.Group();
   const extra: { dispose: () => void }[] = [];
-  // Clay out to the walls: 9 m behind the baselines, 5.5 m beside the court.
-  const hw = D + 5.5, hl = HL + 9;
-  const wallH = 1.9;
+  let gone = false;
 
-  group.add(flat(500, 500, new THREE.MeshLambertMaterial({ color: 0x6f6a62 }), -0.03)); // concourse and beyond
-  const clay = clayTexture(hw, hl);
-  clay.anisotropy = 8;
-  group.add(flat(2 * hw, 2 * hl, new THREE.MeshLambertMaterial({ map: clay }), -0.01));
+  // The recorded surface over the model's clay, shown straight away; the
+  // stadium round it arrives when it has loaded.
+  videoSurface(scene, renderer, group, RUN.w, RUN.l);
+  group.add(flat(400, 400, new THREE.MeshLambertMaterial({ color: 0x6f6a62 }), -0.05)); // until it does
 
-  // The green walls round the clay.
-  for (const side of ["far", "near", "left", "right"] as const) {
-    const t = boardTexture();
-    const len = side === "far" || side === "near" ? 2 * hw : 2 * hl;
-    t.repeat.set(len / 9, 1);
-    const w = wall(side, hw, hl, wallH, new THREE.MeshLambertMaterial({ map: t }));
-    w.receiveShadow = true;
-    group.add(w);
-  }
-
-  // Stands: two tiers of stepped rows on all four sides, seen from the court.
-  // Each row is four boxes from the ground up (one per side), so the corners
-  // close; the people are one instanced mesh.
-  const steps: { x: number; y: number; w: number; d: number; h: number; z0: number }[] = [];
-  const people: { x: number; y: number; z: number }[] = [];
-  const tiers = [
-    { a0: hw + 1.2, b0: hl + 1.2, z0: wallH + 0.4, rows: 24, depth: 0.85, rise: 0.42 },
-    { a0: 0, b0: 0, z0: 0, rows: 16, depth: 0.85, rise: 0.62 },
+  // Our boards along the foot of the green walls, just in front of them.
+  const boardH = 1.1, inset = 0.04;
+  const boards: [THREE.Vector3, number, number][] = [
+    [S(WALL.left + inset, 0, boardH / 2 + 0.02), Math.PI / 2, 2 * WALL.sideLen],
+    [S(WALL.right - inset, 0, boardH / 2 + 0.02), -Math.PI / 2, 2 * WALL.sideLen],
+    [S(0, WALL.far - inset, boardH / 2 + 0.02), 0, 2 * WALL.endLen],
+    [S(0, WALL.near + inset, boardH / 2 + 0.02), Math.PI, 2 * WALL.endLen],
   ];
-  // The upper tier starts behind the lower one, over a concourse.
-  {
-    const lo = tiers[0];
-    tiers[1].a0 = lo.a0 + lo.rows * lo.depth + 2.5;
-    tiers[1].b0 = lo.b0 + lo.rows * lo.depth + 2.5;
-    tiers[1].z0 = lo.z0 + lo.rows * lo.rise + 3.2;
-  }
-  const r = rng(11);
-  for (const tier of tiers) {
-    for (let k = 0; k < tier.rows; k++) {
-      const a = tier.a0 + k * tier.depth, b = tier.b0 + k * tier.depth;
-      const top = tier.z0 + (k + 1) * tier.rise;
-      const d = tier.depth;
-      steps.push({ x: -(a + d / 2), y: 0, w: d, d: 2 * (b + d), h: top, z0: 0 });
-      steps.push({ x: a + d / 2, y: 0, w: d, d: 2 * (b + d), h: top, z0: 0 });
-      steps.push({ x: 0, y: -(b + d / 2), w: 2 * (a + d), d: d, h: top, z0: 0 });
-      steps.push({ x: 0, y: b + d / 2, w: 2 * (a + d), d: d, h: top, z0: 0 });
-      // People along the row, a seat every 0.6 m, most of them taken.
-      const off = 0.55 * d;
-      const seat = (x: number, y: number) => r() < 0.88 && people.push({ x, y, z: top });
-      for (let x = -(a + off); x <= a + off; x += 0.6) {
-        seat(x, -(b + off));
-        seat(x, b + off);
-      }
-      for (let y = -(b - 0.3); y <= b - 0.3; y += 0.6) {
-        seat(-(a + off), y);
-        seat(a + off, y);
-      }
-    }
-  }
-  const stepMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0x5d665f }), steps.length);
-  const m4 = new THREE.Matrix4();
-  steps.forEach((s, i) => {
-    m4.compose(S(s.x, s.y, s.z0 + s.h / 2), new THREE.Quaternion(), new THREE.Vector3(s.w, s.h, s.d));
-    stepMesh.setMatrixAt(i, m4);
-  });
-  stepMesh.receiveShadow = true;
-  group.add(stepMesh);
-
-  // People, seated: a body in what they wear and a head, two instanced meshes.
-  const bodyGeo = new THREE.BoxGeometry(0.44, 0.5, 0.3);
-  bodyGeo.translate(0, 0.45 + 0.25, 0); // on the seat
-  const headGeo = new THREE.BoxGeometry(0.2, 0.22, 0.2);
-  headGeo.translate(0, 0.95 + 0.11, 0);
-  const bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), people.length);
-  const heads = new THREE.InstancedMesh(headGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), people.length);
-  const wear = [0xf4f1ea, 0xf4f1ea, 0xe9e4d8, 0x1f2a44, 0x2f4f7f, 0xd8c7a6, 0x8a1c1c, 0x3a6b4a, 0xe8a43c, 0x222222, 0x9bb8d8, 0xd56b3a, 0xc9c2b8];
-  const tops = [0xe2b896, 0xc89670, 0x8d5a3b, 0x5a3825, 0x2b2420, 0xd9c27a, 0x3b2a20, 0xf2f2ee];
-  const col = new THREE.Color();
-  people.forEach((p, i) => {
-    const sc = 0.92 + r() * 0.16;
-    m4.compose(S(p.x + (r() - 0.5) * 0.08, p.y + (r() - 0.5) * 0.08, p.z), new THREE.Quaternion(), new THREE.Vector3(sc, sc, sc));
-    bodies.setMatrixAt(i, m4);
-    heads.setMatrixAt(i, m4);
-    bodies.setColorAt(i, col.setHex(wear[Math.floor(r() * wear.length)]));
-    heads.setColorAt(i, col.setHex(tops[Math.floor(r() * tops.length)]));
-  });
-  group.add(bodies, heads);
-
-  // Green fascia between the tiers, and along the top of the lower one.
-  const fasciaMat = new THREE.MeshLambertMaterial({ color: 0x0e4a33 });
-  const up = tiers[1];
-  const lo = tiers[0];
-  const fz = lo.z0 + lo.rows * lo.rise;
-  for (const side of ["far", "near", "left", "right"] as const) {
-    const f = wall(side, up.a0 - 0.6, up.b0 - 0.6, up.z0 - fz, fasciaMat);
-    f.position.y += fz;
-    group.add(f);
-  }
-
-  // The roof ring over the top tier (the roof itself open), white, with the
-  // floodlights along its underside.
-  const top = up.z0 + up.rows * up.rise;
-  const ra = up.a0 + up.rows * up.depth + 1, rb = up.b0 + up.rows * up.depth + 1;
-  const ringMat = new THREE.MeshLambertMaterial({ color: 0xf2f2ef });
-  const lightMat = new THREE.MeshBasicMaterial({ color: 0xfffbe8 });
-  const beam = (x: number, y: number, w: number, d: number) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, 1.6, d), ringMat);
-    m.position.copy(S(x, y, top + 6));
+  for (const [at, turn, len] of boards) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(len, boardH), new THREE.MeshLambertMaterial({ map: ojoBoard(len, boardH) }));
+    m.position.copy(at);
+    m.rotation.y = turn;
+    m.receiveShadow = true;
     group.add(m);
-    const l = new THREE.Mesh(new THREE.BoxGeometry(w * 0.9, 0.15, d * 0.9), lightMat);
-    l.position.copy(S(x, y, top + 5.1));
-    group.add(l);
-  };
-  beam(-ra, 0, 1.4, 2 * rb);
-  beam(ra, 0, 1.4, 2 * rb);
-  beam(0, -rb, 2 * ra, 1.4);
-  beam(0, rb, 2 * ra, 1.4);
-  for (const [x, y] of [[-ra, -rb], [ra, -rb], [-ra, rb], [ra, rb]]) {
-    const mast = new THREE.Mesh(new THREE.BoxGeometry(1.2, top + 6, 1.2), ringMat);
-    mast.position.copy(S(x, y, (top + 6) / 2));
-    group.add(mast);
   }
 
-  // The umpire's chair at the net, beside the court; the players' chairs by it.
-  const green = new THREE.MeshLambertMaterial({ color: 0x0e4a33 });
-  const chair = new THREE.Group();
-  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.7, 2.0, 0.7), green);
-  legs.position.y = 1.0;
-  chair.add(legs);
-  const seatBox = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), green);
-  seatBox.position.y = 2.45;
-  chair.add(seatBox);
-  chair.position.copy(S(-(D + 1.6), 0, 0));
-  chair.traverse((o) => (o.castShadow = true));
-  group.add(chair);
-  for (const y of [-1.6, 1.6]) {
-    const bench = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 1.6), green);
-    bench.position.copy(S(-(hw - 0.6), y, 0.45));
-    bench.castShadow = true;
-    group.add(bench);
-  }
+  const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  loader.load(STADIUM_URL, (gltf) => {
+    if (gone) {
+      gltf.scene.traverse((o) => {
+        const m = o as THREE.Mesh;
+        m.geometry?.dispose();
+      });
+      return;
+    }
+    const model = gltf.scene;
+    model.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const mats = Array.isArray(m.material) ? m.material : [m.material];
+      if (mats.some((mt) => HIDE.has(mt.name))) m.visible = false;
+      m.receiveShadow = true;
+    });
+    // Its court centre to ours, its long axis to ours (model +x -> our +y).
+    model.position.copy(MODEL_CENTRE).multiplyScalar(-1);
+    const holder = new THREE.Group();
+    holder.rotation.y = Math.PI / 2;
+    holder.add(model);
+    group.add(holder);
+  }, undefined, (e) => console.warn("The stadium couldn't load; showing the court on its own.", e));
 
   const background = skyTexture();
   extra.push(background);
   return {
     group,
     background,
-    fog: new THREE.Fog(0xdfe9f1, 120, 320),
-    dispose: () => disposeAll(group, extra),
+    fog: new THREE.Fog(0xdfe9f1, 160, 420),
+    dispose: () => {
+      gone = true;
+      disposeAll(group, extra);
+    },
   };
 }
