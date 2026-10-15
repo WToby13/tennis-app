@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { End } from "@/lib/matchStats";
 import type { MatchScene, SceneRally, SceneShot } from "@/lib/matchScene";
+import { PlayerCutouts, makeReadable } from "./Replay3DPeople";
 import { buildRecordedCourt, buildStadium, type BuiltVenue, type Venue } from "./Replay3DVenues";
 
 /**
@@ -103,6 +104,11 @@ export function Replay3D({
   const [view, setView] = useState<View>("broadcast");
   const viewRef = useRef<View>(view);
   const [venue, setVenueName] = useState<Venue>("court");
+  /** The real players (cut out of the video) instead of figures, once the video is readable. */
+  const [real, setReal] = useState(true);
+  const realRef = useRef(real);
+  realRef.current = real;
+  const [canCutOut, setCanCutOut] = useState(false);
   const venueRef = useRef<Venue>(venue);
   venueRef.current = venue;
   const [hud, setHud] = useState<string>("");
@@ -303,11 +309,12 @@ export function Replay3D({
       }
     };
 
-    const posePlayer = (side: End, frame: number) => {
+    /** Poses one player's figure for this frame; returns where they stand (court x, y), or null. */
+    const posePlayer = (side: End, frame: number): [number, number] | null => {
       const fig = figures[side];
       const p = R?.players[side];
       fig.group.visible = false;
-      if (!R || !p) return;
+      if (!R || !p) return null;
       const sk = p.skeleton;
       if (sk && sk.f.length) {
         const key = `${R.idx}:${side}`;
@@ -340,16 +347,17 @@ export function Replay3D({
           fig.ring.position.set(pts[0].x, 0.008, pts[0].z);
           fig.plain.visible = false;
           fig.group.visible = true;
-          return;
+          // Feet: between the two feet joints (scene x = court x, scene z = -court y).
+          return [(pts[3].x + pts[6].x) / 2, -(pts[3].z + pts[6].z) / 2];
         }
       }
       // No skeleton here: a figure standing at the feet, carried across gaps in
       // the detections up to a second (as the skeletons are), else not drawn.
       const i = floorBy(p.f, frame, (f) => f);
-      if (i < 0) return;
+      if (i < 0) return null;
       const j = Math.min(i + 1, p.f.length - 1);
       const bridged = j > i && p.f[j] - p.f[i] <= BRIDGE;
-      if (!bridged && frame - p.f[i] > 4) return;
+      if (!bridged && frame - p.f[i] > 4) return null;
       const w = bridged ? Math.min(Math.max((frame - p.f[i]) / (p.f[j] - p.f[i]), 0), 1) : 0;
       const x = ((1 - w) * p.feet[i * 2] + w * p.feet[j * 2]) / 100;
       const y = ((1 - w) * p.feet[i * 2 + 1] + w * p.feet[j * 2 + 1]) / 100;
@@ -359,7 +367,28 @@ export function Replay3D({
       fig.joints.forEach((m) => (m.visible = false));
       fig.plain.visible = true;
       fig.group.visible = true;
+      return [x, y];
     };
+    /** A cut-out showing for this player: the figure stands down, its ring stays. */
+    const standDown = (side: End) => {
+      const fig = figures[side];
+      fig.bones.forEach((m) => (m.visible = false));
+      fig.joints.forEach((m) => (m.visible = false));
+      fig.plain.visible = false;
+    };
+
+    // ---- The real players, cut out of the video (Replay3DPeople). ----
+    let cutouts: PlayerCutouts | null = null;
+    let unmounted = false;
+    const video0 = videoRef.current;
+    if (video0 && PlayerCutouts.possible(scene)) {
+      void makeReadable(video0).then((ok) => {
+        if (!ok || unmounted) return;
+        cutouts = new PlayerCutouts(scene, video0);
+        world.add(cutouts.group);
+        setCanCutOut(true);
+      });
+    }
 
     // ---- Camera: presets eased toward, free orbit, or through the phone. ----
     const goal = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
@@ -483,8 +512,14 @@ export function Replay3D({
       ball.visible = shadow.visible = trail.visible = false;
       let label = R ? "" : "Between points";
       if (R) {
-        posePlayer("near", frame);
-        posePlayer("far", frame);
+        const feet = { near: posePlayer("near", frame), far: posePlayer("far", frame) };
+        if (cutouts) {
+          cutouts.group.visible = realRef.current && viewRef.current !== "phone";
+          if (cutouts.group.visible) {
+            const shown = cutouts.update(R, frame, feet, camera, host.clientHeight * renderer.getPixelRatio());
+            (["near", "far"] as End[]).forEach((side) => shown[side] && standDown(side));
+          }
+        }
         // The shot in the air: the latest one started.
         const si = floorBy(R.shots, t, (s) => s.t0);
         const shot = si >= 0 ? R.shots[si] : null;
@@ -558,6 +593,8 @@ export function Replay3D({
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("wheel", onWheel);
       clearRally();
+      unmounted = true;
+      cutouts?.dispose();
       venue?.built.dispose();
       controls.dispose();
       disposables.forEach((d) => d.dispose());
@@ -580,6 +617,19 @@ export function Replay3D({
           </button>
         ))}
         {view === "free" && <span className="r3d-view on" aria-live="polite">Free · drag to orbit</span>}
+        {canCutOut && (
+          <>
+            <span className="r3d-sep" aria-hidden="true" />
+            <button
+              className={`r3d-view ${real ? "on" : ""}`}
+              aria-pressed={real}
+              title="The players themselves, cut out of the video, or figures from their tracked poses"
+              onClick={() => setReal((v) => !v)}
+            >
+              Real players
+            </button>
+          </>
+        )}
         <span className="r3d-sep" aria-hidden="true" />
         {VENUES.map(([v, label, title]) => (
           <button

@@ -29,6 +29,8 @@ export interface ScenePlayer {
   /** Frames the player was detected in, and their feet there (x, y cm each). */
   f: number[];
   feet: number[];
+  /** Where they were in the picture at those frames: x1, y1, x2, y2 pixels each (version 4+). */
+  box?: number[];
   /**
    * 3D joints where they could be lifted, per frame in `f`: the hips as base64
    * little-endian int16 cm (xyz), and all 17 joints as base64 int8 cm offsets

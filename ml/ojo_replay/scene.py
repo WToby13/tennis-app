@@ -38,7 +38,7 @@ from .ball3d import fly_bounce
 from .camera import Camera
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = 3  # 2: joints as int8 offsets from an int16 root; 3: surroundings
+VERSION = 4  # 2: joints as int8 offsets from an int16 root; 3: surroundings; 4: players' boxes
 # The fit's bounce coefficients, for shots fitted before they were kept.
 BOUNCE_DEFAULT = (0.75, 0.7)
 # Skeletons every this many frames (10 fps at 30): the 2D keypoints they come
@@ -137,7 +137,10 @@ def players_3d(cam: Camera, players: list[dict], first: int, last: int, lift) ->
         ps = [p for p in players if p["side"] == side]
         if not ps:
             continue
-        d = {"f": [p["frame"] for p in ps], "feet": _cm([p["feet"] for p in ps])}
+        d = {"f": [p["frame"] for p in ps], "feet": _cm([p["feet"] for p in ps]),
+             # Where they were in the picture (x1, y1, x2, y2 pixels): the 3D
+             # view cuts the real player out of the video there.
+             "box": np.round(np.array([p["box"] for p in ps], float)).astype(int).ravel().tolist()}
         if lift and len(ps) >= 10:
             # Bridge detection gaps up to a second (mostly the swing itself,
             # where the pose model loses the player): a body that blinks out
