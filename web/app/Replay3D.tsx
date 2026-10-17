@@ -5,6 +5,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { End } from "@/lib/matchStats";
 import type { MatchScene, SceneRally, SceneShot } from "@/lib/matchScene";
+import { PlayerCutouts, makeReadable } from "./Replay3DPeople";
+import { buildRecordedCourt, buildStadium, STADIUM_CREDIT, type BuiltVenue, type Venue } from "./Replay3DVenues";
 
 /**
  * The match in 3D, over the video: the court (wearing the real court's
@@ -40,6 +42,11 @@ const VIEWS: [View, string][] = [
   ["hitter", "Behind the hitter"],
   ["side", "Side on"],
   ["top", "Top down"],
+];
+
+const VENUES: [Venue, string, string][] = [
+  ["court", "Your court", "Where it was played, its surroundings taken from the video"],
+  ["stadium", "Stadium", "The same match on your court's own surface, in a covered show-court stadium"],
 ];
 
 /** Index of the last element whose key <= x in a sorted array, or -1. */
@@ -82,10 +89,13 @@ function ballAt(s: SceneShot, t: number, fps: number): [number, number, number] 
 
 export function Replay3D({
   scene,
+  videoId,
   videoRef,
   onTogglePlay,
 }: {
   scene: MatchScene;
+  /** For the match's venue splat (/api/videos/:id/match-venue). */
+  videoId: string;
   videoRef: React.RefObject<HTMLVideoElement | null>;
   onTogglePlay: () => void;
 }) {
@@ -93,6 +103,14 @@ export function Replay3D({
   const pipRef = useRef<HTMLCanvasElement>(null);
   const [view, setView] = useState<View>("broadcast");
   const viewRef = useRef<View>(view);
+  const [venue, setVenueName] = useState<Venue>("court");
+  /** The real players (cut out of the video) instead of figures, once the video is readable. */
+  const [real, setReal] = useState(true);
+  const realRef = useRef(real);
+  realRef.current = real;
+  const [canCutOut, setCanCutOut] = useState(false);
+  const venueRef = useRef<Venue>(venue);
+  venueRef.current = venue;
   const [hud, setHud] = useState<string>("");
   const togglePlay = useRef(onTogglePlay);
   togglePlay.current = onTogglePlay;
@@ -116,8 +134,6 @@ export function Replay3D({
     host.prepend(renderer.domElement);
 
     const world = new THREE.Scene();
-    const sky = new THREE.Color(0x14110d);
-    const fog = new THREE.Fog(0x14110d, 45, 110);
     const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 300);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -137,40 +153,23 @@ export function Replay3D({
     fill.position.set(8, 14, -24);
     world.add(fill);
 
-    // ---- The court: the real surface where we have it, crisp lines, the net. ----
+    // ---- The court: the venue round it, crisp lines, the net. ----
     // `ground` is everything that hides when looking through the phone (the
-    // video is the ground there).
+    // video is the ground there): the venue, and the lines and net every venue shares.
     const ground = new THREE.Group();
     world.add(ground);
-    const flat = (w: number, h: number, mat: THREE.Material, y = 0) => {
-      const m = new THREE.Mesh(keep(new THREE.PlaneGeometry(w, h)), mat);
-      m.rotation.x = -Math.PI / 2;
-      m.position.y = y;
-      m.receiveShadow = true;
-      return m;
+    let venue: { name: Venue; built: BuiltVenue } | null = null;
+    const setVenue = (name: Venue) => {
+      if (venue?.name === name) return;
+      if (venue) {
+        ground.remove(venue.built.group);
+        venue.built.dispose();
+      }
+      const built = name === "stadium" ? buildStadium(scene, renderer) : buildRecordedCourt(scene, renderer, `/api/videos/${videoId}/match-venue`);
+      ground.add(built.group);
+      venue = { name, built };
+      lastView = null; // background and fog follow the venue
     };
-    const surround = keep(new THREE.MeshLambertMaterial({ color: 0x8a4a30 }));
-    ground.add(flat(400, 400, surround, -0.02)); // to the horizon, where the fog takes it
-    if (scene.court) {
-      const { halfWidth, halfLength } = scene.court;
-      const tex = keep(new THREE.TextureLoader().load(scene.court.texture, (t) => {
-        // The run-off beyond the texture takes the texture's own edge colour.
-        const img = t.image as HTMLImageElement;
-        const c = document.createElement("canvas");
-        c.width = c.height = 1;
-        const g = c.getContext("2d");
-        if (g) {
-          g.drawImage(img, 1, 1, 1, 1, 0, 0, 1, 1);
-          const [r, gr, b] = g.getImageData(0, 0, 1, 1).data;
-          surround.color.setRGB(r / 255, gr / 255, b / 255, THREE.SRGBColorSpace);
-        }
-      }));
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      ground.add(flat(2 * halfWidth, 2 * halfLength, keep(new THREE.MeshLambertMaterial({ map: tex })), -0.01));
-    } else {
-      ground.add(flat(2 * (C.D + 3.5), 2 * (C.HL + 6.4), keep(new THREE.MeshLambertMaterial({ color: 0xa35a3a })), -0.01));
-    }
     const lineMat = keep(new THREE.MeshBasicMaterial({ color: COLOUR.line, transparent: true, opacity: 0.85 }));
     const line = (x1: number, y1: number, x2: number, y2: number, w = 0.05) => {
       const len = Math.hypot(x2 - x1, y2 - y1);
@@ -210,20 +209,8 @@ export function Replay3D({
       }
     }
 
-    // The phone, where the calibration put it.
     const cam = scene.camera;
     const Rm = cam.rotation;
-    const phone = new THREE.Group();
-    {
-      const body = new THREE.Mesh(keep(new THREE.BoxGeometry(0.16, 0.08, 0.012)), keep(new THREE.MeshLambertMaterial({ color: 0xd9662c })));
-      phone.add(body);
-      const pole = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.015, 0.015, cam.position[2], 8)), keep(new THREE.MeshLambertMaterial({ color: 0x6b6258 })));
-      pole.position.y = -cam.position[2] / 2;
-      phone.add(pole);
-      phone.position.copy(S(...cam.position));
-      phone.lookAt(phone.position.clone().add(S(Rm[6], Rm[7], Rm[8])));
-      ground.add(phone);
-    }
 
     // ---- Players: skeletons (bones and joints), or a plain figure at the feet. ----
     type Figure = {
@@ -322,11 +309,12 @@ export function Replay3D({
       }
     };
 
-    const posePlayer = (side: End, frame: number) => {
+    /** Poses one player's figure for this frame; returns where they stand (court x, y), or null. */
+    const posePlayer = (side: End, frame: number): [number, number] | null => {
       const fig = figures[side];
       const p = R?.players[side];
       fig.group.visible = false;
-      if (!R || !p) return;
+      if (!R || !p) return null;
       const sk = p.skeleton;
       if (sk && sk.f.length) {
         const key = `${R.idx}:${side}`;
@@ -359,16 +347,17 @@ export function Replay3D({
           fig.ring.position.set(pts[0].x, 0.008, pts[0].z);
           fig.plain.visible = false;
           fig.group.visible = true;
-          return;
+          // Feet: between the two feet joints (scene x = court x, scene z = -court y).
+          return [(pts[3].x + pts[6].x) / 2, -(pts[3].z + pts[6].z) / 2];
         }
       }
       // No skeleton here: a figure standing at the feet, carried across gaps in
       // the detections up to a second (as the skeletons are), else not drawn.
       const i = floorBy(p.f, frame, (f) => f);
-      if (i < 0) return;
+      if (i < 0) return null;
       const j = Math.min(i + 1, p.f.length - 1);
       const bridged = j > i && p.f[j] - p.f[i] <= BRIDGE;
-      if (!bridged && frame - p.f[i] > 4) return;
+      if (!bridged && frame - p.f[i] > 4) return null;
       const w = bridged ? Math.min(Math.max((frame - p.f[i]) / (p.f[j] - p.f[i]), 0), 1) : 0;
       const x = ((1 - w) * p.feet[i * 2] + w * p.feet[j * 2]) / 100;
       const y = ((1 - w) * p.feet[i * 2 + 1] + w * p.feet[j * 2 + 1]) / 100;
@@ -378,7 +367,28 @@ export function Replay3D({
       fig.joints.forEach((m) => (m.visible = false));
       fig.plain.visible = true;
       fig.group.visible = true;
+      return [x, y];
     };
+    /** A cut-out showing for this player: the figure stands down, its ring stays. */
+    const standDown = (side: End) => {
+      const fig = figures[side];
+      fig.bones.forEach((m) => (m.visible = false));
+      fig.joints.forEach((m) => (m.visible = false));
+      fig.plain.visible = false;
+    };
+
+    // ---- The real players, cut out of the video (Replay3DPeople). ----
+    let cutouts: PlayerCutouts | null = null;
+    let unmounted = false;
+    const video0 = videoRef.current;
+    if (video0 && PlayerCutouts.possible(scene)) {
+      void makeReadable(video0).then((ok) => {
+        if (!ok || unmounted) return;
+        cutouts = new PlayerCutouts(scene, video0);
+        world.add(cutouts.group);
+        setCanCutOut(true);
+      });
+    }
 
     // ---- Camera: presets eased toward, free orbit, or through the phone. ----
     const goal = { pos: new THREE.Vector3(), target: new THREE.Vector3() };
@@ -390,7 +400,8 @@ export function Replay3D({
         // 6.5 m behind where they struck it, eye height a little over theirs,
         // looking at the net: the hitter in the foreground, the shot ahead.
         hitter: [[hitterX * 0.7, hitterY - flip * 6.5, 2.6], [hitterX * 0.25, 0, 0.4]],
-        side: [[21, 0, 4.5], [0, 0, 0.6]],
+        // In the stadium, from up in the lower stand, over the crowd's heads.
+        side: venueRef.current === "stadium" ? [[24, 0, 15], [0, 0, 0]] : [[21, 0, 4.5], [0, 0, 0.6]],
         top: [[0, -0.5, 36], [0, 0, 0]],
       };
       const [p, t] = at[v as keyof typeof at];
@@ -421,8 +432,8 @@ export function Replay3D({
     const applyView = (v: View, cw: number, ch: number) => {
       const isPhone = v === "phone";
       ground.visible = !isPhone;
-      world.background = isPhone ? null : sky;
-      world.fog = isPhone ? null : fog;
+      world.background = isPhone || !venue ? null : venue.built.background;
+      world.fog = isPhone || !venue ? null : venue.built.fog;
       if (isPhone) {
         camera.position.copy(S(...cam.position));
         camera.quaternion.copy(phoneQuat);
@@ -499,10 +510,16 @@ export function Replay3D({
 
       figures.near.group.visible = figures.far.group.visible = false;
       ball.visible = shadow.visible = trail.visible = false;
-      let label = R ? "" : "Between points";
+      let label = R && !R.between ? "" : "Between points";
       if (R) {
-        posePlayer("near", frame);
-        posePlayer("far", frame);
+        const feet = { near: posePlayer("near", frame), far: posePlayer("far", frame) };
+        if (cutouts) {
+          cutouts.group.visible = realRef.current && viewRef.current !== "phone";
+          if (cutouts.group.visible) {
+            const shown = cutouts.update(R, frame, feet, camera, host.clientHeight * renderer.getPixelRatio());
+            (["near", "far"] as End[]).forEach((side) => shown[side] && standDown(side));
+          }
+        }
         // The shot in the air: the latest one started.
         const si = floorBy(R.shots, t, (s) => s.t0);
         const shot = si >= 0 ? R.shots[si] : null;
@@ -543,6 +560,7 @@ export function Replay3D({
       }
       if (label !== lastHud) setHud((lastHud = label));
 
+      setVenue(venueRef.current);
       const v = viewRef.current;
       if (v !== lastView) applyView(v, host.clientWidth, host.clientHeight);
       if (v !== "phone" && v !== "free") {
@@ -575,15 +593,20 @@ export function Replay3D({
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("wheel", onWheel);
       clearRally();
+      unmounted = true;
+      cutouts?.dispose();
+      venue?.built.dispose();
       controls.dispose();
       disposables.forEach((d) => d.dispose());
       renderer.dispose();
       el.remove();
     };
-  }, [scene, videoRef]);
+  }, [scene, videoId, videoRef]);
 
   return (
     <div className={`r3d ${view === "phone" ? "r3d-ar" : ""}`} ref={hostRef}>
+      {/* Cameras and venues, with the readout under them however many rows they wrap to. */}
+      <div className="r3d-top">
       <div className="r3d-views" role="toolbar" aria-label="3D camera">
         {VIEWS.map(([v, label]) => (
           <button
@@ -596,6 +619,35 @@ export function Replay3D({
           </button>
         ))}
         {view === "free" && <span className="r3d-view on" aria-live="polite">Free · drag to orbit</span>}
+        {canCutOut && (
+          <>
+            <span className="r3d-sep" aria-hidden="true" />
+            <button
+              className={`r3d-view ${real ? "on" : ""}`}
+              aria-pressed={real}
+              title="The players themselves, cut out of the video, or figures from their tracked poses"
+              onClick={() => setReal((v) => !v)}
+            >
+              Real players
+            </button>
+          </>
+        )}
+        <span className="r3d-sep" aria-hidden="true" />
+        {VENUES.map(([v, label, title]) => (
+          <button
+            key={v}
+            className={`r3d-view ${venue === v ? "on" : ""}`}
+            aria-pressed={venue === v}
+            title={title}
+            onClick={() => {
+              setVenueName(v);
+              // Through the phone you see the real court whatever the venue.
+              if (v === "stadium" && view === "phone") setView("broadcast");
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       <div className="r3d-info">
         {hud && <div className="r3d-hud">{hud}</div>}
@@ -613,6 +665,15 @@ export function Replay3D({
             )
           </div>
         )}
+        {/* CC BY 4.0 asks for credit wherever the model is shown. */}
+        {venue === "stadium" && (
+          <div className="r3d-credit">
+            <a href={STADIUM_CREDIT.href} target="_blank" rel="noreferrer">
+              {STADIUM_CREDIT.text}
+            </a>
+          </div>
+        )}
+      </div>
       </div>
       {view !== "phone" && (
         <canvas

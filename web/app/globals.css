@@ -2835,10 +2835,11 @@ video {
 .r3d { position: absolute; inset: 0; z-index: 1; line-height: normal; }
 .r3d-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 .r3d-canvas:active { cursor: grabbing; }
-.r3d-views {
+.r3d-top {
   position: absolute; top: 10px; left: 10px; right: 30%; z-index: 1;
-  display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none;
+  display: grid; justify-items: start; gap: 6px; pointer-events: none;
 }
+.r3d-views { display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; }
 .r3d-view {
   pointer-events: auto; font: 500 12px var(--font-sans); color: var(--text);
   background: rgba(15, 12, 9, 0.72); border: 1px solid var(--border); border-radius: 8px;
@@ -2846,11 +2847,9 @@ video {
 }
 .r3d-view.on { border-color: var(--accent); color: #fff; }
 span.r3d-view { cursor: default; }
+.r3d-sep { width: 1px; align-self: stretch; margin: 2px 4px; background: var(--border); }
 .r3d-view:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.r3d-info {
-  position: absolute; left: 10px; top: 46px; z-index: 1; pointer-events: none;
-  display: grid; justify-items: start; gap: 6px;
-}
+.r3d-info { display: grid; justify-items: start; gap: 6px; pointer-events: none; }
 .r3d-credit { pointer-events: auto; font: 400 11px var(--font-sans); color: var(--muted); }
 .r3d-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .r3d-hud {
@@ -2864,9 +2863,14 @@ span.r3d-view { cursor: default; }
 }
 .r3d-pip:hover { border-color: var(--accent); }
 @media (max-width: 640px) {
-  .r3d-views { right: 10px; }
+  /* One row that scrolls sideways: wrapped, the cameras and venues took three
+     rows of a 170 px picture and the last went under the controls. */
+  .r3d-top { right: 10px; }
+  .r3d-views { max-width: 100%; flex-wrap: nowrap; overflow-x: auto; pointer-events: auto; scrollbar-width: none; }
+  .r3d-views::-webkit-scrollbar { display: none; }
+  .r3d-view, .r3d-sep { flex: none; }
   .r3d-view { padding: 4px 8px; font-size: 11px; }
-  .r3d-info { top: auto; bottom: 10px; }
+  .r3d-info { position: absolute; left: 10px; bottom: 10px; z-index: 1; }
   .r3d-pip { top: auto; bottom: 10px; right: 10px; width: 30%; min-width: 0; }
 }
 /* In 3D the middle of the picture is where the hitter is framed, and a click on

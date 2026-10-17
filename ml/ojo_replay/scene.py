@@ -38,7 +38,7 @@ from .ball3d import fly_bounce
 from .camera import Camera
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = 2  # 2: joints as int8 offsets from an int16 root
+VERSION = 5  # 2: joints as int8 offsets; 3: surroundings; 4: players' boxes; 5: between points
 # The fit's bounce coefficients, for shots fitted before they were kept.
 BOUNCE_DEFAULT = (0.75, 0.7)
 # Skeletons every this many frames (10 fps at 30): the 2D keypoints they come
@@ -47,7 +47,13 @@ SKELETON_STEP = 3
 # Gaps in a player's detections bridged, in frames (about a second).
 BRIDGE = 30
 # The ground the texture covers, metres: the court plus run-off.
-TEX_X, TEX_Y, TEX_RES = 9.0, 17.5, 0.04  # half-width, half-length, metres per pixel
+# The ground the texture covers, metres: the court and its run-off out to the
+# fences. Across, a club court's usual 3.5 m beyond the doubles lines; along,
+# out to the phone, which in every recording so far was on the back fence
+# (17.2-19.7 m behind centre court).
+TEX_X, TEX_RES = 9.0, 0.04  # half-width, metres per pixel
+MIN_HALF_LENGTH = 17.0
+PLATE_WIDTH = 1280  # the backdrop's resolution: the walls are seen from far off
 
 
 def _cm(a) -> list[int]:
@@ -131,7 +137,10 @@ def players_3d(cam: Camera, players: list[dict], first: int, last: int, lift) ->
         ps = [p for p in players if p["side"] == side]
         if not ps:
             continue
-        d = {"f": [p["frame"] for p in ps], "feet": _cm([p["feet"] for p in ps])}
+        d = {"f": [p["frame"] for p in ps], "feet": _cm([p["feet"] for p in ps]),
+             # Where they were in the picture (x1, y1, x2, y2 pixels): the 3D
+             # view cuts the real player out of the video there.
+             "box": np.round(np.array([p["box"] for p in ps], float)).astype(int).ravel().tolist()}
         if lift and len(ps) >= 10:
             # Bridge detection gaps up to a second (mostly the swing itself,
             # where the pose model loses the player): a body that blinks out
@@ -155,15 +164,16 @@ def players_3d(cam: Camera, players: list[dict], first: int, last: int, lift) ->
     return out
 
 
-def court_texture(cam: Camera, plate: np.ndarray) -> str:
+def court_texture(cam: Camera, plate: np.ndarray, half_length: float) -> str:
     """The plate warped top-down over the court and run-off, as a JPEG data URL.
     Row 0 is the far end (+y), column 0 the left (-x). Ground the camera didn't
     see takes the surface's median colour.
 
     Only the near half is the camera's: the far half is seen through the net,
     whose tape, posts and the fence behind smear across it once warped flat. A
-    court is the same turned half round, so the far half is the near half rotated."""
-    w, h = int(2 * TEX_X / TEX_RES), int(TEX_Y / TEX_RES)
+    court is the same mirrored across the net, so the far half is the near half
+    mirrored: what's beside the court stays on its own side."""
+    w, h = int(2 * TEX_X / TEX_RES), int(half_length / TEX_RES)
     xs = -TEX_X + (np.arange(w) + 0.5) * TEX_RES
     ys = -(np.arange(h) + 0.5) * TEX_RES
     gx, gy = np.meshgrid(xs, ys)
@@ -181,9 +191,26 @@ def court_texture(cam: Camera, plate: np.ndarray) -> str:
     # Soften the edge of what the camera saw into the fill colour.
     mask = cv2.GaussianBlur(seen.astype(np.float32), (0, 0), 6)[..., None]
     img = (img * mask + fill * (1 - mask)).astype(np.uint8)
-    img = np.vstack([img[::-1, ::-1], img])
+    img = np.vstack([img[::-1], img])
     ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 78])
     return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode()
+
+
+def surroundings(plate: np.ndarray, half_length: float) -> dict:
+    """What the 3D view needs to wrap the court in the recording's own
+    surroundings: the plate (fences, trees, buildings, sky), which the viewer
+    projects back through the calibrated phone onto walls standing at the
+    fences, and the sky's colour for above them."""
+    h, w = plate.shape[:2]
+    small = cv2.resize(plate, (PLATE_WIDTH, round(h * PLATE_WIDTH / w)), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", small, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    sky = np.median(plate[: max(1, h // 12)].reshape(-1, 3), axis=0)[::-1]  # BGR -> RGB
+    return {
+        "plate": "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode(),
+        "halfWidth": TEX_X,
+        "halfLength": half_length,
+        "sky": [int(c) for c in sky],
+    }
 
 
 def plate_for(short: str, cal: dict) -> np.ndarray | None:
@@ -198,6 +225,88 @@ def plate_for(short: str, cal: dict) -> np.ndarray | None:
         return None
     frames = autocal.read_window(str(video), float(cal.get("frameS", 60.0)), 20.0, n=9)
     return autocal.clean_plate(frames) if len(frames) >= 3 else None
+
+
+OTHER = {"A": "B", "B": "A"}
+
+
+def between_points(out: Path, a: dict, near_of: dict[int, str], fps: float, cam: Camera) -> list[dict]:
+    """The stretches between rallies (walking back, fetching balls, changing
+    ends), from the album pass's detections (albums.py, two a second), so the
+    view isn't empty between points.
+
+    Who's who is followed from the last point's assignment by movement: each
+    detection goes to whichever of the two was last closest. At a change of
+    ends the players walk past each other, so near and far swap people; each
+    stretch is split there, and every piece has one fixed who-is-where, as a
+    rally does."""
+    files = sorted((out / "albums").glob("between-s*.json"))
+    if not files:
+        return []
+    dets = sorted(json.loads(files[0].read_text()), key=lambda d: d["frame"])
+    rs = sorted(a["rallies"], key=lambda r: r["startS"])
+    if not rs:
+        return []
+    entries: list[dict] = []
+    for prev, nxt in [(None, rs[0]), *zip(rs, rs[1:]), (rs[-1], None)]:
+        t0 = prev["endS"] if prev else 0.0
+        t1 = nxt["startS"] if nxt else a["durationS"]
+        f0, f1 = int(t0 * fps) + 1, int(t1 * fps) - 1
+        ds = [d for d in dets if f0 <= d["frame"] <= f1]
+        if t1 - t0 < 1.0 or not ds:
+            continue
+        near = (near_of.get(prev["idx"]) if prev else "") or (near_of.get(nxt["idx"]) if nxt else "") or ""
+        last: dict[str, np.ndarray | None] = {"A": None, "B": None}
+        holders: dict[str, str] = {}
+        by_frame: dict[int, list[dict]] = {}
+        for d in ds:
+            by_frame.setdefault(d["frame"], []).append(d)
+        for f in sorted(by_frame):
+            group = by_frame[f]
+            default = {d["side"]: (near if d["side"] == "near" else OTHER.get(near, "")) for d in group}
+            if not near:
+                for d in group:
+                    d["who"] = ""
+                continue
+            if any(v is None for v in last.values()):
+                for d in group:
+                    d["who"] = default[d["side"]]
+            elif len(group) == 2:
+                pa, pb = (np.array(g["feet"]) for g in group)
+                keep = np.linalg.norm(pa - last["A"]) + np.linalg.norm(pb - last["B"])
+                swap = np.linalg.norm(pa - last["B"]) + np.linalg.norm(pb - last["A"])
+                group[0]["who"], group[1]["who"] = ("A", "B") if keep <= swap else ("B", "A")
+            else:
+                # One of them alone: they stay whoever held this end, unless
+                # clearly nearer the other (a lone detection flipped back and
+                # forth on stale positions otherwise).
+                d = group[0]
+                pos = np.array(d["feet"])
+                holder = holders.get(d["side"]) or default[d["side"]]
+                other = OTHER[holder]
+                d["who"] = other if np.linalg.norm(pos - last[other]) < 0.5 * np.linalg.norm(pos - last[holder]) else holder
+            for d in group:
+                holders[d["side"]] = d["who"]
+            for d in group:
+                if d["who"]:
+                    last[d["who"]] = np.array(d["feet"])
+        # Pieces with one who-is-where each.
+        pieces: list[tuple[str, list[dict]]] = []
+        for d in ds:
+            near_who = d["who"] if d["side"] == "near" else OTHER.get(d["who"], "")
+            if not pieces or pieces[-1][0] != near_who:
+                pieces.append((near_who, []))
+            pieces[-1][1].append(d)
+        for i, (near_who, group) in enumerate(pieces):
+            start = t0 if i == 0 else group[0]["frame"] / fps
+            end = t1 if i == len(pieces) - 1 else pieces[i + 1][1][0]["frame"] / fps
+            fa, fb = group[0]["frame"], group[-1]["frame"]
+            entries.append({
+                "idx": 100000 + len(entries), "start": round(start, 2), "end": round(end, 2), "between": True,
+                "who": {"near": near_who, "far": OTHER.get(near_who, "")},
+                "shots": [], "players": players_3d(cam, group, fa, fb, None),
+            })
+    return entries
 
 
 def build_scene(prefix: str) -> tuple[str, dict]:
@@ -239,7 +348,12 @@ def build_scene(prefix: str) -> tuple[str, dict]:
         print(f"[scene {short}] rally {r['idx']}: {len(shots)} shots, "
               f"{ {k: len(v['f']) for k, v in rallies[-1]['players'].items()} } detections", flush=True)
 
+    between = between_points(out, a, near_of, fps, cam)
+    print(f"[scene {short}] {len(between)} stretches between points", flush=True)
+    rallies = sorted(rallies + between, key=lambda r: r["start"])
+
     plate = plate_for(short, cal)
+    half_length = round(max(MIN_HALF_LENGTH, -float(cam.position[1])), 2)
     c = cal["camera"]
     scene = {
         "version": VERSION,
@@ -247,7 +361,8 @@ def build_scene(prefix: str) -> tuple[str, dict]:
         "camera": {"position": np.round(cam.position, 3).tolist(), "rotation": np.ravel(c["rotation"]).tolist(),
                    "f": c["f"], "cx": c["cx"], "cy": c["cy"], "width": cal["imageWidth"], "height": cal["imageHeight"]},
         "court": None if plate is None else {
-            "texture": court_texture(cam, plate), "halfWidth": TEX_X, "halfLength": TEX_Y},
+            "texture": court_texture(cam, plate, half_length), "halfWidth": TEX_X, "halfLength": half_length},
+        "surroundings": None if plate is None else surroundings(plate, half_length),
         "body": "videopose3d" if lift else None,
         "rallies": rallies,
     }

@@ -684,7 +684,7 @@ export function WatchPage({ params }: { params: Promise<{ id: string }> }) {
               }}
               overlay={
                 show3d && scene ? (
-                  <Replay3D scene={scene} videoRef={videoRef} onTogglePlay={togglePlay} />
+                  <Replay3D scene={scene} videoId={id} videoRef={videoRef} onTogglePlay={togglePlay} />
                 ) : showTracks && tracks ? (
                   <TrackOverlay tracks={tracks} videoRef={videoRef} names={playerNames} />
                 ) : null

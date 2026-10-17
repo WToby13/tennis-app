@@ -29,6 +29,8 @@ export interface ScenePlayer {
   /** Frames the player was detected in, and their feet there (x, y cm each). */
   f: number[];
   feet: number[];
+  /** Where they were in the picture at those frames: x1, y1, x2, y2 pixels each (version 4+). */
+  box?: number[];
   /**
    * 3D joints where they could be lifted, per frame in `f`: the hips as base64
    * little-endian int16 cm (xyz), and all 17 joints as base64 int8 cm offsets
@@ -41,6 +43,12 @@ export interface SceneRally {
   idx: number;
   start: number;
   end: number;
+  /**
+   * Between points (version 5+): players walking, fetching balls, changing
+   * ends, from detections two a second. No shots. Split at a change of ends,
+   * so `who` holds for the whole stretch.
+   */
+  between?: boolean;
   /** Which player (A/B, by kit) was at each end, "" if unknown. */
   who: Record<End, Who | "">;
   shots: SceneShot[];
@@ -62,6 +70,12 @@ export interface MatchScene {
   };
   /** The real court's surface, top-down, centred on the court: row 0 is the far end. */
   court: { texture: string; halfWidth: number; halfLength: number } | null;
+  /**
+   * The recording's surroundings (version 3+): the clean plate as a JPEG data
+   * URL, projected by the viewer through the phone onto walls at the fences
+   * (half-width, half-length in metres), and the sky's colour (RGB) above them.
+   */
+  surroundings?: { plate: string; halfWidth: number; halfLength: number; sky: [number, number, number] } | null;
   /** What the skeletons were lifted with, or null when there are none. */
   body: string | null;
   rallies: SceneRally[];
