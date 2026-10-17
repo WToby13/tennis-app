@@ -22,6 +22,8 @@ final class CameraRecorder: NSObject, ObservableObject {
     /// as the same recording the crash-recovery sweep would have adopted.
     @Published var lastRecordingId: UUID?
     @Published var lastDuration: Double = 0
+    /// When the last finished recording started — what names it.
+    @Published var lastStartedAt: Date?
     /// Something the user needs to know: not enough space to start, or a recording
     /// that iOS stopped early because the disk filled. Cleared when dismissed.
     @Published var alert: String?
@@ -242,6 +244,7 @@ extension CameraRecorder: AVCaptureFileOutputRecordingDelegate {
             self.isRecording = false
             self.recordingStartedAt = nil
             self.lastDuration = started.map { Date().timeIntervalSince($0) } ?? 0
+            self.lastStartedAt = started
 
             guard usable else {
                 // Nothing to recover, so retract the journal too — otherwise the

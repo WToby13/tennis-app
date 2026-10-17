@@ -113,7 +113,10 @@ struct MatchSetupSheet: View {
     enum Purpose {
         /// The match is still on this phone.
         case beforeUpload
-        /// It's already in the cloud; the shelf is only about the breakdown.
+        /// Its bytes are on their way up. Edits are kept and sent when it lands,
+        /// and the breakdown can be queued to start the moment it does.
+        case uploading
+        /// It's already in the cloud.
         case cloudMatch
     }
 
@@ -125,6 +128,11 @@ struct MatchSetupSheet: View {
     var subject: MatchSubject?
     var initialPlayers: AnalysisPlayers?
     var initialStartTimeSec: Double?
+    /// Whether this person may run the breakdown (only a match's owner can). When
+    /// not, the shelf is just for the details and offers a single Save.
+    var canRunBreakdown = true
+    /// A line about where the match is up to, shown under its name.
+    var statusNote: String?
     /// Resolves what to hand the system share sheet — a share link for a match
     /// that's in the cloud, the video file for one that isn't.
     var shareURL: (() async -> URL?)?
@@ -155,6 +163,8 @@ struct MatchSetupSheet: View {
          subject: MatchSubject? = nil,
          initialPlayers: AnalysisPlayers? = nil,
          initialStartTimeSec: Double? = nil,
+         canRunBreakdown: Bool = true,
+         statusNote: String? = nil,
          shareURL: (() async -> URL?)? = nil,
          onDelete: (() -> Void)? = nil,
          onSecondary: @escaping (MatchSetup) -> Void,
@@ -164,6 +174,8 @@ struct MatchSetupSheet: View {
         self.subject = subject
         self.initialPlayers = initialPlayers
         self.initialStartTimeSec = initialStartTimeSec
+        self.canRunBreakdown = canRunBreakdown
+        self.statusNote = statusNote
         self.shareURL = shareURL
         self.onDelete = onDelete
         self.onSecondary = onSecondary
@@ -210,7 +222,7 @@ struct MatchSetupSheet: View {
                 manageSection
             }
             .scrollDismissesKeyboard(.interactively)
-            .navigationTitle(purpose == .beforeUpload ? "Set up this match" : "AI analysis")
+            .navigationTitle(purpose == .beforeUpload ? "Set up this match" : "Match details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -257,14 +269,20 @@ struct MatchSetupSheet: View {
 
     private var nameSection: some View {
         Section {
-            TextField("Untitled match", text: $titleText)
+            // Blank keeps the automatic day-and-time name.
+            TextField(subject.map { MatchName.auto(for: $0.createdAt) } ?? "Match name", text: $titleText)
                 .focused($focus, equals: .title)
                 .submitLabel(.done)
         } header: {
             Text("Recording name")
         } footer: {
-            if let subject {
-                Text(subject.detailLine)
+            VStack(alignment: .leading, spacing: 4) {
+                if let subject {
+                    Text(subject.detailLine)
+                }
+                if let statusNote {
+                    Text(statusNote).foregroundStyle(Theme.accent)
+                }
             }
         }
     }
@@ -378,16 +396,18 @@ struct MatchSetupSheet: View {
     private var actions: some View {
         Section {
             VStack(spacing: 8) {
-                Button {
-                    onPrimary(setup)
-                    dismiss()
-                } label: {
-                    Label(primaryTitle, systemImage: "sparkles")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
-                        .foregroundStyle(Theme.text)
+                if canRunBreakdown {
+                    Button {
+                        onPrimary(setup)
+                        dismiss()
+                    } label: {
+                        Label(primaryTitle, systemImage: "sparkles")
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
+                            .foregroundStyle(Theme.text)
+                    }
                 }
                 Button {
                     onSecondary(setup)
@@ -397,8 +417,10 @@ struct MatchSetupSheet: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 13)
+                        .background(canRunBreakdown ? Color.clear : Theme.accent,
+                                    in: RoundedRectangle(cornerRadius: Theme.radiusSmall))
                         .overlay(RoundedRectangle(cornerRadius: Theme.radiusSmall)
-                            .stroke(Theme.border, lineWidth: 1.5))
+                            .stroke(canRunBreakdown ? Theme.border : .clear, lineWidth: 1.5))
                         .foregroundStyle(Theme.text)
                 }
             }
@@ -452,11 +474,15 @@ struct MatchSetupSheet: View {
     }
 
     private var primaryTitle: String {
-        purpose == .beforeUpload ? "Upload & AI Analysis" : "Run AI Analysis"
+        switch purpose {
+        case .beforeUpload: return "Upload & AI Analysis"
+        case .uploading: return "Analyse when uploaded"
+        case .cloudMatch: return "Run AI Analysis"
+        }
     }
 
     private var secondaryTitle: String {
-        purpose == .beforeUpload ? "Upload" : "Save players"
+        purpose == .beforeUpload ? "Upload" : "Save"
     }
 
     /// Fill empty slots from the known people — you in the first free one — so

@@ -56,12 +56,20 @@ struct RecTimerBadge: View {
 /// the display in `CameraScreen`, this keeps long recordings cool and battery-light.
 struct LowPowerRecordingView: View {
     let startedAt: Date?
+    /// Roughly how much longer the phone can record — storage or battery,
+    /// whichever runs out first.
+    var remaining: String?
 
     var body: some View {
         ZStack {
             Color.black
             VStack(spacing: 14) {
                 RecTimerBadge(startedAt: startedAt)
+                if let remaining {
+                    Text("About \(remaining) left")
+                        .font(.caption.weight(.semibold).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.55))
+                }
                 Text("Screen dimmed to save battery.\nRecording continues — tap the button to stop.")
                     .font(.footnote)
                     .foregroundStyle(.white.opacity(0.45))

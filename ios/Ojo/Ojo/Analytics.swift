@@ -44,6 +44,7 @@ actor Analytics {
         case watchStarted      = "watch_started"
         case watchEnded        = "watch_ended"
         case analysisStarted   = "analysis_started"
+        case threeDViewOpened  = "3d_view_opened"
     }
 
     /// Small typed values, so a prop can't accidentally become a nested object

@@ -236,7 +236,7 @@ struct UsersResponse: Decodable {
 
 /// Display names for the two analysis players. `player_1` is whoever starts near
 /// the camera, `player_2` far — a relabel of the model's own ids, not a re-run.
-struct AnalysisPlayers: Codable, Equatable {
+struct AnalysisPlayers: Codable, Hashable {
     var player1: String?
     var player2: String?
 
@@ -348,7 +348,7 @@ struct UploadAPI {
         return data
     }
 
-    private func send<T: Decodable>(_ path: String, method: String, body: Data? = nil) async throws -> T {
+    func send<T: Decodable>(_ path: String, method: String, body: Data? = nil) async throws -> T {
         let data = try await perform(try await makeRequest(path, method: method, body: body))
         do {
             return try JSONDecoder().decode(T.self, from: data)

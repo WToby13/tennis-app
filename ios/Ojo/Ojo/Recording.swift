@@ -27,6 +27,25 @@ struct Participant: Codable, Equatable, Hashable {
     }
 }
 
+/// The name a match gets before anyone names it: the day it was played and the
+/// part of the day — "Tuesday Morning", "Saturday Evening". Read off the time
+/// recording *started*, so a match that runs past noon is still the morning one.
+enum MatchName {
+    static func auto(for date: Date, calendar: Calendar = .current) -> String {
+        let day = date.formatted(Date.FormatStyle(calendar: calendar).weekday(.wide))
+        return "\(day) \(partOfDay(calendar.component(.hour, from: date)))"
+    }
+
+    static func partOfDay(_ hour: Int) -> String {
+        switch hour {
+        case 5..<12: return "Morning"
+        case 12..<17: return "Afternoon"
+        case 17..<21: return "Evening"
+        default: return "Night"
+        }
+    }
+}
+
 /// A match recorded on this phone. Lives in the local library until (and after)
 /// it's uploaded, so you can always see what still needs to go up.
 struct Recording: Identifiable, Codable, Equatable, Hashable {
@@ -55,6 +74,18 @@ struct Recording: Identifiable, Codable, Equatable, Hashable {
     /// For cloud-only items (not recorded on this phone): a URL to fetch the poster
     /// thumbnail from the web. Transient — signed URLs expire, so it's re-fetched.
     var remoteThumbnailURL: String?
+    /// The account that uploaded it, stamped when the upload starts. Lets the
+    /// library keep showing a match the moment it lands, before the server's list
+    /// has caught up, without showing it to a different account on this phone.
+    var ownerId: String?
+    /// The name or players were changed while the bytes were still moving, so
+    /// the server's copy needs them once the match exists there.
+    var needsSync: Bool?
+    /// Run the AI breakdown once the upload is in — with these answers. Kept on
+    /// the recording (not just the upload job) so it can be added mid-upload, and
+    /// so it survives a server that isn't ready to analyse the instant the last
+    /// byte lands. Cleared once the breakdown has started.
+    var analyseOnUpload: AnalysisRequest?
 
     init(
         id: UUID = UUID(),

@@ -12,11 +12,26 @@ struct FullscreenPlayer: View {
     @ObservedObject var analysis: AnalysisModel
     /// Back chevron: leaves fullscreen, or the screen entirely.
     let onExit: () -> Void
+    /// Our tracking over the picture, when it's switched on.
+    var tracks: MatchTracks?
+    /// The 3D view, when it's switched on. Its gestures are its own (drag to
+    /// orbit, pinch to zoom); a tap there brings the controls back, as on video.
+    var replay: Replay3DController?
+    /// Video / Tracking / 3D, as on the page — empty when there's no analysis.
+    var modes: [StageModeOption] = []
+    var mode: StageMode = .video
+    var onSelectMode: ((StageMode) -> Void)?
 
     /// Fit shows the whole court; fill uses every pixel of a taller-than-16:9
     /// screen at the cost of cropping the top and bottom of the frame. Double-tap
     /// switches, the way a video app usually does it.
     @State private var fills = false
+    /// Upright, the picture fills the screen's height and you drag to look
+    /// across the court; double-tap shows the whole of it letterboxed instead.
+    @State private var portraitFits = false
+    /// How far the upright picture is slid sideways, in points (0 = centred).
+    @State private var pan: CGFloat = 0
+    @State private var panAtDragStart: CGFloat?
     @State private var controlsVisible = true
     @State private var hideTask: Task<Void, Never>?
 
@@ -25,21 +40,46 @@ struct FullscreenPlayer: View {
     private static let idleHide: Duration = .seconds(3.5)
 
     var body: some View {
-        ZStack {
-            Color.black
-            PlayerLayerView(player: model.player, gravity: fills ? .resizeAspectFill : .resizeAspect)
-                .ignoresSafeArea()
-            // Taps land here when the controls are hidden (and between them when
-            // they're not), so one tap anywhere brings them back.
-            // Double-tap is declared first so it gets the chance to claim the
-            // gesture; otherwise the single tap always wins and fills never fires.
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture(count: 2) { fills.toggle() }
-                .onTapGesture { controlsVisible ? hideControls() : showControls() }
-
-            if controlsVisible {
-                controls.transition(.opacity)
+        GeometryReader { geo in
+            let upright = geo.size.height > geo.size.width
+            ZStack {
+                Color.black
+                if upright && !portraitFits {
+                    pannableVideo(geo.size)
+                } else {
+                    PlayerLayerView(player: model.player, gravity: fills ? .resizeAspectFill : .resizeAspect)
+                    if let tracks, replay == nil {
+                        TrackOverlayView(tracks: tracks, player: model.player, fills: fills)
+                    }
+                }
+                // Taps land here when the controls are hidden (and between them when
+                // they're not), so one tap anywhere brings them back.
+                // Double-tap is declared first so it gets the chance to claim the
+                // gesture; otherwise the single tap always wins and fills never fires.
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            if upright { portraitFits.toggle() } else { fills.toggle() }
+                        }
+                    }
+                    .onTapGesture { controlsVisible ? hideControls() : showControls() }
+                    .gesture(panGesture(geo.size), including: upright && !portraitFits ? .all : .none)
+            }
+        }
+        .ignoresSafeArea()
+        .overlay {
+            ZStack {
+                if let replay {
+                    Replay3DStage(controller: replay,
+                                  onTogglePlay: { controlsVisible ? hideControls() : showControls() },
+                                  bottomInset: 70,
+                                  showsCaption: false,
+                                  pipAtBottom: true)
+                }
+                if controlsVisible {
+                    controls.transition(.opacity)
+                }
             }
         }
         .background(Color.black.ignoresSafeArea())
@@ -48,6 +88,47 @@ struct FullscreenPlayer: View {
         .onDisappear { hideTask?.cancel() }
         // While paused the controls stay put — you're reading them, not watching.
         .onChange(of: model.isPlaying) { _, _ in showControls() }
+    }
+
+    // MARK: Upright: the picture at full height, slid sideways
+
+    /// The picture's width when it fills the screen's height.
+    private func stripWidth(_ size: CGSize) -> CGFloat { size.height * model.aspect }
+
+    /// Furthest the picture can slide either way before its edge comes in.
+    private func maxPan(_ size: CGSize) -> CGFloat { max(0, (stripWidth(size) - size.width) / 2) }
+
+    /// The video (and our tracking, which has to stay on the ball) as one strip
+    /// as tall as the screen, slid by `pan`.
+    private func pannableVideo(_ size: CGSize) -> some View {
+        let limit = maxPan(size)
+        return ZStack {
+            PlayerLayerView(player: model.player, gravity: .resizeAspect)
+            if let tracks, replay == nil {
+                TrackOverlayView(tracks: tracks, player: model.player)
+            }
+        }
+        .frame(width: stripWidth(size), height: size.height)
+        .offset(x: min(max(pan, -limit), limit))
+        .frame(width: size.width, height: size.height)
+        .clipped()
+    }
+
+    private func panGesture(_ size: CGSize) -> some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { value in
+                let start = panAtDragStart ?? pan
+                panAtDragStart = start
+                let limit = maxPan(size)
+                pan = min(max(start + value.translation.width, -limit), limit)
+            }
+            .onEnded { value in
+                // A flick carries on a little, the way a scroll view does.
+                let limit = maxPan(size)
+                let flung = pan + (value.predictedEndTranslation.width - value.translation.width) * 0.35
+                withAnimation(.easeOut(duration: 0.35)) { pan = min(max(flung, -limit), limit) }
+                panAtDragStart = nil
+            }
     }
 
     // MARK: Controls
@@ -72,7 +153,7 @@ struct FullscreenPlayer: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             Button(action: onExit) {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 18, weight: .bold))
@@ -83,7 +164,17 @@ struct FullscreenPlayer: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Back")
 
-            Spacer()
+            VStack(alignment: .leading, spacing: 8) {
+                if modes.count > 1, let onSelectMode {
+                    StageModePicker(options: modes, current: mode,
+                                    onSelect: { m in touch { onSelectMode(m) } }, onDark: true)
+                }
+                if let replay {
+                    Replay3DFullscreenBar(controller: replay)
+                }
+            }
+
+            Spacer(minLength: 0)
 
             SpeedMenu(model: model, speeds: Self.speeds)
         }

@@ -18,6 +18,9 @@ final class PlayerModel: ObservableObject {
     @Published var currentTime: Double = 0
     @Published var duration: Double = 0
     @Published var rate: Float = 1.0
+    /// The picture's width over its height, once the item knows it — what the
+    /// portrait fullscreen view sizes its pannable strip from.
+    @Published var aspect: CGFloat = 16.0 / 9.0
     /// True while the user is dragging the scrubber, so the time observer doesn't
     /// fight the drag.
     var scrubbing = false
@@ -65,6 +68,14 @@ final class PlayerModel: ObservableObject {
                     self.onFirstPlay?()
                 }
             }
+            .store(in: &cancellables)
+
+        item.publisher(for: \.presentationSize)
+            .filter { $0.width > 0 && $0.height > 0 }
+            .map { $0.width / $0.height }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.aspect = $0 }
             .store(in: &cancellables)
 
         // Duration arrives late for a streamed item, and can be reported again if
@@ -127,6 +138,17 @@ final class PlayerModel: ObservableObject {
     func play(from seconds: Double) {
         seek(to: seconds)
         player.playImmediately(atRate: rate)
+    }
+
+    /// Point the player at another copy of the same match — the cloud one, once
+    /// the file on this phone has been freed after uploading — keeping the place
+    /// and whether it was playing.
+    func replaceSource(_ url: URL) {
+        let at = currentTime
+        let wasPlaying = player.timeControlStatus == .playing
+        player.replaceCurrentItem(with: AVPlayerItem(url: url))
+        seek(to: at)
+        if wasPlaying { player.playImmediately(atRate: rate) }
     }
 
     /// Clamp target for seeks before the real duration is known.
@@ -227,6 +249,10 @@ struct ReviewPlayer: View {
     var onPreviousRally: (() -> Void)?
     var onNextRally: (() -> Void)?
     var onEnterFullscreen: (() -> Void)?
+    /// Our tracking, drawn over the picture.
+    var tracks: MatchTracks?
+    /// The 3D view, in place of the picture (or over it, looking through the phone).
+    var replay: Replay3DController?
 
     private static let speeds: [Float] = [0.25, 0.5, 1, 1.5, 2]
 
@@ -234,6 +260,12 @@ struct ReviewPlayer: View {
         ZStack(alignment: .bottom) {
             Color.black
             PlayerLayerView(player: model.player)
+            if let tracks {
+                TrackOverlayView(tracks: tracks, player: model.player)
+            }
+            if let replay {
+                Replay3DStage(controller: replay, onTogglePlay: { model.togglePlay() })
+            }
             controls
         }
     }
