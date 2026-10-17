@@ -546,7 +546,7 @@ Each phase is independently useful and stops if its gate fails.
       keypoints where VideoPose3D is installed (bridging detection gaps up to 1 s);
     - the court's own surface: a clean plate warped top-down through the
       calibration. Only the near half is the camera's (the far half is seen through
-      the net), so the far half is the near half turned round.
+      the net), so the far half is the near half mirrored across the net.
   - **Skeletons stand on the detected feet**, not where pose3d's hip-ray placement
     puts them. From behind the baseline that ray is shallow, so a few cm wrong in the
     lifted legs moved the far player up to 1.7 m in depth. Now within 4 cm (near) /
@@ -563,6 +563,17 @@ Each phase is independently useful and stops if its gate fails.
     - dragging gives free orbit; a click plays and pauses;
     - the video plays in a corner; a readout shows the shot's speed, net clearance
       and ball height.
+  - **Venues** (`web/app/Replay3DVenues.ts`, 2026-10-13), a switch in the view:
+    - *Your court*: walls at the fences (the phone's own fence, ±9 m across) painted
+      with the clean plate projected back through the calibrated phone, so the real
+      fences, trees and buildings stand where the video shows them. Wall the phone
+      never saw takes its mirror across the net; where both were seen the sharper wins
+      (cos/distance²); what's still stretched one way is blurred to read as
+      out-of-focus background. Scene version 3 carries the plate (~200 kB).
+    - *Stadium*: the same match on a procedural clay show court in the style of
+      Court Philippe-Chatrier: wide clay run-off, green walls with our name,
+      two tiers of stands with ~16,000 seated people (two instanced meshes), a
+      white roof ring, the umpire's chair. No photos or marks of the real venue.
   - **Not yet:**
     - skeletons come from VideoPose3D (CC BY-NC 4.0, credited in the view): in
       the worker image while Ojo earns nothing, to be replaced before it does
