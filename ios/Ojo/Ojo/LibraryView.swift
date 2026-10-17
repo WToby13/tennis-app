@@ -237,21 +237,12 @@ struct LibraryCard: View {
                 ),
                 shareURL: { await shareTarget() },
                 onDelete: { library.delete(recording) },
-                onSecondary: { setup in
-                    rename(setup)
-                    library.upload(recording, setup: setup)
-                },
-                onPrimary: { setup in
-                    rename(setup)
-                    library.upload(recording, setup: setup, analyse: true)
-                }
+                // The same path the Watch screen's shelf takes, so the two can't
+                // disagree about what Upload or AI Breakdown does.
+                onSecondary: { setup in library.apply(setup, to: recording, analyse: false) },
+                onPrimary: { setup in library.apply(setup, to: recording, analyse: true) }
             )
         }
-    }
-
-    private func rename(_ setup: MatchSetup) {
-        guard let title = setup.title, title != recording.title else { return }
-        library.rename(recording, to: title)
     }
 
     /// A link once it's in the cloud, the file itself before then.

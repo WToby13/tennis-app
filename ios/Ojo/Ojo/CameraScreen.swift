@@ -17,6 +17,9 @@ struct CameraScreen: View {
     @StateObject private var recorder = CameraRecorder()
     @State private var showRotateHint = false
     @State private var savedBrightness: CGFloat = 1.0
+    @StateObject private var budget = RecordingBudget()
+    /// Shown once when the camera opens, if storage or battery is under an hour.
+    @State private var lowBudget: String?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -24,7 +27,8 @@ struct CameraScreen: View {
                 .ignoresSafeArea()
 
             if recorder.isRecording {
-                LowPowerRecordingView(startedAt: recorder.recordingStartedAt)
+                LowPowerRecordingView(startedAt: recorder.recordingStartedAt,
+                                      remaining: budget.remainingSeconds.map(RecordingBudget.duration))
                     .ignoresSafeArea()
                     .transition(.opacity)
             }
@@ -56,13 +60,31 @@ struct CameraScreen: View {
                 .accessibilityLabel("Close camera")
             }
         }
+        // How long this phone can record for, before anyone presses the button.
+        .overlay(alignment: .top) {
+            if !recorder.isRecording {
+                RecordingBudgetPill(budget: budget)
+                    .padding(.top, 14)
+                    .transition(.opacity)
+                    // Its own alert, so it can't collide with the recorder's.
+                    .alert("Less than an hour of recording",
+                           isPresented: Binding(get: { lowBudget != nil }, set: { if !$0 { lowBudget = nil } })) {
+                        Button("Record anyway", role: .cancel) { lowBudget = nil }
+                    } message: {
+                        Text(lowBudget ?? "")
+                    }
+            }
+        }
         .onAppear {
+            budget.start()
+            lowBudget = budget.warning
             AVCaptureDevice.requestAccess(for: .video) { _ in
                 AVCaptureDevice.requestAccess(for: .audio) { _ in
                     Task { @MainActor in recorder.configure() }
                 }
             }
         }
+        .onDisappear { budget.stop() }
         .onChange(of: recorder.isRecording) { _, recording in
             UIApplication.shared.isIdleTimerDisabled = recording
             if recording {
@@ -84,12 +106,15 @@ struct CameraScreen: View {
             // this only indexes it — and adopting by that id means a recording the
             // crash sweep got to first is reused rather than duplicated.
             guard newURL != nil, let id = recorder.lastRecordingId else { return }
+            // Named and dated by when play began, not when it stopped.
             guard let recording = library.adopt(
                 id: id,
                 fileName: "\(id.uuidString).mov",
                 title: "",
-                durationS: recorder.lastDuration
+                durationS: recorder.lastDuration,
+                createdAt: recorder.lastStartedAt ?? Date()
             ) else { return }
+            library.justRecorded = recording.id
             onFinished(recording)
         }
         // Storage problems the recorder can't resolve on its own: no room to

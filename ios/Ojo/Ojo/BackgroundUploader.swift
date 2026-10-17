@@ -3,7 +3,7 @@ import UIKit
 
 /// The AI breakdown's inputs, carried through an upload so "Upload & AI
 /// Breakdown" runs with the answers the shelf collected before the bytes moved.
-struct AnalysisRequest: Codable, Equatable {
+struct AnalysisRequest: Codable, Hashable {
     var startTimeSec: Double?
     var players: AnalysisPlayers?
 }
@@ -179,8 +179,12 @@ final class BackgroundUploader: NSObject {
             self.advanceJobs()
         }
         // Finish freeing local storage for anything uploaded but not yet reclaimed
-        // (e.g. the app was killed between completing and verifying).
-        Task { await self.reconcileUploaded() }
+        // (e.g. the app was killed between completing and verifying), and start
+        // any breakdown that was waiting for the server to finish preparing.
+        Task {
+            await self.reconcileUploaded()
+            await self.startPendingAnalyses()
+        }
     }
 
     /// Delete slice directories whose job is gone. Every abandoned attempt used to
@@ -905,31 +909,96 @@ final class BackgroundUploader: NSObject {
         return true
     }
 
-    /// Record a finished upload: mark the recording, drop the job and its slices,
-    /// chain the AI breakdown, then free local storage once the cloud is confirmed.
+    /// Record a finished upload: bring the server's copy up to date, start the
+    /// breakdown if one was asked for, then mark the recording uploaded, drop
+    /// the job and its slices, and free local storage once the cloud is confirmed.
+    ///
+    /// The order matters. Marking the recording uploaded is what tells every
+    /// screen to go and fetch the match from the server, so everything the server
+    /// should already know by then — the name and players changed mid-upload, the
+    /// breakdown being under way — happens first. Otherwise the Watch screen
+    /// fetches a match that says "not analysed", and never asks again.
     private func markUploaded(_ job: UploadJob) async {
+        let recording = RecordingStore.load().first { $0.id == job.recordingId }
+
+        // Edits made while the bytes were moving. `initiate` carried the name and
+        // players as they were when the upload began; these are the newer ones.
+        if let recording, recording.needsSync == true {
+            try? await api.setTitle(videoId: job.videoId, title: recording.title)
+            if let players = recording.participants, !players.isEmpty {
+                try? await api.setParticipants(videoId: job.videoId, participants: players)
+            }
+        }
+
+        // "Upload & Analyse": the breakdown starts the moment the upload is
+        // confirmed, with the shelf's answers. The recording's request wins over
+        // the job's: it's the one the shelf can change mid-upload. If the server
+        // won't take it yet (the video is still being prepared) it stays on the
+        // recording and `startPendingAnalyses` starts it once the match is ready.
+        var request = recording?.analyseOnUpload ?? job.analyse
+        if request == nil, job.analyseWhenDone == true { request = AnalysisRequest() }
+        var stillPending: AnalysisRequest?
+        if let request {
+            do {
+                try await api.startAnalysis(videoId: job.videoId,
+                                            startTimeSec: request.startTimeSec,
+                                            players: request.players)
+            } catch {
+                UploadLog.info("breakdown for \(job.videoId) not started yet: \(error.localizedDescription)")
+                stillPending = request
+            }
+        }
+
         RecordingStore.update(id: job.recordingId) {
             $0.status = .uploaded
             $0.remoteVideoId = job.videoId
             $0.progress = 1
             $0.uploadError = nil
+            $0.needsSync = nil
+            $0.analyseOnUpload = stillPending
         }
         work.async { self.removeJob(job.recordingId) }
 
-        // "Upload & Analyse": the breakdown starts the moment the upload is
-        // confirmed — with the start time and player names from the shelf — so
-        // it's already running by the time the match appears. Best-effort: a
-        // failure here is reported by the analysis status itself, not as an
-        // upload failure.
-        if let analyse = job.analyse {
-            _ = try? await api.startAnalysis(videoId: job.videoId,
-                                             startTimeSec: analyse.startTimeSec,
-                                             players: analyse.players)
-        } else if job.analyseWhenDone == true {
-            _ = try? await api.startAnalysis(videoId: job.videoId)
-        }
         // Confirm the cloud copy (video + thumbnail), then free local storage.
         await freeLocalIfConfirmed(recordingId: job.recordingId, videoId: job.videoId)
+    }
+
+    /// Whether `startPendingAnalyses` is already running, so the several places
+    /// that call it can't start the same breakdown twice.
+    private var startingPending = false
+
+    /// Start every breakdown that was asked for at upload time but couldn't start
+    /// then. Waits while the server is still preparing the video; once it's
+    /// ready, starts the breakdown (unless one is already running or done) and
+    /// clears the request either way, so a match that can't be analysed isn't
+    /// retried on every launch. Idempotent and cheap when there's nothing to do.
+    func startPendingAnalyses() async {
+        guard !startingPending else { return }
+        startingPending = true
+        defer { startingPending = false }
+        for rec in RecordingStore.load() where rec.status == .uploaded {
+            guard let request = rec.analyseOnUpload, let videoId = rec.remoteVideoId else { continue }
+            guard let detail = try? await api.getVideo(videoId: videoId) else { continue }
+            switch detail.video.status {
+            case "uploading", "processing":
+                continue // not ready yet — try again on the next pass
+            case "ready":
+                let state = detail.analysisStatus ?? "none"
+                if state != "processing" && state != "ready" {
+                    do {
+                        try await api.startAnalysis(videoId: videoId,
+                                                    startTimeSec: request.startTimeSec,
+                                                    players: request.players)
+                        UploadLog.info("started the deferred breakdown for \(videoId)")
+                    } catch {
+                        UploadLog.error("deferred breakdown for \(videoId) failed to start: \(error.localizedDescription)")
+                    }
+                }
+            default:
+                break
+            }
+            RecordingStore.update(id: rec.id) { $0.analyseOnUpload = nil }
+        }
     }
 
     // MARK: - Background time

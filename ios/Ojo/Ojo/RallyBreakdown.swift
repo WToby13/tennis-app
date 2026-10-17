@@ -172,12 +172,10 @@ final class AnalysisModel: ObservableObject {
 struct RallyBreakdown: View {
     @ObservedObject var model: AnalysisModel
     let onSeek: (Double) -> Void
-    /// The shelf's answers, so the caller can tag the named players on the match.
-    let onSetup: (MatchSetup, _ run: Bool) -> Void
-    /// Anyone already tagged, offered in the shelf's dropdowns.
-    let participants: [Participant]
+    /// Open the match's setup shelf — the same one the Watch screen's settings
+    /// button opens, so a breakdown is configured in one place only.
+    let onOpenSetup: () -> Void
 
-    @State private var setupOpen = false
     /// Whether the rally index is expanded past its first few rows.
     @State private var showAllRallies = false
 
@@ -189,17 +187,6 @@ struct RallyBreakdown: View {
         .task(id: model.status) {
             guard model.status == "processing" else { return }
             await model.pollUntilSettled()
-        }
-        .sheet(isPresented: $setupOpen) {
-            MatchSetupSheet(
-                purpose: .cloudMatch,
-                existing: participants,
-                initialPlayers: model.players
-            ) { setup in
-                onSetup(setup, false)
-            } onPrimary: { setup in
-                onSetup(setup, true)
-            }
         }
     }
 
@@ -384,7 +371,7 @@ struct RallyBreakdown: View {
     private func runButton(label: String) -> some View {
         Group {
             if model.canAnalyze {
-                Button { setupOpen = true } label: {
+                Button(action: onOpenSetup) {
                     HStack(spacing: 8) {
                         if model.busy { ProgressView().tint(Theme.text) }
                         Text(model.busy ? "Starting…" : label).font(.subheadline.weight(.semibold))

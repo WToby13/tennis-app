@@ -17,6 +17,12 @@ final class RecordingLibrary: ObservableObject {
     /// Set when a match the app never finished filing has been restored, so the
     /// library can tell you rather than silently growing an entry.
     @Published var recoveredNotice: String?
+    /// A recording that has just come off the camera, so its Watch screen can
+    /// open the setup shelf straight away. Taken (and cleared) by that screen.
+    @Published var justRecorded: UUID?
+    /// The signed-in account, set by the root view. Decides which of this phone's
+    /// uploaded recordings are this account's to show.
+    @Published var accountId: String?
 
     /// Server-derived status per uploaded match, keyed by remote video id. Kept
     /// out of `Recording` (and so out of the on-disk index) because it's a live
@@ -50,6 +56,9 @@ final class RecordingLibrary: ObservableObject {
     private var mineOnThisPhone: [Recording] {
         recordings.filter { r in
             guard let remoteId = r.remoteVideoId else { return true }  // never uploaded — this phone's
+            // Uploaded from here by this account: shown straight away, rather
+            // than vanishing until the server's list next refreshes.
+            if let owner = r.ownerId, owner == accountId { return true }
             return cloudStatus[remoteId] != nil                        // uploaded — only if the server shows it to us
         }
     }
@@ -102,13 +111,26 @@ final class RecordingLibrary: ObservableObject {
         observer = NotificationCenter.default.addObserver(
             forName: RecordingStore.didChange, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.recordings = RecordingStore.load() }
+            Task { @MainActor in self?.reloadFromStore() }
         }
 
         BackgroundUploader.shared.resume()
 
         // Pick up anything a crash, a kill or a dead battery left behind.
         Task { await recoverInterrupted() }
+    }
+
+    /// Pick up the uploader's latest writes. A recording that has just finished
+    /// uploading is the moment the server's view of it changes (status, sharing,
+    /// a breakdown starting), so fetch that straight away rather than on the
+    /// next pull-to-refresh.
+    private func reloadFromStore() {
+        let before = Dictionary(recordings.map { ($0.id, $0.status) }, uniquingKeysWith: { a, _ in a })
+        recordings = RecordingStore.load()
+        let landed = recordings.contains { $0.status == .uploaded && before[$0.id].map { $0 != .uploaded } == true }
+        if landed {
+            Task { await refreshFromCloud(force: true) }
+        }
     }
 
     deinit {
@@ -137,7 +159,7 @@ final class RecordingLibrary: ObservableObject {
 
         let recording = Recording(
             id: id,
-            title: title.isEmpty ? "Untitled match" : title,
+            title: title.isEmpty ? MatchName.auto(for: createdAt) : title,
             fileName: fileName,
             createdAt: createdAt,
             durationS: durationS,
@@ -236,21 +258,29 @@ final class RecordingLibrary: ObservableObject {
         return seconds.isFinite && seconds > 0 ? seconds : 0
     }
 
-    /// Rename a recording (empty → "Untitled match").
+    /// Rename a recording (empty → its automatic day-and-time name).
     func rename(_ recording: Recording, to newTitle: String) {
         guard let i = recordings.firstIndex(where: { $0.id == recording.id }) else { return }
         let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        recordings[i].title = trimmed.isEmpty ? "Untitled match" : trimmed
-        RecordingStore.save(recordings)
+        let title = trimmed.isEmpty ? MatchName.auto(for: recordings[i].createdAt) : trimmed
+        recordings[i].title = title
+        // One record, read and written on disk — not the whole in-memory list,
+        // which can be a beat behind the uploader's progress and would put it back.
+        edit(recording.id) { $0.title = title }
+    }
+
+    /// Change one recording in the on-disk index (and so, via the store's
+    /// notification, here). Edits made while an upload is running go through
+    /// this so they can't overwrite what the uploader has just written.
+    private func edit(_ id: UUID, _ change: @escaping (inout Recording) -> Void) {
+        if let i = recordings.firstIndex(where: { $0.id == id }) { change(&recordings[i]) }
+        RecordingStore.update(id: id, change)
     }
 
     /// Set who played. Persisted locally so it rides along on the next upload; if
     /// the match is already uploaded, pushed to the server immediately.
     func setParticipants(_ recording: Recording, _ participants: [Participant]) {
-        if let i = recordings.firstIndex(where: { $0.id == recording.id }) {
-            recordings[i].participants = participants
-            RecordingStore.save(recordings)
-        }
+        edit(recording.id) { $0.participants = participants }
         if let videoId = recording.remoteVideoId {
             Task { [api] in try? await api.setParticipants(videoId: videoId, participants: participants) }
         }
@@ -280,11 +310,63 @@ final class RecordingLibrary: ObservableObject {
             }
         }
 
+        // A retry without the shelf keeps the answers the first attempt carried.
+        let request = analyse ? (setup?.analysisRequest ?? current.analyseOnUpload ?? AnalysisRequest()) : nil
+        let owner = accountId
+        edit(current.id) {
+            $0.ownerId = owner
+            $0.analyseOnUpload = request
+        }
+        current.ownerId = owner
+        current.analyseOnUpload = request
+
         BackgroundUploader.shared.start(
             recording: current,
             fileURL: fileURL(for: current),
-            analyse: analyse ? (setup?.analysisRequest ?? AnalysisRequest()) : nil
+            analyse: request
         )
+    }
+
+    /// The setup shelf's answers for a recording on this phone, whatever state
+    /// it's in — one place, so the shelf does the same thing whether it was
+    /// opened from the library card or the Watch screen.
+    ///
+    /// - Not uploaded (or failed): rename, tag the players, start the upload.
+    /// - Uploading: rename and tag locally and queue them for the server; with
+    ///   `analyse`, the breakdown runs the moment the upload lands.
+    /// - Uploaded: rename and tag on the server. The breakdown itself is the
+    ///   caller's to run, since it owns the screen showing it.
+    func apply(_ setup: MatchSetup, to recording: Recording, analyse: Bool) {
+        // The disk is the fresher copy while an upload is moving.
+        guard let current = RecordingStore.load().first(where: { $0.id == recording.id })
+                ?? recordings.first(where: { $0.id == recording.id }) else { return }
+        if let title = setup.title, title != current.title {
+            rename(current, to: title)
+            if let videoId = current.remoteVideoId {
+                Task { [api] in try? await api.setTitle(videoId: videoId, title: title) }
+            } else if current.status == .uploading {
+                edit(current.id) { $0.needsSync = true }
+            }
+        }
+
+        let merged = setup.participants(mergedWith: current.participants ?? [])
+        switch current.status {
+        case .pending, .failed:
+            upload(current, setup: setup, analyse: analyse)
+        case .uploading:
+            let request = setup.analysisRequest
+            edit(current.id) {
+                if merged != ($0.participants ?? []) {
+                    $0.participants = merged
+                    $0.needsSync = true
+                }
+                if analyse { $0.analyseOnUpload = request }
+            }
+        case .uploaded:
+            if merged != (current.participants ?? []) {
+                setParticipants(current, merged)
+            }
+        }
     }
 
     /// Proactive, user-initiated delete. Removes the match everywhere: cancels any
@@ -325,6 +407,12 @@ final class RecordingLibrary: ObservableObject {
         // the local index, which are shown from local state but still need the
         // cloud's view of analysis and sharing.
         cloudStatus = videos.reduce(into: [:]) { map, v in map[v.id] = v.matchStatus }
+
+        // A breakdown asked for at upload time that the server wasn't ready to
+        // start yet (the video was still being prepared) — start it now if it is.
+        if recordings.contains(where: { $0.analyseOnUpload != nil && $0.status == .uploaded }) {
+            Task { await BackgroundUploader.shared.startPendingAnalyses() }
+        }
 
         let localRemoteIds = Set(mineOnThisPhone.compactMap { $0.remoteVideoId })
         cloud = videos.compactMap { v in

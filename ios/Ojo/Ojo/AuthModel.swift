@@ -44,15 +44,38 @@ final class AuthModel: ObservableObject {
         email.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Whether the launch-time session check has finished, so the app knows which
+    /// screen to show rather than guessing.
+    @Published private(set) var restored = false
+
     init() {
+        // The keychain read is synchronous, so a returning player is known to be
+        // signed in on the very first frame. Starting from `false` and waiting for
+        // the async check is what flashed the login screen on every launch.
+        let stored = Supa.client.auth.currentSession
+        isSignedIn = stored != nil
+        accountEmail = stored?.user.email
         Task { await refresh() }
     }
 
-    /// Restore any persisted session on launch (the SDK stores it in the keychain).
+    /// Validate the persisted session (refreshing an expired token if need be).
+    ///
+    /// Only a session the SDK has actually discarded signs you out here: a phone
+    /// that launches offline with an expired token can't refresh it, and that is
+    /// no reason to drop someone at the login screen — the next request that gets
+    /// a network refreshes it.
     func refresh() async {
-        let session = try? await Supa.client.auth.session
-        isSignedIn = session != nil
-        accountEmail = session?.user.email
+        defer { restored = true }
+        do {
+            let session = try await Supa.client.auth.session
+            isSignedIn = true
+            accountEmail = session.user.email
+        } catch {
+            if Supa.client.auth.currentSession == nil {
+                isSignedIn = false
+                accountEmail = nil
+            }
+        }
     }
 
     func signIn() async {
