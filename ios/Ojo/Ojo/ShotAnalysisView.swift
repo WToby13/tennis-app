@@ -462,7 +462,7 @@ private func placedShots(_ stats: MatchStats) -> [Placed] {
         guard let f = s.from, f.count == 2 else { return nil }
         let flip = s.hitter == "far" ? -1.0 : 1.0
         let from = (x: f[0] * flip, y: f[1] * flip)
-        let at = s.bounce.flatMap { $0.count == 2 ? (x: $0[0] * flip, y: $0[1] * flip) : nil }
+        let at = courtPoint(s.bounce, flip: flip)
         guard from.y < 0.5, from.y > -g.half - g.padL + 0.4, abs(from.x) < g.doubles + g.padW - 0.4 else { return nil }
         if let at { guard at.y > 0 else { return nil } } else if s.landing != "net" { return nil }
         return Placed(shot: s, index: i, from: from, at: at)
@@ -470,6 +470,14 @@ private func placedShots(_ stats: MatchStats) -> [Placed] {
 }
 
 private func clampTo(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(hi, max(lo, v)) }
+
+/// A court point from the analysis's `[x, y]`, scaled by `flip` (±1 turns it
+/// to the other end). Spelt out rather than inferred inside `? :` with `nil`,
+/// which Xcode Cloud's compiler could not type-check.
+private func courtPoint(_ p: [Double]?, flip: Double) -> (x: Double, y: Double)? {
+    guard let p, p.count == 2 else { return nil }
+    return (x: p[0] * flip, y: p[1] * flip)
+}
 
 private func mmss(_ s: Double) -> String { PlayerModel.timeLabel(s) }
 
@@ -673,8 +681,20 @@ private struct PositionBlock: View {
         return z
     }
 
+    /// Time on court, as the heatmap draws it: one square per grid cell with any.
+    private struct HeatMap {
+        struct Cell { let x: Double, y: Double, v: Double }
+        let cells: [Cell]
+        let max: Double
+        let cell: Double
+    }
+
     /// The selected players' time on court, summed over the selected roles.
-    private var heat: (cells: [(x: Double, y: Double, v: Double)], max: Double, cell: Double)? {
+    ///
+    /// A named type, not a tuple: returning an unlabelled tuple through `? :`
+    /// into a labelled optional one crashed the type checker on Xcode Cloud
+    /// ("failed to produce diagnostic for expression").
+    private var heat: HeatMap? {
         guard let m = stats.movement else { return nil }
         var sum = Array(repeating: 0.0, count: m.nx * m.ny)
         for (key, grid) in m.grids {
@@ -683,13 +703,14 @@ private struct PositionBlock: View {
             if parts[1] == "any" ? filter.roles.count != rallyRoles.count : !filter.roles.contains(parts[1]) { continue }
             for k in 0..<min(grid.count, sum.count) { sum[k] += grid[k] }
         }
-        var cells: [(x: Double, y: Double, v: Double)] = []
+        var cells: [HeatMap.Cell] = []
         var top = 0.0
         for (k, v) in sum.enumerated() where v > 0 {
-            cells.append((x: m.x0 + Double(k % m.nx) * m.cell, y: m.y0 + Double(k / m.nx) * m.cell, v: v))
+            cells.append(HeatMap.Cell(x: m.x0 + Double(k % m.nx) * m.cell, y: m.y0 + Double(k / m.nx) * m.cell, v: v))
             top = max(top, v)
         }
-        return top > 0 ? (cells, top, m.cell) : nil
+        guard top > 0 else { return nil }
+        return HeatMap(cells: cells, max: top, cell: m.cell)
     }
 
     var body: some View {
@@ -866,7 +887,7 @@ private struct RallyCourt: View {
         }
         return shots.map { s in
             let hit = inside((x: s.from![0] * flip, y: s.from![1] * flip))
-            var bounce = s.bounce.flatMap { $0.count == 2 ? (x: $0[0] * flip, y: $0[1] * flip) : nil }
+            var bounce = courtPoint(s.bounce, flip: flip)
             if let b = bounce, (b.y >= 0) == (hit.y >= 0) { bounce = nil }
             if let b = bounce, abs(b.x) > g.doubles + g.padW - 0.3 || abs(b.y) > g.half + g.padL - 0.3 { bounce = nil }
             return Step(shot: s, hit: hit, bounce: bounce, colour: PlayerColor.of(playerOf(s)))
