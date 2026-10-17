@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { End } from "@/lib/matchStats";
 import type { MatchScene, SceneRally, SceneShot } from "@/lib/matchScene";
+import { buildRecordedCourt, buildStadium, type BuiltVenue, type Venue } from "./Replay3DVenues";
 
 /**
  * The match in 3D, over the video: the court (wearing the real court's
@@ -40,6 +41,11 @@ const VIEWS: [View, string][] = [
   ["hitter", "Behind the hitter"],
   ["side", "Side on"],
   ["top", "Top down"],
+];
+
+const VENUES: [Venue, string, string][] = [
+  ["court", "Your court", "Where it was played, its surroundings taken from the video"],
+  ["stadium", "Stadium", "The same match on a big clay show court, in the style of Court Philippe-Chatrier"],
 ];
 
 /** Index of the last element whose key <= x in a sorted array, or -1. */
@@ -93,6 +99,9 @@ export function Replay3D({
   const pipRef = useRef<HTMLCanvasElement>(null);
   const [view, setView] = useState<View>("broadcast");
   const viewRef = useRef<View>(view);
+  const [venue, setVenueName] = useState<Venue>("court");
+  const venueRef = useRef<Venue>(venue);
+  venueRef.current = venue;
   const [hud, setHud] = useState<string>("");
   const togglePlay = useRef(onTogglePlay);
   togglePlay.current = onTogglePlay;
@@ -116,8 +125,6 @@ export function Replay3D({
     host.prepend(renderer.domElement);
 
     const world = new THREE.Scene();
-    const sky = new THREE.Color(0x14110d);
-    const fog = new THREE.Fog(0x14110d, 45, 110);
     const camera = new THREE.PerspectiveCamera(45, 16 / 9, 0.1, 300);
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -137,40 +144,23 @@ export function Replay3D({
     fill.position.set(8, 14, -24);
     world.add(fill);
 
-    // ---- The court: the real surface where we have it, crisp lines, the net. ----
+    // ---- The court: the venue round it, crisp lines, the net. ----
     // `ground` is everything that hides when looking through the phone (the
-    // video is the ground there).
+    // video is the ground there): the venue, and the lines and net every venue shares.
     const ground = new THREE.Group();
     world.add(ground);
-    const flat = (w: number, h: number, mat: THREE.Material, y = 0) => {
-      const m = new THREE.Mesh(keep(new THREE.PlaneGeometry(w, h)), mat);
-      m.rotation.x = -Math.PI / 2;
-      m.position.y = y;
-      m.receiveShadow = true;
-      return m;
+    let venue: { name: Venue; built: BuiltVenue } | null = null;
+    const setVenue = (name: Venue) => {
+      if (venue?.name === name) return;
+      if (venue) {
+        ground.remove(venue.built.group);
+        venue.built.dispose();
+      }
+      const built = name === "stadium" ? buildStadium() : buildRecordedCourt(scene, renderer);
+      ground.add(built.group);
+      venue = { name, built };
+      lastView = null; // background and fog follow the venue
     };
-    const surround = keep(new THREE.MeshLambertMaterial({ color: 0x8a4a30 }));
-    ground.add(flat(400, 400, surround, -0.02)); // to the horizon, where the fog takes it
-    if (scene.court) {
-      const { halfWidth, halfLength } = scene.court;
-      const tex = keep(new THREE.TextureLoader().load(scene.court.texture, (t) => {
-        // The run-off beyond the texture takes the texture's own edge colour.
-        const img = t.image as HTMLImageElement;
-        const c = document.createElement("canvas");
-        c.width = c.height = 1;
-        const g = c.getContext("2d");
-        if (g) {
-          g.drawImage(img, 1, 1, 1, 1, 0, 0, 1, 1);
-          const [r, gr, b] = g.getImageData(0, 0, 1, 1).data;
-          surround.color.setRGB(r / 255, gr / 255, b / 255, THREE.SRGBColorSpace);
-        }
-      }));
-      tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      ground.add(flat(2 * halfWidth, 2 * halfLength, keep(new THREE.MeshLambertMaterial({ map: tex })), -0.01));
-    } else {
-      ground.add(flat(2 * (C.D + 3.5), 2 * (C.HL + 6.4), keep(new THREE.MeshLambertMaterial({ color: 0xa35a3a })), -0.01));
-    }
     const lineMat = keep(new THREE.MeshBasicMaterial({ color: COLOUR.line, transparent: true, opacity: 0.85 }));
     const line = (x1: number, y1: number, x2: number, y2: number, w = 0.05) => {
       const len = Math.hypot(x2 - x1, y2 - y1);
@@ -210,20 +200,8 @@ export function Replay3D({
       }
     }
 
-    // The phone, where the calibration put it.
     const cam = scene.camera;
     const Rm = cam.rotation;
-    const phone = new THREE.Group();
-    {
-      const body = new THREE.Mesh(keep(new THREE.BoxGeometry(0.16, 0.08, 0.012)), keep(new THREE.MeshLambertMaterial({ color: 0xd9662c })));
-      phone.add(body);
-      const pole = new THREE.Mesh(keep(new THREE.CylinderGeometry(0.015, 0.015, cam.position[2], 8)), keep(new THREE.MeshLambertMaterial({ color: 0x6b6258 })));
-      pole.position.y = -cam.position[2] / 2;
-      phone.add(pole);
-      phone.position.copy(S(...cam.position));
-      phone.lookAt(phone.position.clone().add(S(Rm[6], Rm[7], Rm[8])));
-      ground.add(phone);
-    }
 
     // ---- Players: skeletons (bones and joints), or a plain figure at the feet. ----
     type Figure = {
@@ -390,7 +368,8 @@ export function Replay3D({
         // 6.5 m behind where they struck it, eye height a little over theirs,
         // looking at the net: the hitter in the foreground, the shot ahead.
         hitter: [[hitterX * 0.7, hitterY - flip * 6.5, 2.6], [hitterX * 0.25, 0, 0.4]],
-        side: [[21, 0, 4.5], [0, 0, 0.6]],
+        // In the stadium, from up in the lower stand, over the crowd's heads.
+        side: venueRef.current === "stadium" ? [[24, 0, 15], [0, 0, 0]] : [[21, 0, 4.5], [0, 0, 0.6]],
         top: [[0, -0.5, 36], [0, 0, 0]],
       };
       const [p, t] = at[v as keyof typeof at];
@@ -421,8 +400,8 @@ export function Replay3D({
     const applyView = (v: View, cw: number, ch: number) => {
       const isPhone = v === "phone";
       ground.visible = !isPhone;
-      world.background = isPhone ? null : sky;
-      world.fog = isPhone ? null : fog;
+      world.background = isPhone || !venue ? null : venue.built.background;
+      world.fog = isPhone || !venue ? null : venue.built.fog;
       if (isPhone) {
         camera.position.copy(S(...cam.position));
         camera.quaternion.copy(phoneQuat);
@@ -543,6 +522,7 @@ export function Replay3D({
       }
       if (label !== lastHud) setHud((lastHud = label));
 
+      setVenue(venueRef.current);
       const v = viewRef.current;
       if (v !== lastView) applyView(v, host.clientWidth, host.clientHeight);
       if (v !== "phone" && v !== "free") {
@@ -575,6 +555,7 @@ export function Replay3D({
       el.removeEventListener("pointerup", onUp);
       el.removeEventListener("wheel", onWheel);
       clearRally();
+      venue?.built.dispose();
       controls.dispose();
       disposables.forEach((d) => d.dispose());
       renderer.dispose();
@@ -596,6 +577,22 @@ export function Replay3D({
           </button>
         ))}
         {view === "free" && <span className="r3d-view on" aria-live="polite">Free · drag to orbit</span>}
+        <span className="r3d-sep" aria-hidden="true" />
+        {VENUES.map(([v, label, title]) => (
+          <button
+            key={v}
+            className={`r3d-view ${venue === v ? "on" : ""}`}
+            aria-pressed={venue === v}
+            title={title}
+            onClick={() => {
+              setVenueName(v);
+              // Through the phone you see the real court whatever the venue.
+              if (v === "stadium" && view === "phone") setView("broadcast");
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       <div className="r3d-info">
         {hud && <div className="r3d-hud">{hud}</div>}
