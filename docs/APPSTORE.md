@@ -23,7 +23,7 @@ else while it processes.
 | App Store name | **Ojo Tennis** |
 | Home-screen name | **Ojo** |
 | Bundle id | **`com.ojotennis.app`** — permanent once published, cannot ever be changed |
-| Version / build | 1.0 (5) |
+| Version / build | 1.1 (6) — 1.0 (5) was the first release |
 | Minimum iOS | 17.0 |
 | Devices | iPhone only |
 | Xcode project | `ios/Ojo/Ojo.xcodeproj` |
