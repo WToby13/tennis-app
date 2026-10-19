@@ -86,9 +86,9 @@ variable "analysis_worker_secret" {
 }
 
 variable "worker_instance_types" {
-  description = "GPU instance types for the analysis worker (spot)."
+  description = "GPU instance types for the analysis worker (spot). Must be offered in aws_region: eu-west-1 has no g6."
   type        = list(string)
-  default     = ["g6.xlarge", "g5.xlarge"]
+  default     = ["g5.xlarge", "g4dn.xlarge"]
 }
 
 variable "worker_max_vcpus" {

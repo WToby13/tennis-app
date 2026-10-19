@@ -7,9 +7,11 @@
 # result and exits. With nothing queued the compute environment scales to zero,
 # so idle costs nothing.
 #
-# GPU: g6.xlarge (one NVIDIA L4, 4 vCPU, 16 GB) on spot, ~$0.30-0.45/h in
-# eu-west-1 against ~$0.98 on demand. A 1-hour match is roughly 20-30 GPU
-# minutes (estimate until benchmarked; see docs/OWN_ANALYSIS_LAUNCH.md).
+# GPU: g5.xlarge (one NVIDIA A10G, 4 vCPU, 16 GB) or g4dn.xlarge (one T4) on
+# spot; eu-west-1 offers no g6 (L4), and listing a type the region lacks
+# invalidates the compute environment the first time it scales up. A 1-hour
+# match is roughly 20-30 GPU minutes (estimate until benchmarked; see
+# docs/OWN_ANALYSIS_LAUNCH.md).
 #
 # Same network stance as the transcoder: default VPC, public subnets with a
 # public IP (no NAT gateway to pay for), and a security group with no inbound.
@@ -154,10 +156,13 @@ resource "aws_iam_role_policy" "analysis_execution_secrets" {
 
 # --- Batch --------------------------------------------------------------------
 
+# Most changes replace the environment (it runs on a custom service role, so
+# Batch won't update it in place). The prefix lets the new one exist before the
+# old one goes, and the queue moves across without ever being left empty.
 resource "aws_batch_compute_environment" "analysis" {
-  compute_environment_name = "${local.name}-analysis-gpu"
-  type                     = "MANAGED"
-  service_role             = aws_iam_role.batch_service.arn
+  compute_environment_name_prefix = "${local.name}-analysis-gpu-"
+  type                            = "MANAGED"
+  service_role                    = aws_iam_role.batch_service.arn
 
   compute_resources {
     type                = "SPOT"
@@ -176,6 +181,10 @@ resource "aws_batch_compute_environment" "analysis" {
   }
 
   depends_on = [aws_iam_role_policy_attachment.batch_service]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_batch_job_queue" "analysis" {
@@ -226,11 +235,17 @@ resource "aws_batch_job_definition" "analysis" {
   })
 }
 
-# The web app submits one job per queued match.
+# The web app submits one job per queued match. It names the job definition
+# without a revision (latest), which IAM checks against the unversioned ARN, so
+# both forms are allowed.
 data "aws_iam_policy_document" "app_submit_analysis" {
   statement {
-    actions   = ["batch:SubmitJob"]
-    resources = [aws_batch_job_queue.analysis.arn, "${replace(aws_batch_job_definition.analysis.arn, "/:\\d+$/", "")}:*"]
+    actions = ["batch:SubmitJob"]
+    resources = [
+      aws_batch_job_queue.analysis.arn,
+      replace(aws_batch_job_definition.analysis.arn, "/:\\d+$/", ""),
+      "${replace(aws_batch_job_definition.analysis.arn, "/:\\d+$/", "")}:*",
+    ]
   }
 }
 
