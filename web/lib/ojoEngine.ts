@@ -50,23 +50,117 @@ export function ojoClaimable(taskId: string | null | undefined, now = Date.now()
   return false;
 }
 
+/** Batch is configured for this deployment (infra/analysis_worker.tf). */
+function batchTarget(): { queue: string; definition: string } | null {
+  const queue = process.env.ANALYSIS_BATCH_JOB_QUEUE;
+  const definition = process.env.ANALYSIS_BATCH_JOB_DEFINITION;
+  return queue && definition ? { queue, definition } : null;
+}
+
+async function batchClient() {
+  const { BatchClient } = await import("@aws-sdk/client-batch");
+  const { config } = await import("./config");
+  return new BatchClient({ region: config.aws.region });
+}
+
 /**
  * Start a worker for a queued match: one AWS Batch job (infra/analysis_worker.tf)
  * when ANALYSIS_BATCH_JOB_QUEUE and ANALYSIS_BATCH_JOB_DEFINITION are set. Best
- * effort: if it fails the match stays queued for any worker that polls.
+ * effort: if it fails the match stays queued, and the cron sweep submits again
+ * (ensureWorkers). Returns false only when a submit was tried and failed.
+ *
+ * The job is named after the match, but a worker run with `--once` claims
+ * whichever match is next (/api/worker/jobs), so the name is a label only.
  */
-export async function startWorker(videoId: string): Promise<void> {
-  const queue = process.env.ANALYSIS_BATCH_JOB_QUEUE;
-  const definition = process.env.ANALYSIS_BATCH_JOB_DEFINITION;
-  if (!queue || !definition) return;
+export async function startWorker(videoId: string): Promise<boolean> {
+  const target = batchTarget();
+  if (!target) return true;
   try {
-    const { BatchClient, SubmitJobCommand } = await import("@aws-sdk/client-batch");
-    const { config } = await import("./config");
-    const client = new BatchClient({ region: config.aws.region });
+    const { SubmitJobCommand } = await import("@aws-sdk/client-batch");
+    const client = await batchClient();
     await client.send(
-      new SubmitJobCommand({ jobName: `analysis-${videoId.slice(0, 8)}`, jobQueue: queue, jobDefinition: definition }),
+      new SubmitJobCommand({
+        jobName: `analysis-${videoId.slice(0, 8)}`,
+        jobQueue: target.queue,
+        jobDefinition: target.definition,
+      }),
     );
+    return true;
   } catch (err) {
-    console.error("[ojo] couldn't submit the analysis job; it stays queued", videoId, err);
+    // Stable prefix so a log alert can match it.
+    console.error("[ojo] worker submit failed; the match stays queued", videoId, err);
+    return false;
   }
+}
+
+/** Every status of a Batch job that hasn't finished: each will claim, or has claimed, a match. */
+const ACTIVE_JOB_STATUSES = ["SUBMITTED", "PENDING", "RUNNABLE", "STARTING", "RUNNING"] as const;
+
+/** Unfinished jobs on the analysis queue, or null if Batch couldn't be asked. */
+async function activeWorkerJobs(queue: string): Promise<number | null> {
+  try {
+    const { ListJobsCommand } = await import("@aws-sdk/client-batch");
+    const client = await batchClient();
+    let count = 0;
+    for (const jobStatus of ACTIVE_JOB_STATUSES) {
+      let nextToken: string | undefined;
+      do {
+        const page = await client.send(new ListJobsCommand({ jobQueue: queue, jobStatus, nextToken }));
+        count += page.jobSummaryList?.length ?? 0;
+        nextToken = page.nextToken;
+      } while (nextToken);
+    }
+    return count;
+  } catch (err) {
+    console.error("[ojo] couldn't list analysis jobs; not resubmitting this sweep", err);
+    return null;
+  }
+}
+
+/** Upper bound on submits per sweep, whatever the arithmetic says. */
+const MAX_SUBMITS_PER_SWEEP = 5;
+
+/**
+ * How many workers to submit: one per claimable match that no unfinished job
+ * will pick up. Each job claims exactly one match (`--once`), and a RUNNING job
+ * has either claimed one already or is about to, so every unfinished job is
+ * counted against the backlog. A job wedged on a match only holds things up
+ * until its 4-hour timeout (infra/analysis_worker.tf).
+ */
+export function workersNeeded(claimable: number, activeJobs: number): number {
+  return Math.min(Math.max(claimable - activeJobs, 0), MAX_SUBMITS_PER_SWEEP);
+}
+
+export type EnsureWorkersResult = {
+  claimable: number;
+  activeJobs: number | null;
+  submitted: number;
+  failed: number;
+};
+
+/**
+ * Called by the cron sweep: make sure every match waiting for our engine
+ * (queued, or claimed by a worker that went quiet; see ojoClaimable) has a
+ * Batch job coming for it. Without this, a failed submit when the owner tapped
+ * AI Analysis leaves the match queued for good. Idempotent: it submits only
+ * the shortfall between claimable matches and unfinished jobs on the queue.
+ */
+export async function ensureWorkers(
+  videos: { id: string; analysisTaskId?: string | null }[],
+  now = Date.now(),
+): Promise<EnsureWorkersResult> {
+  const waiting = videos.filter((v) => ojoClaimable(v.analysisTaskId, now));
+  const result: EnsureWorkersResult = { claimable: waiting.length, activeJobs: null, submitted: 0, failed: 0 };
+  const target = batchTarget();
+  if (!waiting.length || !target) return result;
+
+  result.activeJobs = await activeWorkerJobs(target.queue);
+  if (result.activeJobs === null) return result;
+
+  // Oldest first (listInFlightAnalyses' order), only for the job's name.
+  for (const video of waiting.slice(0, workersNeeded(waiting.length, result.activeJobs))) {
+    if (await startWorker(video.id)) result.submitted++;
+    else result.failed++;
+  }
+  return result;
 }

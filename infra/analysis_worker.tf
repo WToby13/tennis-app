@@ -239,3 +239,19 @@ resource "aws_iam_user_policy" "app_submit_analysis" {
   user   = aws_iam_user.app.name
   policy = data.aws_iam_policy_document.app_submit_analysis.json
 }
+
+# The cron sweep counts unfinished jobs before resubmitting one for a match that
+# is still queued (web/lib/ojoEngine.ts, ensureWorkers). ListJobs has no
+# resource-level permissions, so it can only be granted on "*".
+data "aws_iam_policy_document" "app_list_analysis" {
+  statement {
+    actions   = ["batch:ListJobs"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_user_policy" "app_list_analysis" {
+  name   = "list-analysis-jobs"
+  user   = aws_iam_user.app.name
+  policy = data.aws_iam_policy_document.app_list_analysis.json
+}

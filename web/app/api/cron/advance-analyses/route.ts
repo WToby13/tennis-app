@@ -1,6 +1,7 @@
 import { advanceAnalysis, stageOf } from "@/lib/analysisRunner";
 import { config } from "@/lib/config";
 import { metadata } from "@/lib/metadata";
+import { ensureWorkers } from "@/lib/ojoEngine";
 import { getSupabaseServiceRole, serviceRoleConfigured } from "@/lib/supabase/service";
 import { json } from "@/lib/util";
 
@@ -83,7 +84,18 @@ export async function GET(req: Request) {
     }
   }
 
-  const summary = { inFlight: inFlight.length, examined, results, ms: Date.now() - started };
+  // Our engine's matches aren't advanced above (the worker posts its result);
+  // what they can need is a worker. Retries a submit that failed when the owner
+  // tapped AI Analysis, and replaces a worker that died mid-match.
+  const workers = await ensureWorkers(inFlight).catch((err) => {
+    console.error("[cron] ensureWorkers failed", err);
+    return null;
+  });
+  if (workers?.failed) {
+    console.error("[cron] analysis worker submits failed", JSON.stringify(workers));
+  }
+
+  const summary = { inFlight: inFlight.length, examined, results, workers, ms: Date.now() - started };
   console.info("[cron] advance-analyses", JSON.stringify(summary));
   return json(summary);
 }
